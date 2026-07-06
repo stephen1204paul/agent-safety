@@ -1,0 +1,27 @@
+{
+    "name": "specflux/woo-agent-safety",
+    "description": "Thin WordPress plugin host for the Woo Agent Safety core. Wires the security package into mcp_adapter_* hooks and wp-admin.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.1",
+        "specflux/woo-agent-safety-core": "@dev"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../",
+            "options": { "symlink": false }
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Specflux\\WooAgentSafety\\Plugin\\": "src/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
