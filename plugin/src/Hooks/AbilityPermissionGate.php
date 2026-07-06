@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Hooks;
+namespace Specflux\AgentSafety\Plugin\Hooks;
 
-use Specflux\WooAgentSafety\Approval\ApprovalBinding;
-use Specflux\WooAgentSafety\Approval\ApprovalStore;
-use Specflux\WooAgentSafety\Gate\Decision;
-use Specflux\WooAgentSafety\Gate\Gate;
-use Specflux\WooAgentSafety\Gate\GateContext;
-use Specflux\WooAgentSafety\Gate\Outcome;
-use Specflux\WooAgentSafety\Packs\Pack;
-use Specflux\WooAgentSafety\Plugin\Support\DecisionRecorder;
-use Specflux\WooAgentSafety\Plugin\Support\ExecutionResult;
-use Specflux\WooAgentSafety\Plugin\Support\PackResolver;
-use Specflux\WooAgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Approval\ApprovalBinding;
+use Specflux\AgentSafety\Approval\ApprovalStore;
+use Specflux\AgentSafety\Gate\Decision;
+use Specflux\AgentSafety\Gate\Gate;
+use Specflux\AgentSafety\Gate\GateContext;
+use Specflux\AgentSafety\Gate\Outcome;
+use Specflux\AgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
+use Specflux\AgentSafety\Plugin\Support\ExecutionResult;
+use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\RequestContext;
 use WP_Error;
 
 /**
@@ -139,7 +139,7 @@ final class AbilityPermissionGate
                 Outcome::Allow => true,
                 Outcome::Deny => new WP_Error(
                     'woo_agent_safety_denied',
-                    sprintf('Blocked by Woo Agent Safety (%s): %s', $pack->name, $decision->reason),
+                    sprintf('Blocked by Agent Safety (%s): %s', $pack->name, $decision->reason),
                     ['status' => 403, 'verb' => $name, 'tier' => $decision->tier?->value]
                 ),
                 Outcome::ApprovalRequired => new WP_Error(

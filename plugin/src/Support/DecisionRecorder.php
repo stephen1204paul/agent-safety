@@ -2,22 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Support;
+namespace Specflux\AgentSafety\Plugin\Support;
 
-use Specflux\WooAgentSafety\Approval\ApprovalBinding;
-use Specflux\WooAgentSafety\Approval\ApprovalStore;
-use Specflux\WooAgentSafety\Audit\AuditDecision;
-use Specflux\WooAgentSafety\Audit\AuditRecord;
-use Specflux\WooAgentSafety\Audit\AuditSink;
-use Specflux\WooAgentSafety\Audit\Redactor;
-use Specflux\WooAgentSafety\Gate\Decision;
-use Specflux\WooAgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Approval\ApprovalBinding;
+use Specflux\AgentSafety\Approval\ApprovalStore;
+use Specflux\AgentSafety\Audit\AuditDecision;
+use Specflux\AgentSafety\Audit\AuditRecord;
+use Specflux\AgentSafety\Audit\AuditSink;
+use Specflux\AgentSafety\Audit\Redactor;
+use Specflux\AgentSafety\Gate\Decision;
+use Specflux\AgentSafety\Packs\Pack;
 
 /**
  * Decision-side recording shared by BOTH gate seams — the live Abilities-API
- * permission_callback ({@see \Specflux\WooAgentSafety\Plugin\Hooks\AbilityPermissionGate})
+ * permission_callback ({@see \Specflux\AgentSafety\Plugin\Hooks\AbilityPermissionGate})
  * and the forward-compat mcp_adapter_pre_tool_call seam
- * ({@see \Specflux\WooAgentSafety\Plugin\Hooks\PreToolCallGate}).
+ * ({@see \Specflux\AgentSafety\Plugin\Hooks\PreToolCallGate}).
  *
  * Owning these here is what keeps the seams from DIVERGING: a denial or a pending
  * approval is audited and persisted identically no matter which seam intercepts a
@@ -40,7 +40,7 @@ final class DecisionRecorder
     /**
      * Emit a gate-decision audit record (SPEC §5) for a NON-executing verdict — a
      * denial or a pending approval. Allowed calls are audited at execution time by
-     * {@see \Specflux\WooAgentSafety\Plugin\Hooks\AbilityAuditLog}. No-op without a sink.
+     * {@see \Specflux\AgentSafety\Plugin\Hooks\AbilityAuditLog}. No-op without a sink.
      *
      * @param array<string, mixed> $input
      */

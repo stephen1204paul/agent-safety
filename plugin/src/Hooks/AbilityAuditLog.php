@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Hooks;
+namespace Specflux\AgentSafety\Plugin\Hooks;
 
-use Specflux\WooAgentSafety\Audit\AuditRecord;
-use Specflux\WooAgentSafety\Audit\AuditSink;
-use Specflux\WooAgentSafety\Audit\Redactor;
-use Specflux\WooAgentSafety\Policy\TierClassifier;
-use Specflux\WooAgentSafety\Plugin\Support\ExecutionResult;
-use Specflux\WooAgentSafety\Plugin\Support\PackResolver;
-use Specflux\WooAgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Audit\AuditRecord;
+use Specflux\AgentSafety\Audit\AuditSink;
+use Specflux\AgentSafety\Audit\Redactor;
+use Specflux\AgentSafety\Policy\TierClassifier;
+use Specflux\AgentSafety\Plugin\Support\ExecutionResult;
+use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\RequestContext;
 
 /**
  * Audits every ability that EXECUTES (SPEC §5) — both successes and failures,

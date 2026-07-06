@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Approval;
+namespace Specflux\AgentSafety\Approval;
 
 /**
  * Binds an approval to one exact action (SPEC §4): an approval token minted for

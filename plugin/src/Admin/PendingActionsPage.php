@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Admin;
+namespace Specflux\AgentSafety\Plugin\Admin;
 
-use Specflux\WooAgentSafety\Audit\AuditDecision;
-use Specflux\WooAgentSafety\Audit\AuditRecord;
-use Specflux\WooAgentSafety\Audit\AuditSink;
-use Specflux\WooAgentSafety\Plugin\Audit\WpdbApprovalStore;
-use Specflux\WooAgentSafety\Plugin\Support\PackResolver;
-use Specflux\WooAgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Audit\AuditDecision;
+use Specflux\AgentSafety\Audit\AuditRecord;
+use Specflux\AgentSafety\Audit\AuditSink;
+use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
+use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\RequestContext;
 
 /**
  * Tools → "Pending Agent Actions" (SPEC §4): the human side of the approval flow.
@@ -23,11 +23,11 @@ use Specflux\WooAgentSafety\Plugin\Support\RequestContext;
  */
 final class PendingActionsPage
 {
-    private const SLUG = 'was-pending-actions';
+    private const SLUG = 'agent-safety-pending';
     private const CAP = 'manage_options';
-    private const APPROVE = 'was_approve_action';
-    private const REJECT = 'was_reject_action';
-    private const FLASH = 'was_minted_token_';
+    private const APPROVE = 'agsafe_approve_action';
+    private const REJECT = 'agsafe_reject_action';
+    private const FLASH = 'agsafe_minted_token_';
 
     public function __construct(
         private readonly WpdbApprovalStore $store,
@@ -46,8 +46,8 @@ final class PendingActionsPage
     public function menu(): void
     {
         add_management_page(
-            __('Pending Agent Actions', 'woo-agent-safety'),
-            __('Pending Agent Actions', 'woo-agent-safety'),
+            __('Pending Agent Actions', 'agent-safety'),
+            __('Pending Agent Actions', 'agent-safety'),
             self::CAP,
             self::SLUG,
             [$this, 'render']
@@ -63,8 +63,8 @@ final class PendingActionsPage
         $rows = $this->store->pending();
 
         echo '<div class="wrap">';
-        echo '<h1>' . esc_html__('Pending Agent Actions', 'woo-agent-safety') . '</h1>';
-        echo '<p>' . esc_html__('Irreversible agent actions blocked pending human approval (SPEC §4). Approving mints a single-use token bound to the exact verb + arguments.', 'woo-agent-safety') . '</p>';
+        echo '<h1>' . esc_html__('Pending Agent Actions', 'agent-safety') . '</h1>';
+        echo '<p>' . esc_html__('Irreversible agent actions blocked pending human approval (SPEC §4). Approving mints a single-use token bound to the exact verb + arguments.', 'agent-safety') . '</p>';
 
         $this->maybeShowMintedToken();
 
@@ -75,7 +75,7 @@ final class PendingActionsPage
         echo '</tr></thead><tbody>';
 
         if (!$rows) {
-            echo '<tr><td colspan="7">' . esc_html__('No pending actions. The agent has nothing awaiting review.', 'woo-agent-safety') . '</td></tr>';
+            echo '<tr><td colspan="7">' . esc_html__('No pending actions. The agent has nothing awaiting review.', 'agent-safety') . '</td></tr>';
         }
 
         foreach ($rows as $r) {
@@ -163,10 +163,10 @@ final class PendingActionsPage
 
         printf(
             '<div class="notice notice-success"><p><strong>%s</strong></p><p>%s</p><p><code style="font-size:13px;user-select:all;">%s</code></p><p>%s</p></div>',
-            esc_html__('Approved.', 'woo-agent-safety'),
-            esc_html(sprintf(/* translators: %s approval id */ __('Approval %s is now granted. The same agent (same API key) can simply re-issue the exact same call and it will run — no token needed. To delegate the action to a different actor, hand them the single-use token below as the _approval argument instead.', 'woo-agent-safety'), (string) $flash['approval_id'])),
+            esc_html__('Approved.', 'agent-safety'),
+            esc_html(sprintf(/* translators: %s approval id */ __('Approval %s is now granted. The same agent (same API key) can simply re-issue the exact same call and it will run — no token needed. To delegate the action to a different actor, hand them the single-use token below as the _approval argument instead.', 'agent-safety'), (string) $flash['approval_id'])),
             esc_html((string) $flash['token']),
-            esc_html__('Valid once, for 15 minutes, bound to that exact verb + arguments. Shown only now and never stored in the clear.', 'woo-agent-safety')
+            esc_html__('Valid once, for 15 minutes, bound to that exact verb + arguments. Shown only now and never stored in the clear.', 'agent-safety')
         );
     }
 
@@ -178,7 +178,7 @@ final class PendingActionsPage
             $out .= '<input type="hidden" name="action" value="' . esc_attr($action) . '">';
             $out .= '<input type="hidden" name="approval_id" value="' . esc_attr($approvalId) . '">';
             $out .= wp_nonce_field($action . $approvalId, '_wpnonce', true, false);
-            $out .= '<button type="submit" class="button button-' . esc_attr($style) . '">' . esc_html__($label, 'woo-agent-safety') . '</button>';
+            $out .= '<button type="submit" class="button button-' . esc_attr($style) . '">' . esc_html__($label, 'agent-safety') . '</button>';
             $out .= '</form>';
         }
 
@@ -189,7 +189,7 @@ final class PendingActionsPage
     private function guard(string $action): string
     {
         if (!current_user_can(self::CAP)) {
-            wp_die(esc_html__('Insufficient permissions.', 'woo-agent-safety'));
+            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
         }
         $approvalId = isset($_POST['approval_id']) ? sanitize_text_field(wp_unslash($_POST['approval_id'])) : '';
         check_admin_referer($action . $approvalId);

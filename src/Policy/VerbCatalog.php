@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Policy;
+namespace Specflux\AgentSafety\Policy;
 
 /**
  * OUR tier assignments for Woo verbs (SPEC §2). This is authoritative and

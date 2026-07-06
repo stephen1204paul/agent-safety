@@ -7,7 +7,7 @@
  * Method signature copied VERBATIM from upstream HEAD:
  * includes/Infrastructure/Observability/Contracts/McpObservabilityHandlerInterface.php
  * (namespace `WP\MCP\Infrastructure\Observability\Contracts`), so
- * {@see \Specflux\WooAgentSafety\Plugin\Hooks\McpRequestAuditHandler}, which
+ * {@see \Specflux\AgentSafety\Plugin\Hooks\McpRequestAuditHandler}, which
  * `implements` the REAL interface, exercises the REAL contract shape in tests.
  */
 

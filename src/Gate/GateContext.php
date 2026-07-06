@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Gate;
+namespace Specflux\AgentSafety\Gate;
 
-use Specflux\WooAgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Packs\Pack;
 
 /**
  * Everything the gate needs about one inbound verb call. Built by the host

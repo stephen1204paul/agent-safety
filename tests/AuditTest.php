@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Tests;
+namespace Specflux\AgentSafety\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Specflux\WooAgentSafety\Audit\AuditDecision;
-use Specflux\WooAgentSafety\Audit\AuditRecord;
-use Specflux\WooAgentSafety\Audit\HashChain;
-use Specflux\WooAgentSafety\Audit\Redactor;
-use Specflux\WooAgentSafety\Gate\Outcome;
+use Specflux\AgentSafety\Audit\AuditDecision;
+use Specflux\AgentSafety\Audit\AuditRecord;
+use Specflux\AgentSafety\Audit\HashChain;
+use Specflux\AgentSafety\Audit\Redactor;
+use Specflux\AgentSafety\Gate\Outcome;
 
 final class AuditTest extends TestCase
 {

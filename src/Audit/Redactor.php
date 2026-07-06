@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Audit;
+namespace Specflux\AgentSafety\Audit;
 
 /**
  * Masks known PII fields before they enter the audit trail (SPEC §5: "input: PII

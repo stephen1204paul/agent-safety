@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Support;
+namespace Specflux\AgentSafety\Plugin\Support;
 
 /**
  * The host-derived, non-deterministic bits an audit record needs (SPEC §5):
- * ids, timestamp, client IP, actor. Kept out of the pure core so {@see \Specflux\WooAgentSafety\Audit\AuditRecord}
+ * ids, timestamp, client IP, actor. Kept out of the pure core so {@see \Specflux\AgentSafety\Audit\AuditRecord}
  * stays clock-/RNG-free and unit-testable.
  *
  * `correlation()` is memoized for the lifetime of the PHP request, so every event

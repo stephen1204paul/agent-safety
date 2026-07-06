@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Tests;
+namespace Specflux\AgentSafety\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Specflux\WooAgentSafety\Approval\ApprovalBinding;
+use Specflux\AgentSafety\Approval\ApprovalBinding;
 
 final class ApprovalBindingTest extends TestCase
 {

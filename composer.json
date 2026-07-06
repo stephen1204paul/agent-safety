@@ -1,6 +1,6 @@
 {
-    "name": "specflux/woo-agent-safety-core",
-    "description": "Server-side governance core for AI-agent access to WooCommerce: verb-tier classification, capability packs, gate decisions, and compliance-grade audit. Framework-agnostic; consumed by the woo-agent-safety plugin.",
+    "name": "specflux/agent-safety-core",
+    "description": "Server-side governance core for AI-agent tool calls: verb-tier classification, capability packs, gate decisions, and compliance-grade audit. Framework-agnostic; consumed by the agent-safety plugin. WooCommerce is supported as a capability pack, not a hard dependency.",
     "type": "library",
     "license": "GPL-2.0-or-later",
     "require": {
@@ -11,12 +11,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Specflux\\WooAgentSafety\\": "src/"
+            "Specflux\\AgentSafety\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Specflux\\WooAgentSafety\\Tests\\": "tests/"
+            "Specflux\\AgentSafety\\Tests\\": "tests/"
         }
     },
     "config": {

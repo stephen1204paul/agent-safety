@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Audit;
+namespace Specflux\AgentSafety\Plugin\Audit;
 
-use Specflux\WooAgentSafety\Audit\AuditRecord;
-use Specflux\WooAgentSafety\Audit\AuditSink;
-use Specflux\WooAgentSafety\Audit\HashChain;
+use Specflux\AgentSafety\Audit\AuditRecord;
+use Specflux\AgentSafety\Audit\AuditSink;
+use Specflux\AgentSafety\Audit\HashChain;
 use wpdb;
 
 /**
@@ -27,7 +27,7 @@ use wpdb;
 final class WpdbAuditSink implements AuditSink
 {
     /** Advisory-lock name serializing all appends to this log. */
-    private const LOCK = 'was_audit_append';
+    private const LOCK = 'agsafe_audit_append';
 
     private bool $ensured = false;
 
@@ -37,7 +37,7 @@ final class WpdbAuditSink implements AuditSink
 
     public function table(): string
     {
-        return $this->db->prefix . 'was_audit_log';
+        return $this->db->prefix . 'agsafe_audit_log';
     }
 
     public function append(AuditRecord $record): void

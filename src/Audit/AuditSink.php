@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Audit;
+namespace Specflux\AgentSafety\Audit;
 
 /**
  * Append-only destination for audit records (SPEC §5). The core defines the

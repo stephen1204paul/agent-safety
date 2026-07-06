@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Audit;
+namespace Specflux\AgentSafety\Audit;
 
-use Specflux\WooAgentSafety\Gate\Outcome;
+use Specflux\AgentSafety\Gate\Outcome;
 
 /**
  * The audit-log `decision` field (SPEC §5). Distinct from {@see Outcome}: the gate

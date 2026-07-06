@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Audit;
+namespace Specflux\AgentSafety\Plugin\Audit;
 
-use Specflux\WooAgentSafety\Audit\HashChain;
+use Specflux\AgentSafety\Audit\HashChain;
 use wpdb;
 
 /**
@@ -20,7 +20,7 @@ final class AuditReader
 
     public function table(): string
     {
-        return $this->db->prefix . 'was_audit_log';
+        return $this->db->prefix . 'agsafe_audit_log';
     }
 
     public function total(): int

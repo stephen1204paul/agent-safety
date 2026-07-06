@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Tests;
+namespace Specflux\AgentSafety\Plugin\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Specflux\WooAgentSafety\Audit\AuditDecision;
-use Specflux\WooAgentSafety\Plugin\Hooks\McpRequestAuditHandler;
-use Specflux\WooAgentSafety\Plugin\Support\PackResolver;
-use Specflux\WooAgentSafety\Plugin\Tests\Fakes\InMemoryAuditSink;
+use Specflux\AgentSafety\Audit\AuditDecision;
+use Specflux\AgentSafety\Plugin\Hooks\McpRequestAuditHandler;
+use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Tests\Fakes\InMemoryAuditSink;
 
 /**
  * Exercises {@see McpRequestAuditHandler} against the six `mcp.request` tag

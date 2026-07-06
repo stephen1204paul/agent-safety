@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Policy;
+namespace Specflux\AgentSafety\Policy;
 
 /**
  * Blast-radius classification for an agent verb (D5).

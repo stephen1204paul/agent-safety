@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Approval;
+namespace Specflux\AgentSafety\Approval;
 
 /**
  * Persistence contract for the async approval flow (SPEC §4). The core defines the

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Admin;
+namespace Specflux\AgentSafety\Plugin\Admin;
 
-use Specflux\WooAgentSafety\Plugin\Audit\AuditReader;
+use Specflux\AgentSafety\Plugin\Audit\AuditReader;
 
 /**
  * Tools → "Agent Audit Log": a read-only wp-admin viewer for the append-only audit
@@ -13,10 +13,10 @@ use Specflux\WooAgentSafety\Plugin\Audit\AuditReader;
  */
 final class AuditLogPage
 {
-    private const SLUG = 'was-audit-log';
+    private const SLUG = 'agent-safety-audit';
     private const PER_PAGE = 100;
     private const CAP = 'manage_options';
-    private const EXPORT_ACTION = 'was_export_audit';
+    private const EXPORT_ACTION = 'agsafe_export_audit';
 
     public function __construct(private readonly AuditReader $reader)
     {
@@ -31,8 +31,8 @@ final class AuditLogPage
     public function menu(): void
     {
         add_management_page(
-            __('Agent Audit Log', 'woo-agent-safety'),
-            __('Agent Audit Log', 'woo-agent-safety'),
+            __('Agent Audit Log', 'agent-safety'),
+            __('Agent Audit Log', 'agent-safety'),
             self::CAP,
             self::SLUG,
             [$this, 'render']
@@ -52,20 +52,20 @@ final class AuditLogPage
         $pages = (int) ceil($total / self::PER_PAGE);
 
         echo '<div class="wrap">';
-        echo '<h1>' . esc_html__('Agent Audit Log', 'woo-agent-safety') . '</h1>';
+        echo '<h1>' . esc_html__('Agent Audit Log', 'agent-safety') . '</h1>';
 
         // Tamper-evidence banner.
         if ($intact) {
             printf(
                 '<div class="notice notice-success inline"><p><strong>%s</strong> %s</p></div>',
-                esc_html__('Chain intact.', 'woo-agent-safety'),
-                esc_html(sprintf(/* translators: %d event count */ __('%d hash-chained events; no tampering detected.', 'woo-agent-safety'), $total))
+                esc_html__('Chain intact.', 'agent-safety'),
+                esc_html(sprintf(/* translators: %d event count */ __('%d hash-chained events; no tampering detected.', 'agent-safety'), $total))
             );
         } else {
             printf(
                 '<div class="notice notice-error inline"><p><strong>%s</strong> %s</p></div>',
-                esc_html__('TAMPER DETECTED.', 'woo-agent-safety'),
-                esc_html__('The audit chain failed verification — a record was altered or deleted.', 'woo-agent-safety')
+                esc_html__('TAMPER DETECTED.', 'agent-safety'),
+                esc_html__('The audit chain failed verification — a record was altered or deleted.', 'agent-safety')
             );
         }
 
@@ -73,7 +73,7 @@ final class AuditLogPage
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="margin:12px 0;">';
         echo '<input type="hidden" name="action" value="' . esc_attr(self::EXPORT_ACTION) . '">';
         wp_nonce_field(self::EXPORT_ACTION);
-        submit_button(__('Export CSV', 'woo-agent-safety'), 'secondary', 'submit', false);
+        submit_button(__('Export CSV', 'agent-safety'), 'secondary', 'submit', false);
         echo '</form>';
 
         // Table.
@@ -84,7 +84,7 @@ final class AuditLogPage
         echo '</tr></thead><tbody>';
 
         if (!$rows) {
-            echo '<tr><td colspan="10">' . esc_html__('No events yet.', 'woo-agent-safety') . '</td></tr>';
+            echo '<tr><td colspan="10">' . esc_html__('No events yet.', 'agent-safety') . '</td></tr>';
         }
 
         foreach ($rows as $r) {
@@ -125,7 +125,7 @@ final class AuditLogPage
     public function export(): void
     {
         if (!current_user_can(self::CAP)) {
-            wp_die(esc_html__('Insufficient permissions.', 'woo-agent-safety'));
+            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
         }
         check_admin_referer(self::EXPORT_ACTION);
 

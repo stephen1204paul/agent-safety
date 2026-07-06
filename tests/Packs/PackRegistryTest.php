@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Tests\Packs;
+namespace Specflux\AgentSafety\Tests\Packs;
 
 use PHPUnit\Framework\TestCase;
-use Specflux\WooAgentSafety\Packs\PackRegistry;
-use Specflux\WooAgentSafety\Policy\Tier;
+use Specflux\AgentSafety\Packs\PackRegistry;
+use Specflux\AgentSafety\Policy\Tier;
 
 final class PackRegistryTest extends TestCase
 {

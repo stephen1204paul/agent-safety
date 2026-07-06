@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Support;
+namespace Specflux\AgentSafety\Plugin\Support;
 
-use Specflux\WooAgentSafety\Packs\Pack;
-use Specflux\WooAgentSafety\Packs\PackRegistry;
+use Specflux\AgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Packs\PackRegistry;
 
 /**
  * Resolves the calling credential to a Capability Pack (SPEC §3 / D20).
  *
  * The principal is the authenticated WooCommerce API key behind the MCP request
  * ({@see RequestContext::tokenId()}, e.g. "key_7"). Admin-configured bindings
- * (the `was_pack_bindings` option, key id => pack name) map each credential to a
+ * (the `agsafe_pack_bindings` option, key id => pack name) map each credential to a
  * pack from the built-in catalog; an unbound key gets the safe default
  * ({@see PackRegistry::DEFAULT_PACK}). The same resolved pack is shared by the
  * gate and the audit hook within a request, so both see one consistent scope.
@@ -22,7 +22,7 @@ use Specflux\WooAgentSafety\Packs\PackRegistry;
  */
 final class PackResolver
 {
-    public const BINDINGS_OPTION = 'was_pack_bindings';
+    public const BINDINGS_OPTION = 'agsafe_pack_bindings';
 
     private ?PackRegistry $registry = null;
 

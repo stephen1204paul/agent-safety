@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Support;
+namespace Specflux\AgentSafety\Plugin\Support;
 
 /**
  * Maps an MCP tool name to our canonical verb id (= the WP Ability id).

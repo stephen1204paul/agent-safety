@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Audit;
+namespace Specflux\AgentSafety\Plugin\Audit;
 
-use Specflux\WooAgentSafety\Approval\ApprovalStore;
+use Specflux\AgentSafety\Approval\ApprovalStore;
 use wpdb;
 
 /**
@@ -43,7 +43,7 @@ final class WpdbApprovalStore implements ApprovalStore
 
     public function table(): string
     {
-        return $this->db->prefix . 'was_approvals';
+        return $this->db->prefix . 'agsafe_approvals';
     }
 
     public function request(

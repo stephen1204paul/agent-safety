@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Tests\Fakes;
+namespace Specflux\AgentSafety\Plugin\Tests\Fakes;
 
-use Specflux\WooAgentSafety\Audit\AuditRecord;
-use Specflux\WooAgentSafety\Audit\AuditSink;
+use Specflux\AgentSafety\Audit\AuditRecord;
+use Specflux\AgentSafety\Audit\AuditSink;
 
 /**
  * Hand-rolled fake sink (house style: no mocking framework, see

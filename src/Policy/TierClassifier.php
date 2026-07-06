@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Policy;
+namespace Specflux\AgentSafety\Policy;
 
 /**
  * Resolves a verb (plus its call args) to a Tier, applying arg-aware

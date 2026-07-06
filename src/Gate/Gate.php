@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Gate;
+namespace Specflux\AgentSafety\Gate;
 
-use Specflux\WooAgentSafety\Policy\TierClassifier;
+use Specflux\AgentSafety\Policy\TierClassifier;
 
 /**
  * The decision core (SPEC §1 gate). Pure function of (verb, args, pack):

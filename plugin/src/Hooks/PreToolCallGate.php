@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Hooks;
+namespace Specflux\AgentSafety\Plugin\Hooks;
 
-use Specflux\WooAgentSafety\Gate\Decision;
-use Specflux\WooAgentSafety\Gate\Gate;
-use Specflux\WooAgentSafety\Gate\GateContext;
-use Specflux\WooAgentSafety\Gate\Outcome;
-use Specflux\WooAgentSafety\Packs\Pack;
-use Specflux\WooAgentSafety\Plugin\Support\DecisionRecorder;
-use Specflux\WooAgentSafety\Plugin\Support\PackResolver;
-use Specflux\WooAgentSafety\Plugin\Support\RequestContext;
-use Specflux\WooAgentSafety\Plugin\Support\VerbMapper;
+use Specflux\AgentSafety\Gate\Decision;
+use Specflux\AgentSafety\Gate\Gate;
+use Specflux\AgentSafety\Gate\GateContext;
+use Specflux\AgentSafety\Gate\Outcome;
+use Specflux\AgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
+use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Plugin\Support\VerbMapper;
 use WP_Error;
 
 /**
@@ -86,7 +86,7 @@ final class PreToolCallGate
         return Outcome::Deny === $decision->outcome
             ? new WP_Error(
                 'woo_agent_safety_denied',
-                sprintf('Blocked by Woo Agent Safety (%s): %s', $pack->name, $decision->reason),
+                sprintf('Blocked by Agent Safety (%s): %s', $pack->name, $decision->reason),
                 ['status' => 403, 'verb' => $verb, 'tier' => $decision->tier?->value]
             )
             : $this->approvalError($verb, $decision, $approvalId);

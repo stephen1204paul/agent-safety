@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Packs;
+namespace Specflux\AgentSafety\Packs;
 
 /**
  * The catalog of Capability Packs plus the credential→pack bindings (SPEC §3 / D20).
  *
  * Pure core: holds named {@see Pack} definitions and a map of subject (the
  * WooCommerce API key id, e.g. "key_7") → pack name, and resolves a request's
- * subject to exactly one pack. The host {@see \Specflux\WooAgentSafety\Plugin\Support\PackResolver}
+ * subject to exactly one pack. The host {@see \Specflux\AgentSafety\Plugin\Support\PackResolver}
  * builds one of these from persisted bindings; this class stays WP-free so the
  * resolution rule is unit-testable.
  *

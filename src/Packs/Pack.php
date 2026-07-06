@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Packs;
+namespace Specflux\AgentSafety\Packs;
 
-use Specflux\WooAgentSafety\Policy\Tier;
+use Specflux\AgentSafety\Policy\Tier;
 
 /**
  * A Capability Pack: a credentialed, purpose-scoped view of the verb catalog

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Gate;
+namespace Specflux\AgentSafety\Gate;
 
-use Specflux\WooAgentSafety\Policy\Tier;
+use Specflux\AgentSafety\Policy\Tier;
 
 /**
  * The gate's verdict for one verb call. Immutable; carries a machine-readable

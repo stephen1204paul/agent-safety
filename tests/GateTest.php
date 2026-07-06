@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Tests;
+namespace Specflux\AgentSafety\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Specflux\WooAgentSafety\Gate\Gate;
-use Specflux\WooAgentSafety\Gate\GateContext;
-use Specflux\WooAgentSafety\Gate\Outcome;
-use Specflux\WooAgentSafety\Packs\Pack;
-use Specflux\WooAgentSafety\Policy\Tier;
+use Specflux\AgentSafety\Gate\Gate;
+use Specflux\AgentSafety\Gate\GateContext;
+use Specflux\AgentSafety\Gate\Outcome;
+use Specflux\AgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Policy\Tier;
 
 final class GateTest extends TestCase
 {

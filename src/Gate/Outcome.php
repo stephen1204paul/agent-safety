@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Gate;
+namespace Specflux\AgentSafety\Gate;
 
 enum Outcome: string
 {

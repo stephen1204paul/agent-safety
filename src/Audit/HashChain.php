@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Audit;
+namespace Specflux\AgentSafety\Audit;
 
 /**
  * Tamper-evident hash chain for the audit log (SPEC §5: "append-only;

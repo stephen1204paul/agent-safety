@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Audit;
+namespace Specflux\AgentSafety\Audit;
 
 /**
  * One immutable audit event in the PCI-Req-10 shape (SPEC §5).

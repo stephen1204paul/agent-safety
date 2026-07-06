@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Specflux\WooAgentSafety\Plugin\Admin;
+namespace Specflux\AgentSafety\Plugin\Admin;
 
-use Specflux\WooAgentSafety\Packs\Pack;
-use Specflux\WooAgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use wpdb;
 
 /**
  * Tools → "Agent Capability Packs" (SPEC §3): the human side of credential scoping.
  *
  * Shows the built-in pack catalog (read-only) and lets an admin bind each
- * WooCommerce API key to a pack. Bindings persist in the `was_pack_bindings`
+ * WooCommerce API key to a pack. Bindings persist in the `agsafe_pack_bindings`
  * option (key id => pack name) that {@see PackResolver} reads per request; an
  * unbound key falls back to the safe default pack.
  *
@@ -22,9 +22,9 @@ use wpdb;
  */
 final class CapabilityPacksPage
 {
-    private const SLUG = 'was-capability-packs';
+    private const SLUG = 'agent-safety-packs';
     private const CAP = 'manage_options';
-    private const SAVE = 'was_save_pack_bindings';
+    private const SAVE = 'agsafe_save_pack_bindings';
 
     public function __construct(
         private readonly PackResolver $packs,
@@ -41,8 +41,8 @@ final class CapabilityPacksPage
     public function menu(): void
     {
         add_management_page(
-            __('Agent Capability Packs', 'woo-agent-safety'),
-            __('Agent Capability Packs', 'woo-agent-safety'),
+            __('Agent Capability Packs', 'agent-safety'),
+            __('Agent Capability Packs', 'agent-safety'),
             self::CAP,
             self::SLUG,
             [$this, 'render']
@@ -58,11 +58,11 @@ final class CapabilityPacksPage
         $registry = $this->packs->registry();
 
         echo '<div class="wrap">';
-        echo '<h1>' . esc_html__('Agent Capability Packs', 'woo-agent-safety') . '</h1>';
-        echo '<p>' . esc_html__('A pack is a credentialed, purpose-scoped view of the verb catalog (SPEC §3). Enforced in the gate, not via WP roles. A pack that denies a tier class is injection-proof against that class by construction.', 'woo-agent-safety') . '</p>';
+        echo '<h1>' . esc_html__('Agent Capability Packs', 'agent-safety') . '</h1>';
+        echo '<p>' . esc_html__('A pack is a credentialed, purpose-scoped view of the verb catalog (SPEC §3). Enforced in the gate, not via WP roles. A pack that denies a tier class is injection-proof against that class by construction.', 'agent-safety') . '</p>';
 
-        if (isset($_GET['was_saved'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only flash.
-            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Capability pack bindings saved.', 'woo-agent-safety') . '</p></div>';
+        if (isset($_GET['agsafe_saved'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only flash.
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Capability pack bindings saved.', 'agent-safety') . '</p></div>';
         }
 
         $this->renderCatalog($registry->names());
@@ -76,7 +76,7 @@ final class CapabilityPacksPage
     {
         $registry = $this->packs->registry();
 
-        echo '<h2>' . esc_html__('Pack catalog', 'woo-agent-safety') . '</h2>';
+        echo '<h2>' . esc_html__('Pack catalog', 'agent-safety') . '</h2>';
         echo '<table class="widefat striped"><thead><tr>';
         foreach (['Pack', 'Allows', 'Hard-denied (deny_class)', 'Approval-gated', 'PII'] as $col) {
             echo '<th>' . esc_html($col) . '</th>';
@@ -108,8 +108,8 @@ final class CapabilityPacksPage
     {
         $keys = $this->apiKeys();
 
-        echo '<h2 style="margin-top:2em;">' . esc_html__('Credential bindings', 'woo-agent-safety') . '</h2>';
-        echo '<p>' . esc_html__('Map each WooCommerce REST API key to a pack. Unbound keys use the default pack.', 'woo-agent-safety') . '</p>';
+        echo '<h2 style="margin-top:2em;">' . esc_html__('Credential bindings', 'agent-safety') . '</h2>';
+        echo '<p>' . esc_html__('Map each WooCommerce REST API key to a pack. Unbound keys use the default pack.', 'agent-safety') . '</p>';
 
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         echo '<input type="hidden" name="action" value="' . esc_attr(self::SAVE) . '">';
@@ -122,7 +122,7 @@ final class CapabilityPacksPage
         echo '</tr></thead><tbody>';
 
         if ($keys === []) {
-            echo '<tr><td colspan="4">' . esc_html__('No WooCommerce REST API keys found. Create one under WooCommerce → Settings → Advanced → REST API.', 'woo-agent-safety') . '</td></tr>';
+            echo '<tr><td colspan="4">' . esc_html__('No WooCommerce REST API keys found. Create one under WooCommerce → Settings → Advanced → REST API.', 'agent-safety') . '</td></tr>';
         }
 
         foreach ($keys as $key) {
@@ -137,7 +137,7 @@ final class CapabilityPacksPage
         }
 
         echo '</tbody></table>';
-        echo '<p><button type="submit" class="button button-primary">' . esc_html__('Save bindings', 'woo-agent-safety') . '</button></p>';
+        echo '<p><button type="submit" class="button button-primary">' . esc_html__('Save bindings', 'agent-safety') . '</button></p>';
         echo '</form>';
     }
 
@@ -147,7 +147,7 @@ final class CapabilityPacksPage
     private function packSelect(string $subject, array $names, string $default, string $current): string
     {
         $out = '<select name="bindings[' . esc_attr($subject) . ']">';
-        $out .= '<option value="">' . esc_html(sprintf(/* translators: %s default pack name */ __('(default — %s)', 'woo-agent-safety'), $default)) . '</option>';
+        $out .= '<option value="">' . esc_html(sprintf(/* translators: %s default pack name */ __('(default — %s)', 'agent-safety'), $default)) . '</option>';
         foreach ($names as $name) {
             $out .= '<option value="' . esc_attr($name) . '"' . selected($current, $name, false) . '>' . esc_html($name) . '</option>';
         }
@@ -159,7 +159,7 @@ final class CapabilityPacksPage
     public function save(): void
     {
         if (!current_user_can(self::CAP)) {
-            wp_die(esc_html__('Insufficient permissions.', 'woo-agent-safety'));
+            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
         }
         check_admin_referer(self::SAVE);
 
@@ -180,7 +180,7 @@ final class CapabilityPacksPage
         $this->packs->flush();
 
         wp_safe_redirect(add_query_arg(
-            ['page' => self::SLUG, 'was_saved' => '1'],
+            ['page' => self::SLUG, 'agsafe_saved' => '1'],
             admin_url('tools.php')
         ));
         exit;
