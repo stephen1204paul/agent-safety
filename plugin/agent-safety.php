@@ -20,6 +20,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin;
 
 use Specflux\AgentSafety\Gate\Gate;
+use Specflux\AgentSafety\Policy\Tier;
 use Specflux\AgentSafety\Policy\TierClassifier;
 use Specflux\AgentSafety\Policy\VerbCatalog;
 use Specflux\AgentSafety\Plugin\Admin\AuditLogPage;
@@ -136,6 +137,30 @@ if (class_exists(Gate::class)) {
     $agsafe_governed_namespaces = function_exists('apply_filters')
         ? apply_filters('agent_safety_governed_namespaces', $agsafe_governed_namespaces)
         : $agsafe_governed_namespaces;
+
+    // Companion seam to the namespace filter: governing a namespace without
+    // mapping its verbs would deny every call in it as unknown_verb (the Gate
+    // fails closed on unclassified verbs by design). Anyone widening
+    // agent_safety_governed_namespaces MUST also map those verbs to tiers here.
+    // Values may be Tier instances or their backing ints (0 = Reversible,
+    // 1 = SideEffecting, 2 = Irreversible); anything else is dropped, keeping
+    // the fail-closed default for that verb. Example:
+    //   ['my-plugin/thing-list' => 0, 'my-plugin/thing-delete' => 2]
+    // Found by live smoke test 2026-07-07: without this seam the namespace
+    // filter's advertised extensibility was unreachable outside WooIntegration.
+    if (function_exists('apply_filters')) {
+        $agsafe_extra_verbs = [];
+        foreach ((array) apply_filters('agent_safety_verb_map', []) as $agsafe_verb => $agsafe_tier) {
+            if ($agsafe_tier instanceof Tier) {
+                $agsafe_extra_verbs[$agsafe_verb] = $agsafe_tier;
+            } elseif (is_int($agsafe_tier) && Tier::tryFrom($agsafe_tier) !== null) {
+                $agsafe_extra_verbs[$agsafe_verb] = Tier::from($agsafe_tier);
+            }
+        }
+        if ($agsafe_extra_verbs !== []) {
+            $agsafe_catalog->register($agsafe_extra_verbs);
+        }
+    }
 
     RequestContext::configure($agsafe_identity);
 

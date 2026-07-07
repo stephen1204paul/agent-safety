@@ -97,10 +97,10 @@ final class AbilityPermissionGate
 
         $original = $args['permission_callback'] ?? null;
         $gate = $this->gate;
-        $pack = $this->packs->resolve();
+        $packs = $this->packs;
         $self = $this;
 
-        $args['permission_callback'] = static function ($input = null) use ($original, $name, $gate, $pack, $self) {
+        $args['permission_callback'] = static function ($input = null) use ($original, $name, $gate, $packs, $self) {
             // Preserve the ability's own capability check first (least privilege).
             if (is_callable($original)) {
                 $orig = $original($input);
@@ -108,6 +108,15 @@ final class AbilityPermissionGate
                     return $orig; // original denial / WP_Error wins
                 }
             }
+
+            // Resolve the pack AT CALL TIME, never at registration time: wrap()
+            // runs on `init` (mcp-adapter registers abilities at init/20), but
+            // application-password identity only exists once the REST server's
+            // authentication phase has run — strictly after init. A pack captured
+            // at registration time would therefore ALWAYS be the default pack for
+            // app-password-authenticated agents, silently ignoring every binding
+            // an administrator configured (found by live smoke test, 2026-07-07).
+            $pack = $packs->resolve();
 
             $callArgs = is_array($input) ? $input : [];
 

@@ -164,4 +164,40 @@ final class AbilityPermissionGateTest extends TestCase
 
         $this->assertSame($original, $wrapped['permission_callback']);
     }
+
+    /**
+     * REGRESSION (live smoke test, 2026-07-07): wrap() runs at ability-registration
+     * time (`init`), but application-password identity only exists after the REST
+     * server's authentication phase — strictly later. The pack must therefore be
+     * resolved INSIDE the permission callback at call time. This test wraps first
+     * (no identity, no binding yet — registration-time reality), establishes the
+     * identity and binding afterwards, and asserts the bound pack — not the
+     * fail-closed default — is what the closure enforces.
+     */
+    public function testPackIsResolvedAtCallTimeNotRegistrationTime(): void
+    {
+        $catalog = new VerbCatalog();
+        $catalog->register(['woocommerce/orders-list' => Tier::Reversible]);
+        $boundPack = new Pack(name: 'late-bound', allow: ['woocommerce/*']);
+        $gate = new AbilityPermissionGate(
+            new Gate(new TierClassifier($catalog)),
+            new PackResolver([$boundPack]),
+            new DecisionRecorder(),
+            null,
+            ['woocommerce/'],
+        );
+
+        // Registration time: no identity resolved yet, no binding stored.
+        $wrapped = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list');
+
+        // Authentication happens AFTER registration (as in a real REST request).
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: ['app:late-uuid']),
+        ]));
+        $GLOBALS['wpas_test_options'][PackResolver::BINDINGS_OPTION] = ['app:late-uuid' => 'late-bound'];
+
+        // Under the bound pack this verb is allowed; under the stale default
+        // pack (allow: []) it would come back as a WP_Error denial.
+        $this->assertTrue(($wrapped['permission_callback'])([]));
+    }
 }
