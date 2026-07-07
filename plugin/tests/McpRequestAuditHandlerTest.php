@@ -34,6 +34,7 @@ final class McpRequestAuditHandlerTest extends TestCase
     protected function tearDown(): void
     {
         McpRequestAuditHandler::reset();
+        unset($GLOBALS['wpas_test_translations']);
     }
 
     /** @return array<string, mixed> */
@@ -106,6 +107,28 @@ final class McpRequestAuditHandlerTest extends TestCase
         $this->assertTrue($record['input']['args']['_raw_args_unavailable']);
         $this->assertSame(2, $record['input']['args']['arguments_count']);
         $this->assertSame(['[REDACTED]', 'note'], $record['input']['args']['arguments_keys']);
+    }
+
+    /**
+     * On a non-English site with a loaded mcp-adapter textdomain, upstream's
+     * ToolsHandler emits the TRANSLATED 'Permission denied' string as
+     * failure_reason. The handler's classifier mirrors the same
+     * __( 'Permission denied', 'mcp-adapter' ) call at comparison time, so
+     * both sides resolve to the same translation and the denial is still
+     * classified correctly. (This is why the fragility argued upstream is
+     * "keyed to display copy" — rewording, or the WP_Error case below — not
+     * "breaks on any non-English site".)
+     */
+    public function testPermissionDeniedClassificationSurvivesLoadedTranslation(): void
+    {
+        $GLOBALS['wpas_test_translations']['mcp-adapter']['Permission denied'] = 'Zugriff verweigert';
+
+        // Upstream emits the translated default message on such a site.
+        $tags = self::commonTags('test-verify-denied-de', 'test/verify-denied-de', 106, 'error', 'Zugriff verweigert');
+        $this->handler->record_event('mcp.request', $tags, 3.0);
+
+        $this->assertCount(1, $this->sink->records);
+        $this->assertSame('denied', $this->sink->records[0]->toArray()['decision']);
     }
 
     /**

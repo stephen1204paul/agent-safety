@@ -44,9 +44,15 @@ if (!function_exists('get_current_user_id')) {
 }
 
 if (!function_exists('__')) {
+    /**
+     * Honors $GLOBALS['wpas_test_translations'][$domain][$text] so tests can
+     * simulate a loaded textdomain (a non-English site) — both the emitting
+     * code and any consumer mirroring the same __() call must then agree on
+     * the SAME translated string, which is exactly the property under test.
+     */
     function __(string $text, string $domain = 'default'): string
     {
-        return $text;
+        return $GLOBALS['wpas_test_translations'][$domain][$text] ?? $text;
     }
 }
 
