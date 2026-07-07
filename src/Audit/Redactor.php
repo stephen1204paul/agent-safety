@@ -6,9 +6,9 @@ namespace Specflux\AgentSafety\Audit;
 
 /**
  * Masks known PII fields before they enter the audit trail (SPEC §5: "input: PII
- * redacted per pack policy"). Coarse by design — a denylist of WooCommerce PII
- * keys, applied recursively. Tokens, not PANs (D14): we never want a card number,
- * email, or address sitting in the log.
+ * redacted per pack policy"). Coarse by design — a denylist of common
+ * customer/PII key fragments, applied recursively. Tokens, not PANs (D14): we
+ * never want a card number, email, or address sitting in the log.
  *
  * This governs what we WRITE TO THE AUDIT LOG. Redacting the payload RETURNED TO
  * THE AGENT on reads is separate, still-pending work.

@@ -28,6 +28,7 @@ if (!interface_exists(\WP\MCP\Infrastructure\Observability\Contracts\McpObservab
 
 // Hand-rolled fakes used across the suite.
 require_once __DIR__ . '/Fakes/InMemoryAuditSink.php';
+require_once __DIR__ . '/Fakes/FakeIdentityProvider.php';
 
 // --- Minimal WP function shims -------------------------------------------
 // Only defined when absent, so a real WP load order (wp-env) always wins.
@@ -66,5 +67,38 @@ if (!function_exists('apply_filters')) {
     function apply_filters(string $tag, $value, ...$args)
     {
         return $value;
+    }
+}
+
+if (!function_exists('add_action')) {
+    /** @param mixed ...$args */
+    function add_action(...$args): bool
+    {
+        return true;
+    }
+}
+
+if (!function_exists('get_option')) {
+    $GLOBALS['wpas_test_options'] = [];
+
+    /**
+     * Test control knob: set $GLOBALS['wpas_test_options'][$name] per-test.
+     *
+     * @param mixed $default
+     * @return mixed
+     */
+    function get_option(string $name, $default = false)
+    {
+        return $GLOBALS['wpas_test_options'][$name] ?? $default;
+    }
+}
+
+if (!function_exists('is_wp_error')) {
+    /** @param mixed $thing */
+    function is_wp_error($thing): bool
+    {
+        // Safe even though WP_Error may not be defined here: instanceof against
+        // an unknown class name simply evaluates to false, no autoload/fatal.
+        return $thing instanceof \WP_Error;
     }
 }

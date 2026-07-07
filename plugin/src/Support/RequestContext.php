@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Specflux\AgentSafety\Plugin\Support;
 
+use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
+
 /**
  * The host-derived, non-deterministic bits an audit record needs (SPEC §5):
  * ids, timestamp, client IP, actor. Kept out of the pure core so {@see \Specflux\AgentSafety\Audit\AuditRecord}
@@ -12,12 +14,34 @@ namespace Specflux\AgentSafety\Plugin\Support;
  * `correlation()` is memoized for the lifetime of the PHP request, so every event
  * emitted while handling one agent `tools/call` shares a correlation id — that is
  * what ties a multi-step agent chain together in the log.
+ *
+ * Identity resolution is delegated to an {@see IdentityChain} configured once
+ * from the plugin bootstrap ({@see configure()}) — this class holds no opinion
+ * about WHICH identity providers exist (application passwords, users/roles, a
+ * WooCommerce API key, ...), only that SOMETHING configured the chain.
  */
 final class RequestContext
 {
     private static ?string $correlation = null;
-    private static bool $tokenResolved = false;
-    private static ?string $tokenId = null;
+    private static ?IdentityChain $identity = null;
+
+    /** @var list<string>|null */
+    private static ?array $tokens = null;
+
+    /** Wire the identity chain the plugin bootstrap assembled (SPEC seam 4). */
+    public static function configure(IdentityChain $identity): void
+    {
+        self::$identity = $identity;
+        self::$tokens = null;
+    }
+
+    /** Forget all memoized state (tests only). */
+    public static function reset(): void
+    {
+        self::$correlation = null;
+        self::$identity = null;
+        self::$tokens = null;
+    }
 
     public static function correlation(): string
     {
@@ -54,38 +78,31 @@ final class RequestContext
     }
 
     /**
-     * The WooCommerce REST API key id behind this MCP request (per D20: auth =
-     * `X-MCP-API-Key: ck:cs`). We record the key's row id ("key_7"), NOT the secret
-     * — tokens, not PANs (D14). Memoized; null when not an API-key request.
+     * Every current candidate token id for this request, in provider order
+     * (most-specific first) — e.g. ["app:{uuid}"] or ["user:5", "role:editor"]
+     * or ["wc:key_7"]. Empty when no configured provider applies. Memoized for
+     * the request.
+     *
+     * @return list<string>
+     */
+    public static function currentTokens(): array
+    {
+        if (self::$tokens === null) {
+            self::$tokens = self::$identity?->currentTokens() ?? [];
+        }
+
+        return self::$tokens;
+    }
+
+    /**
+     * Back-compat single token for the audit actor `token_id` field: the FIRST
+     * current candidate, or null when none applies (SPEC seam 4).
      */
     public static function tokenId(): ?string
     {
-        if (self::$tokenResolved) {
-            return self::$tokenId;
-        }
-        self::$tokenResolved = true;
+        $tokens = self::currentTokens();
 
-        $header = $_SERVER['HTTP_X_MCP_API_KEY'] ?? '';
-        if (!is_string($header) || !str_contains($header, ':') || !function_exists('wc_api_hash')) {
-            return self::$tokenId = null;
-        }
-
-        [$consumerKey] = explode(':', $header, 2);
-        $hashed = wc_api_hash($consumerKey);
-
-        global $wpdb;
-        if (!isset($wpdb)) {
-            return self::$tokenId = null;
-        }
-
-        $keyId = $wpdb->get_var(
-            $wpdb->prepare(
-                "SELECT key_id FROM {$wpdb->prefix}woocommerce_api_keys WHERE consumer_key = %s",
-                $hashed
-            )
-        );
-
-        return self::$tokenId = $keyId ? 'key_' . $keyId : null;
+        return $tokens[0] ?? null;
     }
 
     private static function uuid(): string

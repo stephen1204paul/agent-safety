@@ -44,8 +44,9 @@ interface ApprovalStore
      * requests.
      *
      * @param ?string $subject The authenticated principal that requested the action
-     *                         (host: the WooCommerce API key id). Bound to the record
-     *                         so a by-reference reserve can match the same principal.
+     *                         (host: a namespaced identity-provider token id, e.g.
+     *                         "app:{uuid}" or "wc:key_7"). Bound to the record so a
+     *                         by-reference reserve can match the same principal.
      * @return string The approval id (e.g. "apr_…").
      */
     public function request(

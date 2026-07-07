@@ -49,11 +49,19 @@ final class AbilityPermissionGate
     /** @var array<string, list<string>> verb => stack of reserved approval ids awaiting finalize. */
     private array $reserved = [];
 
+    /**
+     * @param list<string> $governedNamespaces Ability-id prefixes this gate governs
+     *                                          (contributed by integrations + the
+     *                                          `agent_safety_governed_namespaces`
+     *                                          filter). Empty => inert no-op, same as
+     *                                          today on a site with no integration active.
+     */
     public function __construct(
         private readonly Gate $gate,
         private readonly PackResolver $packs,
         private readonly DecisionRecorder $recorder,
         private readonly ?ApprovalStore $approvals = null,
+        private readonly array $governedNamespaces = [],
     ) {
     }
 
@@ -78,9 +86,10 @@ final class AbilityPermissionGate
      */
     public function wrap(array $args, string $name): array
     {
-        // Only govern the WooCommerce verb namespace. Pass everything else
-        // (core/*, other plugins) through untouched so we never break them.
-        if (!str_starts_with($name, 'woocommerce/')) {
+        // Only govern the namespaces integrations have registered (SPEC seam 6).
+        // Pass everything else (core/*, other plugins, or ALL abilities on a site
+        // with no integration active) through untouched so we never break them.
+        if (!$this->isGoverned($name)) {
             return $args;
         }
 
@@ -138,7 +147,7 @@ final class AbilityPermissionGate
             return match ($decision->outcome) {
                 Outcome::Allow => true,
                 Outcome::Deny => new WP_Error(
-                    'woo_agent_safety_denied',
+                    'agent_safety_denied',
                     sprintf('Blocked by Agent Safety (%s): %s', $pack->name, $decision->reason),
                     ['status' => 403, 'verb' => $name, 'tier' => $decision->tier?->value]
                 ),
@@ -158,6 +167,18 @@ final class AbilityPermissionGate
         return $args;
     }
 
+    /** Is this ability name under one of the governed namespace prefixes? */
+    private function isGoverned(string $name): bool
+    {
+        foreach ($this->governedNamespaces as $namespace) {
+            if ($namespace !== '' && str_starts_with($name, $namespace)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Emit a gate-decision audit record (SPEC §5) for a non-executing verdict —
      * a denial or a pending approval. The caller supplies the event id so the same
@@ -174,7 +195,8 @@ final class AbilityPermissionGate
     /**
      * Persist (or reuse) a pending approval for an irreversible verb and return its
      * id; the pending audit row's event id is linked for cross-reference, and the
-     * requesting principal (WC key id) is bound so a by-reference retry can match it.
+     * requesting principal (identity-provider token id) is bound so a by-reference
+     * retry can match it.
      * No-op (returns null) when no approval store is wired.
      *
      * @param array<string, mixed> $input

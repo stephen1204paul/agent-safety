@@ -67,7 +67,7 @@ final class DecisionRecorder
 
     /**
      * Persist (or reuse) a pending approval for an irreversible verb and return its
-     * id; the requesting principal (WC key id) is bound so a by-reference retry can
+     * id; the requesting principal (identity-provider token id) is bound so a by-reference retry can
      * match it, and the audit event id is linked for cross-reference. No-op (null)
      * without an approval store.
      *

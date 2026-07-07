@@ -7,11 +7,27 @@ namespace Specflux\AgentSafety\Policy;
 /**
  * Resolves a verb (plus its call args) to a Tier, applying arg-aware
  * elevation rules where a single verb spans blast radii (SPEC §2).
+ *
+ * Framework-agnostic and integration-agnostic: the verb catalog and the
+ * elevation rules are both injected, so this class carries no knowledge of any
+ * particular plugin's verbs (e.g. WooCommerce's) — those are contributed by an
+ * integration module at the host's bootstrap.
  */
 final class TierClassifier
 {
-    /** Order statuses that fire fulfillment + customer emails => irreversible. */
-    private const FULFILLMENT_STATUSES = ['processing', 'completed', 'shipped'];
+    /** @var list<ElevationRule> */
+    private array $rules;
+
+    /**
+     * @param list<ElevationRule> $elevationRules Applied in order; each sees the
+     *                                             tier as elevated by the ones before it.
+     */
+    public function __construct(
+        private readonly VerbCatalog $catalog = new VerbCatalog(),
+        array $elevationRules = [],
+    ) {
+        $this->rules = $elevationRules;
+    }
 
     /**
      * @param array<string, mixed> $args
@@ -19,25 +35,19 @@ final class TierClassifier
      */
     public function classify(string $verb, array $args = []): ?Tier
     {
-        $base = VerbCatalog::baseTier($verb);
-        if ($base === null) {
+        $tier = $this->catalog->baseTier($verb);
+        if ($tier === null) {
             return null;
         }
 
-        // orders-update flipping to a fulfillment status is irreversible.
-        if ($verb === 'woocommerce/orders-update') {
-            $status = is_string($args['status'] ?? null) ? strtolower($args['status']) : null;
-            if ($status !== null && in_array($status, self::FULFILLMENT_STATUSES, true)) {
-                return Tier::Irreversible;
+        foreach ($this->rules as $rule) {
+            $elevated = $rule->apply($verb, $args, $tier);
+            if ($elevated !== null) {
+                $tier = $elevated;
             }
         }
 
-        // Bulk delete elevates beyond single-item (single = recoverable from snapshot).
-        if ($verb === 'woocommerce/products-delete' && self::isBulk($args)) {
-            return Tier::Irreversible;
-        }
-
-        return $base;
+        return $tier;
     }
 
     /**
@@ -55,16 +65,5 @@ final class TierClassifier
         $tier = $this->classify($verb, $args);
 
         return $tier !== null && $tier->isWrite();
-    }
-
-    /** @param array<string, mixed> $args */
-    private static function isBulk(array $args): bool
-    {
-        if (!empty($args['bulk'])) {
-            return true;
-        }
-        $ids = $args['ids'] ?? null;
-
-        return is_array($ids) && count($ids) > 1;
     }
 }

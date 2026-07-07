@@ -10,10 +10,11 @@ use Specflux\AgentSafety\Packs\PackRegistry;
 /**
  * Resolves the calling credential to a Capability Pack (SPEC §3 / D20).
  *
- * The principal is the authenticated WooCommerce API key behind the MCP request
- * ({@see RequestContext::tokenId()}, e.g. "key_7"). Admin-configured bindings
- * (the `agsafe_pack_bindings` option, key id => pack name) map each credential to a
- * pack from the built-in catalog; an unbound key gets the safe default
+ * The principal is whichever {@see RequestContext::currentTokens()} candidate
+ * (application password, user, role, or an integration's own identity — e.g.
+ * a WooCommerce API key) is bound first. Admin-configured bindings (the
+ * `agsafe_pack_bindings` option, token id => pack name) map each credential to
+ * a pack from the catalog; an unbound/unmatched request gets the safe default
  * ({@see PackRegistry::DEFAULT_PACK}). The same resolved pack is shared by the
  * gate and the audit hook within a request, so both see one consistent scope.
  *
@@ -26,15 +27,38 @@ final class PackResolver
 
     private ?PackRegistry $registry = null;
 
-    public function resolve(): Pack
+    /**
+     * @param list<Pack> $extraPacks Packs contributed by integrations (e.g. the
+     *                                WooCommerce module) on top of the core builtins.
+     */
+    public function __construct(private readonly array $extraPacks = [])
     {
-        return $this->registry()->resolve(RequestContext::tokenId());
     }
 
     /**
-     * The registry over the built-in catalog and the persisted bindings. Exposed
-     * so the admin Packs UI can list the catalog and current bindings. Filterable
-     * via `woo_agent_safety_pack_registry` for bespoke catalogs/bindings.
+     * Resolve THIS request's pack: the first current candidate token
+     * ({@see RequestContext::currentTokens()}) with a stored binding wins,
+     * highest-priority provider first; otherwise the registry default.
+     */
+    public function resolve(): Pack
+    {
+        $registry = $this->registry();
+        $bindings = $registry->bindings();
+
+        foreach (RequestContext::currentTokens() as $token) {
+            if (isset($bindings[$token])) {
+                return $registry->resolve($token);
+            }
+        }
+
+        return $registry->resolve(null);
+    }
+
+    /**
+     * The registry over the built-in + integration-contributed catalog and the
+     * persisted bindings. Exposed so the admin Packs UI can list the catalog
+     * and current bindings. Filterable via `agent_safety_pack_registry`
+     * for bespoke catalogs/bindings.
      */
     public function registry(): PackRegistry
     {
@@ -43,10 +67,13 @@ final class PackResolver
         }
 
         $registry = PackRegistry::withBuiltins($this->loadBindings());
+        foreach ($this->extraPacks as $pack) {
+            $registry->register($pack);
+        }
 
         /** @var PackRegistry $registry */
         $registry = function_exists('apply_filters')
-            ? apply_filters('woo_agent_safety_pack_registry', $registry)
+            ? apply_filters('agent_safety_pack_registry', $registry)
             : $registry;
 
         return $this->registry = $registry;
@@ -60,7 +87,7 @@ final class PackResolver
 
     /**
      * Read + sanitise the bindings option to a clean array<string,string>
-     * (subject key id => pack name). Anything malformed is dropped, never trusted.
+     * (subject token id => pack name). Anything malformed is dropped, never trusted.
      *
      * @return array<string, string>
      */

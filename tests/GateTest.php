@@ -10,6 +10,10 @@ use Specflux\AgentSafety\Gate\GateContext;
 use Specflux\AgentSafety\Gate\Outcome;
 use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Policy\Tier;
+use Specflux\AgentSafety\Policy\TierClassifier;
+use Specflux\AgentSafety\Tests\Fixtures\BulkDeleteElevationRuleFixture;
+use Specflux\AgentSafety\Tests\Fixtures\FulfillmentElevationRuleFixture;
+use Specflux\AgentSafety\Tests\Fixtures\WooLikeVerbCatalog;
 
 final class GateTest extends TestCase
 {
@@ -17,7 +21,14 @@ final class GateTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->gate = new Gate();
+        // VerbCatalog/TierClassifier are now generic; register the moved Woo
+        // verb map + elevation rules explicitly so the woocommerce/* fixtures
+        // below keep meaning what they used to (SPEC §2).
+        $classifier = new TierClassifier(
+            WooLikeVerbCatalog::build(),
+            [new FulfillmentElevationRuleFixture(), new BulkDeleteElevationRuleFixture()],
+        );
+        $this->gate = new Gate($classifier);
     }
 
     private function ctx(string $verb, array $args, Pack $pack, bool $approval = false, bool $readonly = false): GateContext

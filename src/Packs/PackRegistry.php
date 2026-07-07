@@ -7,11 +7,12 @@ namespace Specflux\AgentSafety\Packs;
 /**
  * The catalog of Capability Packs plus the credential→pack bindings (SPEC §3 / D20).
  *
- * Pure core: holds named {@see Pack} definitions and a map of subject (the
- * WooCommerce API key id, e.g. "key_7") → pack name, and resolves a request's
- * subject to exactly one pack. The host {@see \Specflux\AgentSafety\Plugin\Support\PackResolver}
- * builds one of these from persisted bindings; this class stays WP-free so the
- * resolution rule is unit-testable.
+ * Pure core: holds named {@see Pack} definitions and a map of subject (a
+ * namespaced credential/role token id, e.g. "wc:key_7" or "role:editor") →
+ * pack name, and resolves a request's subject to exactly one pack. The host
+ * {@see \Specflux\AgentSafety\Plugin\Support\PackResolver} builds one of these
+ * from persisted bindings; this class stays WP-free so the resolution rule is
+ * unit-testable. Integrations contribute additional packs via {@see register()}.
  *
  * Resolution is fail-safe: an unbound or unknown subject falls back to the
  * default pack, and a binding that names a missing pack also falls back — a
@@ -51,15 +52,15 @@ final class PackRegistry
     }
 
     /**
-     * The shipped pack catalog. Three reference scopes spanning the policy space:
+     * The framework-agnostic pack catalog. Two reference scopes:
      *   - owner         — unrestricted (`allow: ["*"]`, no approval); the same
      *                     machinery with nothing walled off (SPEC §3).
-     *   - default-agent — catalog read/write, but every Tier-2 (irreversible)
-     *                     verb is approval-gated. The safe default for an
-     *                     unbound credential.
-     *   - support-agent — catalog read/write with Tier-2 HARD-WALLED via
-     *                     `deny_class` — injection-proof against refund/email
-     *                     abuse by construction (D9): the verb isn't reachable.
+     *   - default-agent — GENERIC FAIL-CLOSED (`allow: []`): the safe default
+     *                     for an unbound credential on a host with no verbs
+     *                     registered yet. Integrations widen this per-site by
+     *                     registering their own default-flavoured pack (see
+     *                     e.g. the WooCommerce integration's "woo-default-agent")
+     *                     and binding credentials to it explicitly.
      *
      * @return array<string, Pack>
      */
@@ -73,15 +74,20 @@ final class PackRegistry
             ),
             'default-agent' => new Pack(
                 name: 'default-agent',
-                allow: ['woocommerce/products-*', 'woocommerce/orders-*'],
-                approvalByClass: ['tier2' => true],
-            ),
-            'support-agent' => new Pack(
-                name: 'support-agent',
-                allow: ['woocommerce/products-*', 'woocommerce/orders-*'],
-                denyClass: ['tier2'],
+                allow: [],
             ),
         ];
+    }
+
+    /**
+     * Add (or overwrite by name) a pack contributed by an integration on top of
+     * the built-in catalog — e.g. a WooCommerce module registering its own
+     * capability packs. Overwriting is intentional: a later registration for
+     * the same name replaces the earlier one, same as {@see \Specflux\AgentSafety\Policy\VerbCatalog::register()}.
+     */
+    public function register(Pack $pack): void
+    {
+        $this->packs[$pack->name] = $pack;
     }
 
     /**

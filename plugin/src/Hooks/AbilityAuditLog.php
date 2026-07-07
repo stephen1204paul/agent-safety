@@ -36,15 +36,20 @@ use Specflux\AgentSafety\Plugin\Support\RequestContext;
  */
 final class AbilityAuditLog
 {
-    private const NS = 'woocommerce/';
-
     /** @var array<string, list<array<string, mixed>>> name => stack of inputs */
     private array $inFlight = [];
 
+    /**
+     * @param list<string> $governedNamespaces Ability-id prefixes this hook audits
+     *                                          (contributed by integrations + the
+     *                                          `agent_safety_governed_namespaces`
+     *                                          filter). Empty => inert no-op.
+     */
     public function __construct(
         private readonly AuditSink $sink,
         private readonly TierClassifier $classifier,
         private readonly PackResolver $packs,
+        private readonly array $governedNamespaces = [],
     ) {
     }
 
@@ -59,7 +64,7 @@ final class AbilityAuditLog
     /** @param mixed $input */
     public function before(string $name, $input): void
     {
-        if (!str_starts_with($name, self::NS)) {
+        if (!$this->isGoverned($name)) {
             return;
         }
         $this->inFlight[$name][] = is_array($input) ? $input : [];
@@ -71,7 +76,7 @@ final class AbilityAuditLog
      */
     public function after(string $name, $input, $result): void
     {
-        if (!str_starts_with($name, self::NS)) {
+        if (!$this->isGoverned($name)) {
             return;
         }
 
@@ -88,6 +93,18 @@ final class AbilityAuditLog
             }
         }
         $this->inFlight = [];
+    }
+
+    /** Is this ability name under one of the governed namespace prefixes? */
+    private function isGoverned(string $name): bool
+    {
+        foreach ($this->governedNamespaces as $namespace) {
+            if ($namespace !== '' && str_starts_with($name, $namespace)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

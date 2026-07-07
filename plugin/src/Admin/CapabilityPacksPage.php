@@ -5,16 +5,21 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Admin;
 
 use Specflux\AgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
+use Specflux\AgentSafety\Plugin\Identity\IdentityProvider;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
-use wpdb;
 
 /**
  * Tools → "Agent Capability Packs" (SPEC §3): the human side of credential scoping.
  *
- * Shows the built-in pack catalog (read-only) and lets an admin bind each
- * WooCommerce API key to a pack. Bindings persist in the `agsafe_pack_bindings`
- * option (key id => pack name) that {@see PackResolver} reads per request; an
- * unbound key falls back to the safe default pack.
+ * Shows the pack catalog (read-only) and lets an admin bind each identity a
+ * configured {@see IdentityProvider} exposes (an application password, a user,
+ * a role, or an integration's own credential — e.g. a WooCommerce API key) to
+ * a pack from the catalog. One section per provider, using its {@see
+ * IdentityProvider::label()} and {@see IdentityProvider::bindableTokens()}.
+ * Bindings persist in the `agsafe_pack_bindings` option (token id => pack name)
+ * that {@see PackResolver} reads per request; an unbound token falls back to
+ * the safe default pack.
  *
  * A pack with `deny_class: ["tier2"]` makes every irreversible verb unreachable
  * for the bound credential BY CONSTRUCTION — the gate denies it before approval,
@@ -28,7 +33,7 @@ final class CapabilityPacksPage
 
     public function __construct(
         private readonly PackResolver $packs,
-        private readonly wpdb $db,
+        private readonly IdentityChain $identity,
     ) {
     }
 
@@ -66,7 +71,7 @@ final class CapabilityPacksPage
         }
 
         $this->renderCatalog($registry->names());
-        $this->renderBindingForm($registry->names(), $registry->defaultPack(), $registry->bindings());
+        $this->renderBindings($registry->names(), $registry->defaultPack(), $registry->bindings());
 
         echo '</div>';
     }
@@ -101,44 +106,66 @@ final class CapabilityPacksPage
     }
 
     /**
+     * One section per configured {@see IdentityProvider}. Renders a helpful
+     * empty-state line instead of an empty form when NO provider has any
+     * bindable token (e.g. WooCommerce inactive and no users beyond the admin).
+     *
      * @param list<string>          $names
      * @param array<string, string> $bindings
      */
-    private function renderBindingForm(array $names, string $default, array $bindings): void
+    private function renderBindings(array $names, string $default, array $bindings): void
     {
-        $keys = $this->apiKeys();
-
         echo '<h2 style="margin-top:2em;">' . esc_html__('Credential bindings', 'agent-safety') . '</h2>';
-        echo '<p>' . esc_html__('Map each WooCommerce REST API key to a pack. Unbound keys use the default pack.', 'agent-safety') . '</p>';
+        echo '<p>' . esc_html__('Bind a credential or role to a pack. Unbound tokens use the default pack.', 'agent-safety') . '</p>';
+
+        $providers = array_values(array_filter(
+            $this->identity->providers(),
+            static fn (IdentityProvider $provider): bool => $provider->bindableTokens() !== [],
+        ));
+
+        if ($providers === []) {
+            echo '<p><em>' . esc_html__('No bindable credentials or roles were found yet. Bindings will appear here once an identity provider (a user, a role, or an active integration) has something to bind.', 'agent-safety') . '</em></p>';
+
+            return;
+        }
 
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         echo '<input type="hidden" name="action" value="' . esc_attr(self::SAVE) . '">';
         echo wp_nonce_field(self::SAVE, '_wpnonce', true, false); // phpcs:ignore WordPress.Security.EscapeOutput -- wp_nonce_field returns safe markup.
 
+        foreach ($providers as $provider) {
+            $this->renderProviderSection($provider, $names, $default, $bindings);
+        }
+
+        echo '<p><button type="submit" class="button button-primary">' . esc_html__('Save bindings', 'agent-safety') . '</button></p>';
+        echo '</form>';
+    }
+
+    /**
+     * @param list<string>          $names
+     * @param array<string, string> $bindings
+     */
+    private function renderProviderSection(IdentityProvider $provider, array $names, string $default, array $bindings): void
+    {
+        $tokens = $provider->bindableTokens();
+
+        echo '<h3>' . esc_html($provider->label()) . '</h3>';
         echo '<table class="widefat striped"><thead><tr>';
-        foreach (['API key', 'Description', 'WC permissions', 'Pack'] as $col) {
+        foreach (['Token', 'Description', 'Pack'] as $col) {
             echo '<th>' . esc_html($col) . '</th>';
         }
         echo '</tr></thead><tbody>';
 
-        if ($keys === []) {
-            echo '<tr><td colspan="4">' . esc_html__('No WooCommerce REST API keys found. Create one under WooCommerce → Settings → Advanced → REST API.', 'agent-safety') . '</td></tr>';
-        }
-
-        foreach ($keys as $key) {
-            $subject = 'key_' . $key['key_id'];
-            $current = $bindings[$subject] ?? '';
+        foreach ($tokens as $token => $description) {
+            $current = $bindings[$token] ?? '';
             echo '<tr>';
-            echo '<td><code>' . esc_html($subject) . '</code></td>';
-            echo '<td>' . esc_html($key['description']) . '</td>';
-            echo '<td><code>' . esc_html($key['permissions']) . '</code></td>';
-            echo '<td>' . $this->packSelect($subject, $names, $default, $current) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- esc_* in helper.
+            echo '<td><code>' . esc_html($token) . '</code></td>';
+            echo '<td>' . esc_html($description) . '</td>';
+            echo '<td>' . $this->packSelect($token, $names, $default, $current) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- esc_* in helper.
             echo '</tr>';
         }
 
         echo '</tbody></table>';
-        echo '<p><button type="submit" class="button button-primary">' . esc_html__('Save bindings', 'agent-safety') . '</button></p>';
-        echo '</form>';
     }
 
     /**
@@ -197,34 +224,5 @@ final class CapabilityPacksPage
             static fn (string $i): string => '<code style="font-size:11px;">' . esc_html($i) . '</code>',
             $items
         ));
-    }
-
-    /**
-     * Live WooCommerce REST API keys (D20: each key is a principal). The secret is
-     * never read — only the row id, description, and permission scope.
-     *
-     * @return list<array{key_id:string, description:string, permissions:string}>
-     */
-    private function apiKeys(): array
-    {
-        $table = $this->db->prefix . 'woocommerce_api_keys';
-        $rows = $this->db->get_results(
-            "SELECT key_id, description, permissions FROM {$table} ORDER BY key_id ASC",
-            ARRAY_A
-        );
-        if (!is_array($rows)) {
-            return [];
-        }
-
-        $out = [];
-        foreach ($rows as $r) {
-            $out[] = [
-                'key_id' => (string) ($r['key_id'] ?? ''),
-                'description' => (string) ($r['description'] ?? ''),
-                'permissions' => (string) ($r['permissions'] ?? ''),
-            ];
-        }
-
-        return $out;
     }
 }

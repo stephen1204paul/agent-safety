@@ -10,9 +10,9 @@ use Specflux\AgentSafety\Gate\GateContext;
 use Specflux\AgentSafety\Gate\Outcome;
 use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
+use Specflux\AgentSafety\Plugin\Integrations\Woo\VerbMapper;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
-use Specflux\AgentSafety\Plugin\Support\VerbMapper;
 use WP_Error;
 
 /**
@@ -85,7 +85,7 @@ final class PreToolCallGate
 
         return Outcome::Deny === $decision->outcome
             ? new WP_Error(
-                'woo_agent_safety_denied',
+                'agent_safety_denied',
                 sprintf('Blocked by Agent Safety (%s): %s', $pack->name, $decision->reason),
                 ['status' => 403, 'verb' => $verb, 'tier' => $decision->tier?->value]
             )

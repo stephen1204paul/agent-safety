@@ -5,54 +5,59 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Policy;
 
 /**
- * OUR tier assignments for Woo verbs (SPEC §2). This is authoritative and
- * overrides any self-reported readonly/destructive annotation (D3): if an
- * ability claims read-only but appears here as a write, the gate fails closed.
+ * The catalog of verb -> tier assignments (SPEC §2). OUR tier assignment is
+ * authoritative and overrides any self-reported readonly/destructive annotation
+ * (D3): if an ability claims read-only but appears here as a write, the gate
+ * fails closed.
  *
- * Keyed by canonical verb id ("namespace/resource.action"). Exact matches win;
- * otherwise the longest matching "prefix.*" pattern applies.
+ * Instance-based registry: integrations (e.g. a WooCommerce module) {@see
+ * register()} their own verb -> tier maps on top of whatever the host already
+ * knows. An unknown verb returns null from {@see baseTier()} so callers fail
+ * closed rather than trust an unclassified verb.
+ *
+ * Keyed by canonical verb id ("namespace/resource-action"). A key ending in "*"
+ * (e.g. "woocommerce/reports-*") is a PREFIX pattern: it matches any verb that
+ * starts with the text before the "*". Everything else is an exact match. Exact
+ * matches win outright; among prefix patterns the longest match wins.
  */
 final class VerbCatalog
 {
-    // Verb ids are the canonical WP Ability ids as registered by WooCommerce
-    // (verified at runtime against Woo 10.8.1 + WP 7.0): "woocommerce/{resource}-{action}".
-    // The MCP tool name is the hyphenated form "woocommerce-{resource}-{action}"; see VerbMapper.
+    /** @var array<string, Tier> exact verb id => tier */
+    private array $exact = [];
 
-    /** @var array<string, Tier> exact verb => tier. The 9 abilities Woo core exposes today. */
-    private const EXACT = [
-        'woocommerce/products-list'   => Tier::Reversible,
-        'woocommerce/products-get'    => Tier::Reversible,
-        'woocommerce/orders-list'     => Tier::Reversible,
-        'woocommerce/orders-get'      => Tier::Reversible,
-        'woocommerce/products-create' => Tier::SideEffecting,
-        'woocommerce/products-update' => Tier::SideEffecting,
-        'woocommerce/products-delete' => Tier::SideEffecting, // bulk elevates to Tier 2 (TierClassifier)
-        'woocommerce/orders-create'   => Tier::SideEffecting,
-        'woocommerce/orders-update'   => Tier::SideEffecting, // status->fulfillment elevates to Tier 2
+    /** @var array<string, Tier> "prefix-*" pattern => tier */
+    private array $prefixed = [];
 
-        // NOT exposed by Woo core 10.8.1 — mapped for forward-compat (extensions / future core
-        // abilities). Kept so the gate fails CLOSED-with-intent rather than "unknown" if they appear.
-        'woocommerce/orders-refund'   => Tier::Irreversible,  // cannot un-charge a card
-        'woocommerce/customers-email' => Tier::Irreversible,  // cannot un-send
-    ];
-
-    /** @var array<string, Tier> "prefix" (resource group) => tier. Forward-compat; none in core 10.8.1. */
-    private const PREFIX = [
-        'woocommerce/reports'  => Tier::Reversible,    // read; aggregate
-        'woocommerce/settings' => Tier::SideEffecting, // allowlist; sensitive keys gated/denied per pack
-    ];
+    /**
+     * Merge a verb => tier map into the catalog. Later registrations overwrite
+     * an earlier entry for the same exact key or prefix pattern; callers own
+     * conflict resolution (SPEC leaves "last registered wins" to the host).
+     *
+     * @param array<string, Tier> $verbToTier
+     */
+    public function register(array $verbToTier): void
+    {
+        foreach ($verbToTier as $verb => $tier) {
+            if (str_ends_with($verb, '*')) {
+                $this->prefixed[$verb] = $tier;
+            } else {
+                $this->exact[$verb] = $tier;
+            }
+        }
+    }
 
     /** Base tier for a verb, or null if the verb is unknown (gate fails closed on null). */
-    public static function baseTier(string $verb): ?Tier
+    public function baseTier(string $verb): ?Tier
     {
-        if (isset(self::EXACT[$verb])) {
-            return self::EXACT[$verb];
+        if (isset($this->exact[$verb])) {
+            return $this->exact[$verb];
         }
 
         $best = null;
         $bestLen = -1;
-        foreach (self::PREFIX as $prefix => $tier) {
-            if (str_starts_with($verb, $prefix . '-') && strlen($prefix) > $bestLen) {
+        foreach ($this->prefixed as $pattern => $tier) {
+            $prefix = rtrim($pattern, '*');
+            if ($prefix !== '' && str_starts_with($verb, $prefix) && strlen($prefix) > $bestLen) {
                 $best = $tier;
                 $bestLen = strlen($prefix);
             }
@@ -61,8 +66,8 @@ final class VerbCatalog
         return $best;
     }
 
-    public static function isKnown(string $verb): bool
+    public function isKnown(string $verb): bool
     {
-        return self::baseTier($verb) !== null;
+        return $this->baseTier($verb) !== null;
     }
 }
