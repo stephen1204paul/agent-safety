@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * Test-only stand-in for WordPress's $wpdb, defined ONLY when a real WP
  * environment (e.g. wp-env) hasn't already loaded the genuine class. It is
@@ -11,6 +9,9 @@ declare(strict_types=1);
  * enough for callers under test that build a query and act on wpdb's return
  * value, per the house style of hand-rolled fakes over a mocking framework.
  */
+
+declare(strict_types=1);
+
 if (!class_exists('wpdb', false)) {
     class wpdb
     {

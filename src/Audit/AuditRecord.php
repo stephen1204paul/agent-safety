@@ -64,8 +64,20 @@ final class AuditRecord
         ?string $ip = null,
     ): self {
         return new self(
-            $id, $ts, $correlationId, $pack, $actor, $ability, $tier, $input,
-            false, $decision, $approval, null, $externalEffects, $ip,
+            $id,
+            $ts,
+            $correlationId,
+            $pack,
+            $actor,
+            $ability,
+            $tier,
+            $input,
+            false,
+            $decision,
+            $approval,
+            null,
+            $externalEffects,
+            $ip,
         );
     }
 
@@ -91,8 +103,20 @@ final class AuditRecord
         ?string $ip = null,
     ): self {
         return new self(
-            $id, $ts, $correlationId, $pack, $actor, $ability, $tier, $input,
-            false, AuditDecision::Allowed, null, $result, $externalEffects, $ip,
+            $id,
+            $ts,
+            $correlationId,
+            $pack,
+            $actor,
+            $ability,
+            $tier,
+            $input,
+            false,
+            AuditDecision::Allowed,
+            null,
+            $result,
+            $externalEffects,
+            $ip,
         );
     }
 

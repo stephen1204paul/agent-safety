@@ -320,5 +320,4 @@ final class AbilityPermissionGate
         }
         $this->reserved = [];
     }
-
 }

@@ -136,6 +136,9 @@ final class AuditLogPage
         header('Content-Disposition: attachment; filename=agent-audit-log.csv');
 
         $out = fopen('php://output', 'w');
+        if ($out === false) {
+            wp_die(esc_html__('Unable to open output stream.', 'agent-safety'));
+        }
         $cols = ['id', 'event_id', 'ts', 'correlation_id', 'pack', 'ability', 'tier', 'decision', 'result', 'wp_user', 'ip', 'record_json', 'prev_hash', 'entry_hash'];
         fputcsv($out, $cols);
         foreach ($rows as $r) {

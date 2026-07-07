@@ -3,7 +3,7 @@
 /**
  * Plugin Name:       Agent Safety
  * Description:       Governed safety and audit layer for AI agent tool calls — verb-tier gating, capability packs, human approval for irreversible actions, and a compliance-grade audit trail. WooCommerce is supported via an integration module.
- * Version:           0.1.0-dev
+ * Version:           0.1.0
  * Requires PHP:      8.1
  * Requires at least: 6.9
  * License:           GPL-2.0-or-later

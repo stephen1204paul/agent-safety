@@ -60,9 +60,15 @@ final class AuditTest extends TestCase
     public function testExecutionRecordCarriesResult(): void
     {
         $rec = AuditRecord::execution(
-            id: 'evt_2', ts: '2026-06-25T10:00:01Z', correlationId: 'sess_test',
-            pack: 'default-agent', actor: ['token_id' => null, 'wp_user' => 7],
-            ability: 'woocommerce/products-list', tier: 0, input: [], result: 'success',
+            id: 'evt_2',
+            ts: '2026-06-25T10:00:01Z',
+            correlationId: 'sess_test',
+            pack: 'default-agent',
+            actor: ['token_id' => null, 'wp_user' => 7],
+            ability: 'woocommerce/products-list',
+            tier: 0,
+            input: [],
+            result: 'success',
         );
 
         $this->assertSame('allowed', $rec->toArray()['decision']);

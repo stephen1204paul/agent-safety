@@ -166,6 +166,7 @@ final class McpRequestAuditHandler implements McpObservabilityHandlerInterface
     /**
      * @param array<string, mixed> $tags
      */
+    // phpcs:ignore PSR1.Methods.CamelCapsMethodName.NotCamelCaps -- name dictated by upstream McpObservabilityHandlerInterface, not ours to rename.
     public function record_event(string $event, array $tags = [], ?float $duration_ms = null): void
     {
         if (self::$sink === null || self::$packs === null) {

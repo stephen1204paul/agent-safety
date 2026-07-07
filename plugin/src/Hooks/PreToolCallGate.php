@@ -196,11 +196,13 @@ final class PreToolCallGate
         return $tripped === null ? $decision : Decision::deny('rate_limited_' . $tripped, $decision->tier);
     }
 
+    /** @param mixed $mcpTool */
     private function isSelfReportedReadonly($mcpTool): bool
     {
         return true === $this->annotationHint($mcpTool, 'getReadOnlyHint');
     }
 
+    /** @param mixed $mcpTool */
     private function isSelfReportedDestructive($mcpTool): bool
     {
         return true === $this->annotationHint($mcpTool, 'getDestructiveHint');

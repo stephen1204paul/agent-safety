@@ -1,0 +1,59 @@
+parameters:
+    level: 8
+    paths:
+        - src
+        - plugin/src
+    treatPhpDocTypesAsCertain: false
+    bootstrapFiles:
+        - phpstan-bootstrap.php
+    scanFiles:
+        # WordPress core symbols (WP_Error, wpdb, WP_Application_Passwords, wp_*
+        # functions, ...) referenced from plugin/src — declarations only, never
+        # executed, so this is purely for static-analysis awareness.
+        - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
+        # mcp-adapter's public observability contract that
+        # Plugin\Hooks\McpRequestAuditHandler implements. mcp-adapter itself is
+        # not a dependency of this repo (it's a WordPress-plugin-side
+        # integration point, vendored by WooCommerce at runtime), so this is
+        # the same test-only stub the PHPUnit bootstrap uses, reused here as a
+        # declaration-only source instead of a real dependency.
+        - plugin/tests/stubs/mcp-observability-handler-interface.php
+
+    # Justified, scoped suppressions for known php-stubs/wordpress-stubs false
+    # positives (a stub-signature limitation, not a defect in this codebase).
+    # Every entry is scoped to an exact message + path and count-pinned so a
+    # regression (a NEW, unrelated violation, or the pattern disappearing
+    # because the code changed) makes PHPStan fail loudly instead of being
+    # silently absorbed.
+    ignoreErrors:
+        -
+            # wpdb::prepare()'s stub requires `@phpstan-param literal-string
+            # $query`, but every prepared statement in this plugin interpolates
+            # this class's OWN computed table name (see Schema::*Table()) into
+            # an otherwise-literal SQL template — never request/user input.
+            # PHPStan's literal-string tracing can't see through a
+            # config-derived (db-prefix-based) name, but it is not
+            # attacker-controlled, so this is not a SQL-injection risk.
+            message: '#^Parameter \#1 \$query of method wpdb::prepare\(\) expects literal\-string, non\-falsy\-string given\.$#'
+            path: plugin/src/*
+            count: 12
+        -
+            # wpdb::prepare()'s stub declares its return as `string|void` (real
+            # wpdb only returns void for an EMPTY $query, which never happens
+            # here — every call site passes a non-empty literal SQL template),
+            # which PHPStan widens to `string|null`. That collides with
+            # wpdb::query()'s non-nullable `string $query` parameter. Same
+            # false-positive family as the literal-string ignore above, not a
+            # behavioral defect.
+            message: '#^Parameter \#1 \$query of method wpdb::query\(\) expects string, string\|null given\.$#'
+            path: plugin/src/*
+            count: 6
+        -
+            # Schema::ensureDbDelta()'s require_once is a real-WordPress-only
+            # fallback (only reached when dbDelta() isn't already defined,
+            # which never happens mid wp-admin request since core always loads
+            # it first) for a genuine WP-core file that only exists inside a
+            # real WordPress install, never in this repo/CI checkout.
+            message: '#^Path in require_once\(\) ".*wp\-admin/includes/upgrade\.php" is not a file or it does not exist\.$#'
+            path: plugin/src/Support/Schema.php
+            count: 1

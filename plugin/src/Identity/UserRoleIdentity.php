@@ -20,13 +20,13 @@ final class UserRoleIdentity implements IdentityProvider
         }
 
         $user = wp_get_current_user();
-        $id = (int) ($user->ID ?? 0);
+        $id = (int) $user->ID;
         if ($id <= 0) {
             return [];
         }
 
         $tokens = ['user:' . $id];
-        foreach ((array) ($user->roles ?? []) as $role) {
+        foreach ($user->roles as $role) {
             if (is_string($role) && $role !== '') {
                 $tokens[] = 'role:' . $role;
             }

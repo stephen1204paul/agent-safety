@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<ruleset name="AgentSafety">
+    <description>PSR-12 coding standard for the Agent Safety core library and WordPress plugin host.</description>
+
+    <file>src</file>
+    <file>tests</file>
+    <file>plugin/src</file>
+    <file>plugin/tests</file>
+
+    <exclude-pattern>vendor/*</exclude-pattern>
+    <exclude-pattern>plugin/vendor/*</exclude-pattern>
+
+    <arg name="colors"/>
+    <arg name="extensions" value="php"/>
+    <arg value="ps"/>
+
+    <rule ref="PSR12">
+        <!--
+            PSR12's default is already lineLimit=120 with absoluteLineLimit=0
+            (warning only, never a hard error) — kept explicit here so the
+            intent survives a future PHPCS/PSR12 default change.
+        -->
+        <exclude name="Generic.Files.LineLength"/>
+    </rule>
+    <rule ref="Generic.Files.LineLength">
+        <properties>
+            <property name="lineLimit" value="120"/>
+            <property name="absoluteLineLimit" value="0"/>
+        </properties>
+    </rule>
+
+    <!--
+        Test doubles/stubs under plugin/tests/stubs intentionally declare
+        WordPress/mcp-adapter globals (WP_Error, wpdb, an mcp-adapter
+        interface) in the global namespace with the REAL upstream class and
+        method names (snake_case methods, non-PascalCase class names like
+        `wpdb`/`WP_Error`) so the code under test exercises the real contract
+        shape — renaming them would defeat the point of the stub. Relaxed
+        here for that directory only, rather than excluding it from linting
+        altogether (the stubs still get every other PSR-12 check).
+    -->
+    <rule ref="PSR1.Files.SideEffects">
+        <exclude-pattern>plugin/tests/stubs/*</exclude-pattern>
+        <exclude-pattern>plugin/tests/bootstrap.php</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.Classes.ValidClassName">
+        <exclude-pattern>plugin/tests/stubs/*</exclude-pattern>
+    </rule>
+    <rule ref="PSR1.Classes.ClassDeclaration.MissingNamespace">
+        <exclude-pattern>plugin/tests/stubs/*</exclude-pattern>
+    </rule>
+    <rule ref="PSR1.Methods.CamelCapsMethodName">
+        <exclude-pattern>plugin/tests/stubs/*</exclude-pattern>
+        <!--
+            FakeMcpTool duck-types mcp-adapter's real McpTool accessor names
+            (get_protocol_dto()/get_observability_context()) so PreToolCallGate
+            and ToolCallResultRedactor exercise the exact real accessor shape —
+            same rationale as the stubs above, just one file outside that dir.
+        -->
+        <exclude-pattern>plugin/tests/Fakes/FakeMcpTool.php</exclude-pattern>
+    </rule>
+</ruleset>

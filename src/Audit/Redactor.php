@@ -10,8 +10,9 @@ namespace Specflux\AgentSafety\Audit;
  * customer/PII key fragments, applied recursively. Tokens, not PANs (D14): we
  * never want a card number, email, or address sitting in the log.
  *
- * This governs what we WRITE TO THE AUDIT LOG. Redacting the payload RETURNED TO
- * THE AGENT on reads is separate, still-pending work.
+ * This masking is applied on BOTH sides of the boundary: what we WRITE TO THE
+ * AUDIT LOG (via the audit producers), and the payload RETURNED TO THE AGENT on
+ * the executed path (via the plugin's ToolCallResultRedactor seam).
  */
 final class Redactor
 {
