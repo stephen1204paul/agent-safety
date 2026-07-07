@@ -132,6 +132,22 @@ final class McpRequestAuditHandlerTest extends TestCase
     }
 
     /**
+     * Same property with a multibyte (non-Latin) translation: PHP's `===` is
+     * byte-exact, so as long as both sides resolve through the same catalog
+     * the match holds for any script/encoding.
+     */
+    public function testPermissionDeniedClassificationSurvivesMultibyteTranslation(): void
+    {
+        $GLOBALS['wpas_test_translations']['mcp-adapter']['Permission denied'] = 'アクセスが拒否されました';
+
+        $tags = self::commonTags('test-verify-denied-ja', 'test/verify-denied-ja', 107, 'error', 'アクセスが拒否されました');
+        $this->handler->record_event('mcp.request', $tags, 3.0);
+
+        $this->assertCount(1, $this->sink->records);
+        $this->assertSame('denied', $this->sink->records[0]->toArray()['decision']);
+    }
+
+    /**
      * DOCUMENTS THE UPSTREAM GAP: a WP_Error-based permission denial carries no
      * error_code and an arbitrary custom message, INDISTINGUISHABLE by tags
      * alone from a WP_Error-based execution failure. Per the classification
