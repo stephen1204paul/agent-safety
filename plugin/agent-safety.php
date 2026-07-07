@@ -37,9 +37,11 @@ use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Identity\UserRoleIdentity;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\VerbMapper;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\WooIntegration;
+use Specflux\AgentSafety\Plugin\Support\ApprovalSweep;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Plugin\Support\Schema;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -52,10 +54,57 @@ if (is_readable($agsafe_autoload)) {
     require_once $agsafe_autoload;
 }
 
+// Registered UNCONDITIONALLY (not inside the class_exists(Gate::class) guard
+// below): WordPress calls activation/deactivation hooks by including this
+// file fresh and checking what got registered THAT load. If registration
+// itself depended on the autoloader having succeeded, activating on a site
+// where `composer install` was never run in plugin/ would silently register
+// nothing and no table/cron would ever be created — the callbacks below
+// guard internally instead, so a broken autoloader fails safe, not silent.
+register_activation_hook(__FILE__, __NAMESPACE__ . '\\activate_agent_safety');
+register_deactivation_hook(__FILE__, __NAMESPACE__ . '\\deactivate_agent_safety');
+
+/** Create/upgrade both tables and schedule the approval sweep. */
+function activate_agent_safety(): void
+{
+    $agsafe_autoload = __DIR__ . '/vendor/autoload.php';
+    if (is_readable($agsafe_autoload)) {
+        require_once $agsafe_autoload;
+    }
+
+    if (!class_exists(Schema::class) || !class_exists(ApprovalSweep::class)) {
+        return;
+    }
+
+    global $wpdb;
+    if (isset($wpdb)) {
+        Schema::install($wpdb);
+    }
+
+    ApprovalSweep::activate();
+}
+
+/** Stop the approval sweep. Table data is intentionally kept — see uninstall.php. */
+function deactivate_agent_safety(): void
+{
+    if (class_exists(ApprovalSweep::class)) {
+        ApprovalSweep::deactivate();
+    }
+}
+
 // Register at plugin-load time (NOT on init): the ability seam must be wired
 // before an integration (e.g. WooCommerce) registers its abilities.
 if (class_exists(Gate::class)) {
     global $wpdb;
+
+    // Cheap version check on every wp-admin load: an admin visiting after a
+    // plugin UPDATE (not a fresh activation) still gets the table upgraded,
+    // since register_activation_hook only fires on activate, never on update.
+    if (isset($wpdb)) {
+        add_action('admin_init', static function () use ($wpdb): void {
+            Schema::maybeUpgrade($wpdb);
+        });
+    }
 
     // Identity chain (SPEC seam 4): application passwords and users/roles apply
     // on ANY WordPress site; an integration appends its own provider below.
@@ -144,6 +193,13 @@ if (class_exists(Gate::class)) {
     // irreversible actions, minting single-use tokens (SPEC §4).
     if ($agsafe_approvals !== null) {
         (new PendingActionsPage($agsafe_approvals, $agsafe_sink, $agsafe_packs))->register();
+
+        // Backlog control for the table above: hourly sweep of expired/orphaned
+        // approval rows (see WpdbApprovalStore::deleteExpired()). The schedule
+        // itself is set up on activation; this just wires the callback.
+        add_action(ApprovalSweep::HOOK, static function () use ($agsafe_approvals): void {
+            ApprovalSweep::run($agsafe_approvals);
+        });
     }
 
     // Capability-pack admin (Tools → Agent Capability Packs): bind each identity

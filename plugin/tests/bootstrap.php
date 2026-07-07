@@ -26,6 +26,11 @@ if (!interface_exists(\WP\MCP\Infrastructure\Observability\Contracts\McpObservab
     require_once __DIR__ . '/stubs/mcp-observability-handler-interface.php';
 }
 
+// Test-only stand-in for WordPress's $wpdb (a real WP load order always wins).
+if (!class_exists('wpdb', false)) {
+    require_once __DIR__ . '/stubs/wpdb.php';
+}
+
 // Hand-rolled fakes used across the suite.
 require_once __DIR__ . '/Fakes/InMemoryAuditSink.php';
 require_once __DIR__ . '/Fakes/FakeIdentityProvider.php';
@@ -96,6 +101,87 @@ if (!function_exists('get_option')) {
     function get_option(string $name, $default = false)
     {
         return $GLOBALS['wpas_test_options'][$name] ?? $default;
+    }
+}
+
+if (!function_exists('update_option')) {
+    /**
+     * Test control knob: mirrors writes into $GLOBALS['wpas_test_options'] so a
+     * subsequent get_option() in the SAME test observes them.
+     *
+     * @param mixed $value
+     */
+    function update_option(string $name, $value, mixed $autoload = null): bool
+    {
+        $GLOBALS['wpas_test_options'][$name] = $value;
+
+        return true;
+    }
+}
+
+if (!function_exists('delete_option')) {
+    function delete_option(string $name): bool
+    {
+        unset($GLOBALS['wpas_test_options'][$name]);
+
+        return true;
+    }
+}
+
+if (!function_exists('dbDelta')) {
+    $GLOBALS['wpas_test_dbdelta_queries'] = [];
+
+    /**
+     * Test control knob: records every statement Schema::install() would have
+     * handed to the real dbDelta() in $GLOBALS['wpas_test_dbdelta_queries'],
+     * instead of diffing against a real database.
+     *
+     * @param string|list<string> $queries
+     * @return array<string, string>
+     */
+    function dbDelta($queries = '', bool $execute = true): array
+    {
+        foreach ((array) $queries as $query) {
+            $GLOBALS['wpas_test_dbdelta_queries'][] = $query;
+        }
+
+        return [];
+    }
+}
+
+if (!function_exists('wp_next_scheduled')) {
+    $GLOBALS['wpas_test_cron'] = [];
+
+    /**
+     * Test control knob: $GLOBALS['wpas_test_cron'][$hook] holds the next-run
+     * timestamp, mirroring wp-cron's own option-backed schedule.
+     *
+     * @param array<int, mixed> $args
+     */
+    function wp_next_scheduled(string $hook, array $args = []): int|false
+    {
+        return $GLOBALS['wpas_test_cron'][$hook] ?? false;
+    }
+}
+
+if (!function_exists('wp_schedule_event')) {
+    /** @param array<int, mixed> $args */
+    function wp_schedule_event(int $timestamp, string $recurrence, string $hook, array $args = []): bool
+    {
+        $GLOBALS['wpas_test_cron'][$hook] = $timestamp;
+
+        return true;
+    }
+}
+
+if (!function_exists('wp_clear_scheduled_hook')) {
+    /** @param array<int, mixed> $args */
+    function wp_clear_scheduled_hook(string $hook, array $args = []): int|false
+    {
+        $existed = isset($GLOBALS['wpas_test_cron'][$hook]);
+        unset($GLOBALS['wpas_test_cron'][$hook]);
+
+        return $existed ? 1 : false;
     }
 }
 

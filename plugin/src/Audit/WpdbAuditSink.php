@@ -7,6 +7,7 @@ namespace Specflux\AgentSafety\Plugin\Audit;
 use Specflux\AgentSafety\Audit\AuditRecord;
 use Specflux\AgentSafety\Audit\AuditSink;
 use Specflux\AgentSafety\Audit\HashChain;
+use Specflux\AgentSafety\Plugin\Support\Schema;
 use wpdb;
 
 /**
@@ -15,9 +16,11 @@ use wpdb;
  * first), entry_hash = sha256(prev_hash + canonical_json). Tampering with or
  * deleting any row is then detectable by re-verifying the chain.
  *
- * The table is created lazily on first write (CREATE TABLE IF NOT EXISTS, guarded
- * once per request) so the sink works regardless of plugin-activation timing in a
- * mapped/dev environment.
+ * The table is normally created/upgraded at activation by {@see Schema::install()}.
+ * As a safety net for a site that writes before it was ever (re-)activated, the
+ * table is ALSO created lazily on first write (CREATE TABLE IF NOT EXISTS, guarded
+ * once per request), from the exact same column definitions in {@see Schema} so
+ * the two paths can never disagree on shape.
  *
  * Concurrency: reading the previous hash and inserting must not interleave, or two
  * writers could read the same prev hash and fork the chain. The append is therefore
@@ -37,7 +40,7 @@ final class WpdbAuditSink implements AuditSink
 
     public function table(): string
     {
-        return $this->db->prefix . 'agsafe_audit_log';
+        return Schema::auditLogTable($this->db);
     }
 
     public function append(AuditRecord $record): void
@@ -107,27 +110,10 @@ final class WpdbAuditSink implements AuditSink
         $table = $this->table();
         $charset = $this->db->get_charset_collate();
 
-        // dbDelta is finicky; a direct guarded CREATE is simpler and idempotent.
+        // dbDelta is finicky; a direct guarded CREATE (from the SAME column
+        // definitions Schema::install() uses) is simpler and idempotent here.
         $this->db->query(
-            "CREATE TABLE IF NOT EXISTS {$table} (
-                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                event_id VARCHAR(64) NOT NULL,
-                ts VARCHAR(40) NOT NULL,
-                correlation_id VARCHAR(64) NOT NULL,
-                pack VARCHAR(100) NOT NULL,
-                ability VARCHAR(191) NOT NULL,
-                tier TINYINT NULL,
-                decision VARCHAR(20) NOT NULL,
-                result VARCHAR(20) NULL,
-                wp_user BIGINT NULL,
-                ip VARCHAR(45) NULL,
-                record_json LONGTEXT NOT NULL,
-                prev_hash CHAR(64) NOT NULL,
-                entry_hash CHAR(64) NOT NULL,
-                PRIMARY KEY (id),
-                KEY correlation_id (correlation_id),
-                KEY ability (ability)
-            ) {$charset}"
+            "CREATE TABLE IF NOT EXISTS {$table} (\n" . Schema::auditLogColumns() . "\n) {$charset}"
         );
 
         $this->ensured = true;

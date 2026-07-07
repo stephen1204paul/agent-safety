@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Audit;
 
 use Specflux\AgentSafety\Approval\ApprovalStore;
+use Specflux\AgentSafety\Plugin\Support\Schema;
 use wpdb;
 
 /**
- * Approval store (SPEC §4) backed by a custom table. Implements the core
- * {@see ApprovalStore} seam plus the host-only read/mutate methods the wp-admin
- * "Pending Agent Actions" screen needs.
+ * Approval store (SPEC §4) backed by a custom table (shape owned by
+ * {@see Schema}). Implements the core {@see ApprovalStore} seam plus the
+ * host-only read/mutate methods the wp-admin "Pending Agent Actions" screen
+ * and the {@see deleteExpired()} cron sweep need.
  *
  * Security / correctness properties:
  *  - The bearer token is shown to the approver ONCE and never persisted in the
@@ -43,7 +45,7 @@ final class WpdbApprovalStore implements ApprovalStore
 
     public function table(): string
     {
-        return $this->db->prefix . 'agsafe_approvals';
+        return Schema::approvalsTable($this->db);
     }
 
     public function request(
@@ -280,6 +282,52 @@ final class WpdbApprovalStore implements ApprovalStore
         return is_array($row) ? $row : null;
     }
 
+    /**
+     * Delete rows that are both past their TTL and can never be acted on again
+     * (the backlog {@see \Specflux\AgentSafety\Plugin\Support\ApprovalSweep}
+     * hourly cron exists to control). Called with the current UTC time.
+     *
+     * Deleted — dead ends with no decision left to preserve:
+     *  - `pending` whose {@see PENDING_TTL_SECONDS} window has lapsed: nobody
+     *    ever reviewed it. Covers rows {@see expireStale()} hasn't (yet) flipped
+     *    to `expired`, so this sweep does not depend on that method having run.
+     *  - `expired`: already-flipped stale pending requests.
+     *  - `approved` whose {@see TTL_SECONDS} grant window has lapsed WITHOUT
+     *    being reserved: a human said yes but the request was never redeemed
+     *    into an execution, so the grant is now permanently unusable.
+     *
+     * Kept — still actionable, or the operational anchor for a real decision
+     * already immutably recorded (SPEC §5) in the hash-chained audit log via
+     * {@see \Specflux\AgentSafety\Plugin\Admin\PendingActionsPage::reconcile()}
+     * (approve/reject) or {@see \Specflux\AgentSafety\Plugin\Hooks\AbilityPermissionGate::onExecuted()}
+     * (finalize on execution):
+     *  - `pending` still within its TTL — a human may yet approve/reject it.
+     *  - `in_flight` — an execution is claiming this grant RIGHT NOW; its
+     *    lifecycle belongs solely to finalize()/rollback(), never to a sweep,
+     *    no matter how long reserved_ts makes it look.
+     *  - `rejected` — the row IS the record of who rejected what.
+     *  - `consumed` — the row IS the record of which grant authorised which
+     *    execution (cross-referenced by the audit trail's `approval.id`).
+     */
+    public function deleteExpired(string $nowUtc): int
+    {
+        $this->ensureTable();
+
+        $affected = $this->db->query(
+            $this->db->prepare(
+                // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name.
+                "DELETE FROM {$this->table()}
+                  WHERE (status = 'pending' AND pending_expires_ts <= %s)
+                     OR status = 'expired'
+                     OR (status = 'approved' AND expires_ts <= %s)",
+                $nowUtc,
+                $nowUtc
+            )
+        );
+
+        return is_int($affected) ? $affected : 0;
+    }
+
     /** Flip pending requests past their TTL to `expired` (item 3). */
     private function expireStale(): void
     {
@@ -308,32 +356,11 @@ final class WpdbApprovalStore implements ApprovalStore
         $table = $this->table();
         $charset = $this->db->get_charset_collate();
 
+        // Safety net only: the table is normally created/upgraded at activation by
+        // Schema::install(). Built from the SAME column definitions so the two
+        // paths can never disagree on shape.
         $this->db->query(
-            "CREATE TABLE IF NOT EXISTS {$table} (
-                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                approval_id VARCHAR(64) NOT NULL,
-                verb VARCHAR(191) NOT NULL,
-                args_hash CHAR(64) NOT NULL,
-                summary TEXT NULL,
-                correlation_id VARCHAR(64) NOT NULL,
-                audit_event_id VARCHAR(64) NULL,
-                key_id VARCHAR(64) NULL,
-                status VARCHAR(20) NOT NULL,
-                token_hash CHAR(64) NULL,
-                approver BIGINT NULL,
-                reserved_req VARCHAR(64) NULL,
-                reserved_ts DATETIME NULL,
-                created_ts DATETIME NOT NULL,
-                pending_expires_ts DATETIME NULL,
-                expires_ts DATETIME NULL,
-                consumed_ts DATETIME NULL,
-                PRIMARY KEY (id),
-                UNIQUE KEY approval_id (approval_id),
-                KEY status (status),
-                KEY verb_args (verb, args_hash),
-                KEY ref (key_id, verb, args_hash),
-                KEY token_hash (token_hash)
-            ) {$charset}"
+            "CREATE TABLE IF NOT EXISTS {$table} (\n" . Schema::approvalsColumns() . "\n) {$charset}"
         );
 
         $this->ensured = true;
