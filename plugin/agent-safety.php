@@ -40,6 +40,7 @@ use Specflux\AgentSafety\Plugin\Integrations\Woo\WooIntegration;
 use Specflux\AgentSafety\Plugin\Support\ApprovalSweep;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
 use Specflux\AgentSafety\Plugin\Support\Schema;
 
@@ -147,11 +148,17 @@ if (class_exists(Gate::class)) {
     // approvals through this one object, so they can never diverge (SPEC §4/§5).
     $agsafe_recorder = new DecisionRecorder($agsafe_sink, $agsafe_approvals);
 
+    // Shared rate-limit gate (backlog #16): BOTH seams enforce a pack's
+    // calls_per_minute/calls_per_hour caps through this one object, for the same
+    // reason $agsafe_recorder is shared — identical enforcement no matter which
+    // seam intercepts a call first.
+    $agsafe_rate_limits = new RateLimitGate();
+
     // Primary seam on the shipping stack (WP core Abilities API; adapter-version-independent).
     // Audits the verdicts that never execute (denied / approval-pending) and owns the
     // reserve→finalize approval lifecycle (SPEC §4). Inert no-op for any ability
     // outside $agsafe_governed_namespaces (SPEC seam 6).
-    (new AbilityPermissionGate($agsafe_gate, $agsafe_packs, $agsafe_recorder, $agsafe_approvals, $agsafe_governed_namespaces))->register();
+    (new AbilityPermissionGate($agsafe_gate, $agsafe_packs, $agsafe_recorder, $agsafe_approvals, $agsafe_governed_namespaces, $agsafe_rate_limits))->register();
 
     // Forward-compat seam: fires only if a mcp-adapter >= 0.5.0 is the loaded copy.
     // Shares the same PackResolver + DecisionRecorder as the live seam so both honour
@@ -159,7 +166,7 @@ if (class_exists(Gate::class)) {
     // WooCommerce's "namespace-resource-action" tool-naming convention, so this seam
     // is only meaningful (and only wired up) when WooCommerce is the active integration.
     if (WooIntegration::available()) {
-        (new PreToolCallGate($agsafe_gate, new VerbMapper(), $agsafe_packs, $agsafe_recorder))->register();
+        (new PreToolCallGate($agsafe_gate, new VerbMapper(), $agsafe_packs, $agsafe_recorder, $agsafe_rate_limits))->register();
     }
 
     // Audit every ability that actually executes (SPEC §5) — successes and failures.

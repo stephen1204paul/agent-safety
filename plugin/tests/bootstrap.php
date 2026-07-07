@@ -31,9 +31,22 @@ if (!class_exists('wpdb', false)) {
     require_once __DIR__ . '/stubs/wpdb.php';
 }
 
+// Test-only stand-in for WordPress's WP_Error (a real WP load order always
+// wins). Needed the moment a test drives a gate seam far enough to hit a
+// denial/approval-required/execution-failure branch, all of which construct one.
+if (!class_exists('WP_Error', false)) {
+    require_once __DIR__ . '/stubs/wp-error.php';
+}
+
+// Test-only clock override consumed by Support\RateCounter's fixed-window
+// bucketing (see the file for why this is a namespaced function, not a class).
+require_once __DIR__ . '/stubs/wpas-clock.php';
+
 // Hand-rolled fakes used across the suite.
 require_once __DIR__ . '/Fakes/InMemoryAuditSink.php';
 require_once __DIR__ . '/Fakes/FakeIdentityProvider.php';
+require_once __DIR__ . '/Fakes/FakeToolAnnotations.php';
+require_once __DIR__ . '/Fakes/FakeMcpTool.php';
 
 // --- Minimal WP function shims -------------------------------------------
 // Only defined when absent, so a real WP load order (wp-env) always wins.
@@ -192,5 +205,66 @@ if (!function_exists('is_wp_error')) {
         // Safe even though WP_Error may not be defined here: instanceof against
         // an unknown class name simply evaluates to false, no autoload/fatal.
         return $thing instanceof \WP_Error;
+    }
+}
+
+if (!function_exists('get_transient')) {
+    $GLOBALS['wpas_test_transients'] = [];
+
+    /**
+     * Test control knob: $GLOBALS['wpas_test_transients'][$key] holds
+     * ['value' => mixed, 'expires' => int|null], mirroring the real transients
+     * API's options-table backing closely enough for RateCounter's needs.
+     * Expiry is measured against the SAME $GLOBALS['wpas_test_time'] clock
+     * Support\RateCounter reads (see stubs/wpas-clock.php), so a test that
+     * freezes/advances time sees both agree.
+     *
+     * @return mixed
+     */
+    function get_transient(string $key)
+    {
+        $row = $GLOBALS['wpas_test_transients'][$key] ?? null;
+        if ($row === null) {
+            return false;
+        }
+
+        $now = $GLOBALS['wpas_test_time'] ?? time();
+        if ($row['expires'] !== null && $row['expires'] <= $now) {
+            unset($GLOBALS['wpas_test_transients'][$key]);
+
+            return false;
+        }
+
+        return $row['value'];
+    }
+}
+
+if (!function_exists('set_transient')) {
+    /**
+     * Test control knob: mirrors writes into $GLOBALS['wpas_test_transients']
+     * so a subsequent get_transient() in the SAME test observes them (and their
+     * expiry, per the $wpas_test_time clock).
+     *
+     * @param mixed $value
+     */
+    function set_transient(string $key, $value, int $expiration = 0): bool
+    {
+        $now = $GLOBALS['wpas_test_time'] ?? time();
+        $GLOBALS['wpas_test_transients'][$key] = [
+            'value' => $value,
+            'expires' => $expiration > 0 ? $now + $expiration : null,
+        ];
+
+        return true;
+    }
+}
+
+if (!function_exists('delete_transient')) {
+    function delete_transient(string $key): bool
+    {
+        $existed = isset($GLOBALS['wpas_test_transients'][$key]);
+        unset($GLOBALS['wpas_test_transients'][$key]);
+
+        return $existed;
     }
 }

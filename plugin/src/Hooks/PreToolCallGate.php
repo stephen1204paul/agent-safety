@@ -12,7 +12,9 @@ use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\VerbMapper;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Policy\Tier;
 use WP_Error;
 
 /**
@@ -41,6 +43,7 @@ final class PreToolCallGate
         private readonly VerbMapper $mapper,
         private readonly PackResolver $packs,
         private readonly DecisionRecorder $recorder,
+        private readonly RateLimitGate $rateLimits = new RateLimitGate(),
     ) {
     }
 
@@ -59,14 +62,30 @@ final class PreToolCallGate
     {
         $verb = $this->mapper->toVerb($toolName);
         $pack = $this->resolvePack();
+        $hasValidApproval = $this->recorder->hasApprovedGrant($verb, $args);
 
         $decision = $this->gate->evaluate(new GateContext(
             verb: $verb,
             args: $args,
             pack: $pack,
             selfReportedReadonly: $this->isSelfReportedReadonly($mcpTool),
-            hasValidApproval: $this->recorder->hasApprovedGrant($verb, $args),
+            hasValidApproval: $hasValidApproval,
         ));
+
+        // D3 (SAFETY-CRITICAL): a self-reported destructiveHint may only TIGHTEN
+        // this verdict, never loosen it — see elevateForDestructiveHint().
+        $decision = $this->elevateForDestructiveHint(
+            $decision,
+            $pack,
+            $this->isSelfReportedDestructive($mcpTool),
+            $hasValidApproval,
+        );
+
+        // Rate/quota caps (backlog #16) apply only to a call that would otherwise
+        // proceed — a denial must never itself consume quota.
+        if (Outcome::Allow === $decision->outcome) {
+            $decision = $this->enforceRateLimit($pack, $decision);
+        }
 
         // Allowed (incl. an already-approved retry): proceed. Execution audit and the
         // reserve→finalize of any grant happen in the permission_callback seam.
@@ -118,9 +137,103 @@ final class PreToolCallGate
         return $this->packs->resolve();
     }
 
+    /**
+     * D3 (SAFETY-CRITICAL): a tool's SELF-REPORTED annotations may only make
+     * gating STRICTER, never looser. A destructiveHint === true on a call OUR
+     * OWN classifier placed below the approval tier ({@see Tier::Irreversible})
+     * is treated as though it HAD classified there: the call now faces
+     * whatever the pack demands of an irreversible verb (a hard deny-class
+     * wall, or approval). readOnlyHint is deliberately NOT read here — it must
+     * never relax anything; its only effect anywhere in this codebase is
+     * {@see \Specflux\AgentSafety\Policy\TierClassifier::isReadonlyButWrites()},
+     * which can only ADD a "readonly_but_writes" denial, never remove one.
+     *
+     * Lives here — a post-classify tighten in the gate SEAM — rather than as a
+     * core {@see \Specflux\AgentSafety\Policy\ElevationRule}, because the
+     * annotation comes from mcp-adapter's $mcp_tool argument to this filter,
+     * which the core Gate/GateContext/TierClassifier pipeline never sees (by
+     * design, so the core stays framework-agnostic: it only ever sees a verb
+     * id and call args, never an adapter-specific tool object).
+     *
+     * Only ever touches a decision that is currently Allow: a call already
+     * Denied or ApprovalRequired for an unrelated reason is already at least
+     * as strict as what this method could produce, so it is a no-op there —
+     * meaning this method can turn Allow into Deny/ApprovalRequired, but never
+     * the reverse, which is what makes D3's "never relax" hold by construction.
+     */
+    private function elevateForDestructiveHint(
+        Decision $decision,
+        Pack $pack,
+        bool $selfReportedDestructive,
+        bool $hasValidApproval,
+    ): Decision {
+        if (!$selfReportedDestructive || Outcome::Allow !== $decision->outcome || Tier::Irreversible === $decision->tier) {
+            return $decision;
+        }
+
+        if ($pack->deniesClass(Tier::Irreversible)) {
+            return Decision::deny('denied_by_class_destructive_hint', Tier::Irreversible);
+        }
+
+        if ($pack->requiresApproval(Tier::Irreversible) && !$hasValidApproval) {
+            return Decision::approvalRequired(Tier::Irreversible);
+        }
+
+        return Decision::allow(Tier::Irreversible);
+    }
+
+    /**
+     * Enforce this pack's rate/quota caps (backlog #16) on a decision that is
+     * otherwise Allow. Denials never reach here, so a blocked call never
+     * consumes quota. Returns the SAME decision when admitted (the call has
+     * just been counted against the pack's limits as a side effect), or a Deny
+     * naming the tripped limit when the cap is exceeded.
+     */
+    private function enforceRateLimit(Pack $pack, Decision $decision): Decision
+    {
+        $tripped = $this->rateLimits->admit($pack, RequestContext::tokenId());
+
+        return $tripped === null ? $decision : Decision::deny('rate_limited_' . $tripped, $decision->tier);
+    }
+
     private function isSelfReportedReadonly($mcpTool): bool
     {
-        // STUB: read the tool/ability annotation once the accessor is wired.
-        return false;
+        return true === $this->annotationHint($mcpTool, 'getReadOnlyHint');
+    }
+
+    private function isSelfReportedDestructive($mcpTool): bool
+    {
+        return true === $this->annotationHint($mcpTool, 'getDestructiveHint');
+    }
+
+    /**
+     * Reads one boolean hint off $mcpTool's annotations via mcp-adapter's real
+     * accessor chain — get_protocol_dto()->getAnnotations()?->{$accessor}() —
+     * WITHOUT depending on the mcp-adapter classes: every hop is duck-typed
+     * (method_exists) and null-guarded, so a foreign or malformed $mcpTool
+     * (a different adapter version, or a plain stdClass in tests) is read as
+     * "no hint" rather than fatal.
+     *
+     * @param mixed $mcpTool
+     */
+    private function annotationHint($mcpTool, string $accessor): ?bool
+    {
+        if (!is_object($mcpTool) || !method_exists($mcpTool, 'get_protocol_dto')) {
+            return null;
+        }
+
+        $dto = $mcpTool->get_protocol_dto();
+        if (!is_object($dto) || !method_exists($dto, 'getAnnotations')) {
+            return null;
+        }
+
+        $annotations = $dto->getAnnotations();
+        if (!is_object($annotations) || !method_exists($annotations, $accessor)) {
+            return null;
+        }
+
+        $value = $annotations->$accessor();
+
+        return is_bool($value) ? $value : null;
     }
 }

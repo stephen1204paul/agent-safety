@@ -14,6 +14,7 @@ use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\ExecutionResult;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
 use WP_Error;
 
@@ -62,6 +63,7 @@ final class AbilityPermissionGate
         private readonly DecisionRecorder $recorder,
         private readonly ?ApprovalStore $approvals = null,
         private readonly array $governedNamespaces = [],
+        private readonly RateLimitGate $rateLimits = new RateLimitGate(),
     ) {
     }
 
@@ -132,6 +134,16 @@ final class AbilityPermissionGate
                 ));
             }
 
+            // Rate/quota caps (backlog #16) apply only to a call that would otherwise
+            // proceed — a denial must never itself consume quota. If a claimed
+            // approval grant is downgraded to Deny here, it is left `in_flight`;
+            // onShutdown()'s existing safety net releases it back to `approved`
+            // since the action never reaches onExecuted(), so a retry under the
+            // cap can still reuse the same human grant.
+            if (Outcome::Allow === $decision->outcome) {
+                $decision = $self->enforceRateLimit($pack, $decision);
+            }
+
             // For calls that do NOT execute (denied / approval-pending): persist a
             // pending approval (when required) and audit the verdict. Allowed calls
             // are audited at execution time by AbilityAuditLog.
@@ -190,6 +202,21 @@ final class AbilityPermissionGate
     public function audit(string $eventId, string $name, array $input, Pack $pack, Decision $decision, ?string $approvalId = null): void
     {
         $this->recorder->auditDecision($eventId, $name, $input, $pack, $decision, $approvalId);
+    }
+
+    /**
+     * Enforce this pack's rate/quota caps (backlog #16) on a decision that is
+     * otherwise Allow. Denials never reach here, so a blocked call never
+     * consumes quota. Returns the SAME decision when admitted (the call has
+     * just been counted against the pack's limits as a side effect), or a Deny
+     * naming the tripped limit when the cap is exceeded. Public so the
+     * permission-callback closure ($self) can reach it.
+     */
+    public function enforceRateLimit(Pack $pack, Decision $decision): Decision
+    {
+        $tripped = $this->rateLimits->admit($pack, RequestContext::tokenId());
+
+        return $tripped === null ? $decision : Decision::deny('rate_limited_' . $tripped, $decision->tier);
     }
 
     /**

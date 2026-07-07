@@ -6,9 +6,18 @@ namespace Specflux\AgentSafety\Plugin\Tests\Hooks;
 
 use PHPUnit\Framework\TestCase;
 use Specflux\AgentSafety\Gate\Gate;
+use Specflux\AgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Policy\Tier;
+use Specflux\AgentSafety\Policy\TierClassifier;
+use Specflux\AgentSafety\Policy\VerbCatalog;
 use Specflux\AgentSafety\Plugin\Hooks\AbilityPermissionGate;
+use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
+use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeIdentityProvider;
+use WP_Error;
 
 /**
  * Exercises the governed-namespace gate behaviour (SPEC seam 6): {@see
@@ -18,6 +27,19 @@ use Specflux\AgentSafety\Plugin\Support\PackResolver;
  */
 final class AbilityPermissionGateTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        $GLOBALS['wpas_test_options'] = [];
+        $GLOBALS['wpas_test_transients'] = [];
+    }
+
+    protected function tearDown(): void
+    {
+        RequestContext::reset();
+        $GLOBALS['wpas_test_options'] = [];
+        $GLOBALS['wpas_test_transients'] = [];
+    }
+
     private function gate(array $governedNamespaces): AbilityPermissionGate
     {
         return new AbilityPermissionGate(
@@ -27,6 +49,21 @@ final class AbilityPermissionGateTest extends TestCase
             null,
             $governedNamespaces,
         );
+    }
+
+    /** A gate wired so 'woocommerce/orders-list' resolves to $pack (backlog #16 rate-limit tests). */
+    private function gateWithPack(Pack $pack): AbilityPermissionGate
+    {
+        $catalog = new VerbCatalog();
+        $catalog->register(['woocommerce/orders-list' => Tier::Reversible]);
+        $gate = new Gate(new TierClassifier($catalog));
+
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: ['test:token']),
+        ]));
+        $GLOBALS['wpas_test_options'][PackResolver::BINDINGS_OPTION] = ['test:token' => $pack->name];
+
+        return new AbilityPermissionGate($gate, new PackResolver([$pack]), new DecisionRecorder(), null, ['woocommerce/']);
     }
 
     public function testUngovernedNamespaceLeavesArgsAndCallbackUntouched(): void
@@ -76,5 +113,55 @@ final class AbilityPermissionGateTest extends TestCase
         $this->assertNotSame($original, $wrappedWoo['permission_callback']);
         $this->assertNotSame($original, $wrappedCustom['permission_callback']);
         $this->assertSame($original, $wrappedOther['permission_callback']);
+    }
+
+    public function testRateLimitAllowsCallsUnderThePackCap(): void
+    {
+        $pack = new Pack(name: 'capped', allow: ['woocommerce/*'], limits: ['calls_per_minute' => 2]);
+        $gate = $this->gateWithPack($pack);
+        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+
+        $this->assertTrue($callback([]));
+        $this->assertTrue($callback([]));
+    }
+
+    public function testRateLimitBlocksCallsBeyondThePackCap(): void
+    {
+        $pack = new Pack(name: 'capped', allow: ['woocommerce/*'], limits: ['calls_per_minute' => 1]);
+        $gate = $this->gateWithPack($pack);
+        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+
+        $this->assertTrue($callback([]));
+
+        $second = $callback([]);
+        $this->assertInstanceOf(WP_Error::class, $second);
+        $this->assertSame('agent_safety_denied', $second->get_error_code());
+        $this->assertStringContainsString('rate_limited_calls_per_minute', $second->get_error_message());
+    }
+
+    public function testUnlimitedPackIsNeverRateLimited(): void
+    {
+        $pack = new Pack(name: 'unlimited', allow: ['woocommerce/*']);
+        $gate = $this->gateWithPack($pack);
+        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->assertTrue($callback([]));
+        }
+    }
+
+    public function testUngovernedNamespaceIsNeverRateLimitedEitherWithACappedPack(): void
+    {
+        // wrap() is a no-op for an ungoverned ability -> the ORIGINAL callback
+        // runs untouched, so the pack's cap (however small) never applies to it.
+        $pack = new Pack(name: 'capped', allow: ['*'], limits: ['calls_per_minute' => 1]);
+        $catalog = new VerbCatalog();
+        $catalog->register(['core/something-else' => Tier::Reversible]);
+        $gate = new AbilityPermissionGate(new Gate(new TierClassifier($catalog)), new PackResolver([$pack]), new DecisionRecorder(), null, ['woocommerce/']);
+
+        $original = static fn () => true;
+        $wrapped = $gate->wrap(['permission_callback' => $original], 'core/something-else');
+
+        $this->assertSame($original, $wrapped['permission_callback']);
     }
 }

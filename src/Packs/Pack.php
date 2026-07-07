@@ -19,7 +19,16 @@ final class Pack
      * @param list<string>   $denyClass  Tier class slugs hard-walled, e.g. ["tier2"].
      * @param array<string,bool> $approvalByClass Tier class slug => requires human approval.
      * @param string         $pii        "redacted" | "full".
-     * @param array<string,mixed> $limits Per-verb limits (e.g. margin_floor_pct).
+     * @param array{calls_per_minute?: int|null, calls_per_hour?: int|null} $limits
+     *     Pack-level rate/quota caps (the "Policy Envelope"'s rate/quota caps, per
+     *     CONVERSATION-LOG.md): a fixed-window cap on calls made under this pack by
+     *     one identity token, independent of which verb is called. A null value, or
+     *     an absent key, means unlimited for that window. Enforced by the host (see
+     *     {@see \Specflux\AgentSafety\Packs\LimitPolicy} for the pure evaluator and
+     *     the plugin's `RateCounter`/`RateLimitGate` for the transient-backed
+     *     counting) — this class only carries the config, never the counts. Builtin
+     *     packs (owner, default-agent) ship unlimited; the shape exists for site
+     *     owners/integrations that bind a specific credential to a capped pack.
      */
     public function __construct(
         public readonly string $name,
@@ -29,6 +38,13 @@ final class Pack
         public readonly string $pii = 'redacted',
         public readonly array $limits = [],
     ) {
+    }
+
+    /** True when this pack carries at least one rate/quota cap to enforce. */
+    public function hasRateLimits(): bool
+    {
+        return ($this->limits['calls_per_minute'] ?? null) !== null
+            || ($this->limits['calls_per_hour'] ?? null) !== null;
     }
 
     /** Does any allow-glob admit this verb? */
