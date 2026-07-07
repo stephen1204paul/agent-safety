@@ -141,6 +141,12 @@ plugin/                      specflux/agent-safety — WordPress plugin host
   tests/                     PHPUnit tests for the plugin (WP shims + mcp-adapter stub)
 ```
 
+## Roadmap
+
+Planned work — argument-aware spend caps, approval notifications, shadow mode,
+a core-WordPress integration module, and more — is laid out in
+[ROADMAP.md](ROADMAP.md).
+
 ## License
 
 GPL-2.0-or-later.
