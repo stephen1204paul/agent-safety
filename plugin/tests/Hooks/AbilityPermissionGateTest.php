@@ -121,8 +121,10 @@ final class AbilityPermissionGateTest extends TestCase
         $gate = $this->gateWithPack($pack);
         $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
 
-        $this->assertTrue($callback([]));
-        $this->assertTrue($callback([]));
+        // Distinct args on purpose: identical (verb, args) within one request is
+        // memoized as the host re-checking the SAME call, not a new call.
+        $this->assertTrue($callback(['call' => 1]));
+        $this->assertTrue($callback(['call' => 2]));
     }
 
     public function testRateLimitBlocksCallsBeyondThePackCap(): void
@@ -131,9 +133,9 @@ final class AbilityPermissionGateTest extends TestCase
         $gate = $this->gateWithPack($pack);
         $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
 
-        $this->assertTrue($callback([]));
+        $this->assertTrue($callback(['call' => 1]));
 
-        $second = $callback([]);
+        $second = $callback(['call' => 2]);
         $this->assertInstanceOf(WP_Error::class, $second);
         $this->assertSame('agent_safety_denied', $second->get_error_code());
         $this->assertStringContainsString('rate_limited_calls_per_minute', $second->get_error_message());

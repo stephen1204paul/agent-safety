@@ -150,7 +150,7 @@ final class AbilityPermissionGate
             // since the action never reaches onExecuted(), so a retry under the
             // cap can still reuse the same human grant.
             if (Outcome::Allow === $decision->outcome) {
-                $decision = $self->enforceRateLimit($pack, $decision);
+                $decision = $self->enforceRateLimit($pack, $decision, $name, $callArgs);
             }
 
             // For calls that do NOT execute (denied / approval-pending): persist a
@@ -221,9 +221,10 @@ final class AbilityPermissionGate
      * naming the tripped limit when the cap is exceeded. Public so the
      * permission-callback closure ($self) can reach it.
      */
-    public function enforceRateLimit(Pack $pack, Decision $decision): Decision
+    /** @param array<string, mixed> $args */
+    public function enforceRateLimit(Pack $pack, Decision $decision, string $verb, array $args): Decision
     {
-        $tripped = $this->rateLimits->admit($pack, RequestContext::tokenId());
+        $tripped = $this->rateLimits->admit($pack, RequestContext::tokenId(), $verb, $args);
 
         return $tripped === null ? $decision : Decision::deny('rate_limited_' . $tripped, $decision->tier);
     }

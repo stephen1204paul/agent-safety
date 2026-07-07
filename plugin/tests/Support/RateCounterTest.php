@@ -45,6 +45,29 @@ final class RateCounterTest extends TestCase
         $this->assertSame(['minute' => 2, 'hour' => 2], $counter->countsFor('pack-a', 'token-1'));
     }
 
+    /**
+     * REGRESSION (live smoke test, 2026-07-07): DB-backed transients — the
+     * WordPress default, no persistent object cache — round-trip through
+     * wp_options text columns and come back as STRINGS. An is_int() read
+     * check zeroed the counter on every fresh request, so caps never tripped
+     * across requests. Simulate the DB round-trip by stringifying the stored
+     * values and assert the counts survive.
+     */
+    public function testStringTransientValuesFromDbBackedSitesStillCount(): void
+    {
+        $counter = new RateCounter();
+
+        $counter->increment('pack-a', 'token-1');
+        $counter->increment('pack-a', 'token-1');
+
+        $GLOBALS['wpas_test_transients'] = array_map(
+            static fn ($v) => is_int($v) ? (string) $v : $v,
+            $GLOBALS['wpas_test_transients'],
+        );
+
+        $this->assertSame(['minute' => 2, 'hour' => 2], $counter->countsFor('pack-a', 'token-1'));
+    }
+
     public function testDifferentTokensUnderTheSamePackHaveIndependentCounters(): void
     {
         $counter = new RateCounter();

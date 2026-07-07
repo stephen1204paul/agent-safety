@@ -187,14 +187,16 @@ final class PreToolCallGateTest extends TestCase
         $first = $gate->handle(['id' => 1], 'demo-read');
         $this->assertSame(['id' => 1], $first);
 
-        $second = $gate->handle(['id' => 1], 'demo-read');
+        // Distinct args on purpose: identical (verb, args) within one request
+        // is memoized as the host re-checking the SAME call, not a new call.
+        $second = $gate->handle(['id' => 2], 'demo-read');
         $this->assertInstanceOf(WP_Error::class, $second);
         $this->assertSame('agent_safety_denied', $second->get_error_code());
         $this->assertStringContainsString('rate_limited_calls_per_minute', $second->get_error_message());
 
-        // A third attempt is still blocked -- the denial itself did not free up
-        // (or spend down further than) the same single slot.
-        $third = $gate->handle(['id' => 1], 'demo-read');
+        // A third (new) attempt is still blocked -- the denial itself did not
+        // free up (or spend down further than) the same single slot.
+        $third = $gate->handle(['id' => 3], 'demo-read');
         $this->assertInstanceOf(WP_Error::class, $third);
     }
 }

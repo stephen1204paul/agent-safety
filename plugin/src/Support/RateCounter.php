@@ -57,7 +57,13 @@ final class RateCounter
     {
         $value = get_transient($key);
 
-        return is_int($value) ? $value : 0;
+        // DB-backed transients (the WordPress default, no object cache) come
+        // back as STRINGS — get_option round-trips through wp_options text
+        // columns. An is_int() check here silently zeroed the counter on every
+        // fresh request, so caps never tripped across requests (found by live
+        // smoke test, 2026-07-07). Only an object-cache-backed site returns
+        // real ints. Accept both.
+        return is_numeric($value) ? (int) $value : 0;
     }
 
     private function bump(string $key, int $ttl): void

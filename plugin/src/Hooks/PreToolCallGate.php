@@ -84,7 +84,7 @@ final class PreToolCallGate
         // Rate/quota caps (backlog #16) apply only to a call that would otherwise
         // proceed — a denial must never itself consume quota.
         if (Outcome::Allow === $decision->outcome) {
-            $decision = $this->enforceRateLimit($pack, $decision);
+            $decision = $this->enforceRateLimit($pack, $decision, $verb, $args);
         }
 
         // Allowed (incl. an already-approved retry): proceed. Execution audit and the
@@ -188,10 +188,12 @@ final class PreToolCallGate
      * consumes quota. Returns the SAME decision when admitted (the call has
      * just been counted against the pack's limits as a side effect), or a Deny
      * naming the tripped limit when the cap is exceeded.
+     *
+     * @param array<string, mixed> $args
      */
-    private function enforceRateLimit(Pack $pack, Decision $decision): Decision
+    private function enforceRateLimit(Pack $pack, Decision $decision, string $verb, array $args): Decision
     {
-        $tripped = $this->rateLimits->admit($pack, RequestContext::tokenId());
+        $tripped = $this->rateLimits->admit($pack, RequestContext::tokenId(), $verb, $args);
 
         return $tripped === null ? $decision : Decision::deny('rate_limited_' . $tripped, $decision->tier);
     }
