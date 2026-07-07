@@ -15,11 +15,18 @@ namespace Specflux\AgentSafety\Plugin\Tests\Fakes;
  * than a distinct DTO object) purely for fixture simplicity; PreToolCallGate's
  * duck-typing only ever calls method_exists() + the accessor, so it cannot
  * tell the difference.
+ *
+ * Also stands in for the `get_observability_context()` accessor
+ * {@see \Specflux\AgentSafety\Plugin\Hooks\ToolCallResultRedactor} reads —
+ * upstream's `McpTool::fromAbility()` puts the real ability id there for any
+ * ability-backed tool (`['ability_name' => $ability->get_name(), ...]`).
  */
 final class FakeMcpTool
 {
-    private function __construct(private readonly ?object $annotations)
-    {
+    private function __construct(
+        private readonly ?object $annotations,
+        private readonly ?string $abilityName = null,
+    ) {
     }
 
     /** A tool whose annotations report the given hints (both default: absent, i.e. no annotations at all). */
@@ -36,6 +43,12 @@ final class FakeMcpTool
         return new self($annotations);
     }
 
+    /** An ability-backed tool whose observability context carries the given ability id. */
+    public static function withAbility(string $abilityName): self
+    {
+        return new self(null, $abilityName);
+    }
+
     public function get_protocol_dto(): self
     {
         return $this;
@@ -44,5 +57,11 @@ final class FakeMcpTool
     public function getAnnotations(): ?object
     {
         return $this->annotations;
+    }
+
+    /** @return array<string, mixed> */
+    public function get_observability_context(): array
+    {
+        return $this->abilityName !== null ? ['ability_name' => $this->abilityName] : [];
     }
 }

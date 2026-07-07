@@ -101,6 +101,31 @@ final class McpRequestAuditHandler implements McpObservabilityHandlerInterface
     }
 
     /**
+     * Is a `tools/call` currently between {@see captureArgs()} (fires at
+     * PHP_INT_MIN on `mcp_adapter_pre_tool_call`, BEFORE execution) and
+     * {@see record_event()} consuming its stash entry (fires from `mcp.request`,
+     * AFTER `ToolsHandler::call_tool()` returns)? Used by
+     * {@see AbilityAuditLog::after()} to skip its OWN execution record for an
+     * ability that is ALSO mid-flight through this MCP path — this handler's
+     * `mcp.request` record is strictly richer (raw args, request_id, session_id,
+     * duration_ms) and will be written moments later, so recording twice would
+     * duplicate one call as two rows.
+     *
+     * Deliberately name-agnostic (checks the stash is non-empty for ANY tool,
+     * not just the one `AbilityAuditLog` is currently writing) — see that
+     * method's docblock for why a coarse check is the right tradeoff here.
+     *
+     * On an adapter <0.5.0 (no `mcp_adapter_pre_tool_call` filter) `captureArgs()`
+     * never fires, this stash is always empty, and this always returns false —
+     * `AbilityAuditLog` then records every execution itself, exactly as it did
+     * before this method existed. Correct fallback, not a special case.
+     */
+    public static function hasPendingCapture(): bool
+    {
+        return self::$rawArgsStash !== [];
+    }
+
+    /**
      * Registers the raw-args capture hook. Deliberately NOT the observability
      * wiring itself — the adapter owns that (it reads the `observability_handler`
      * class-string out of `mcp_adapter_default_server_config` and instantiates

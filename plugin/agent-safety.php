@@ -32,6 +32,7 @@ use Specflux\AgentSafety\Plugin\Hooks\AbilityAuditLog;
 use Specflux\AgentSafety\Plugin\Hooks\AbilityPermissionGate;
 use Specflux\AgentSafety\Plugin\Hooks\McpRequestAuditHandler;
 use Specflux\AgentSafety\Plugin\Hooks\PreToolCallGate;
+use Specflux\AgentSafety\Plugin\Hooks\ToolCallResultRedactor;
 use Specflux\AgentSafety\Plugin\Identity\ApplicationPasswordIdentity;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Identity\UserRoleIdentity;
@@ -168,6 +169,15 @@ if (class_exists(Gate::class)) {
     if (WooIntegration::available()) {
         (new PreToolCallGate($agsafe_gate, new VerbMapper(), $agsafe_packs, $agsafe_recorder, $agsafe_rate_limits))->register();
     }
+
+    // Read-path PII redaction (backlog #11): masks the payload RETURNED TO THE
+    // AGENT for a governed, executed tool call whose pack redacts PII. Unlike
+    // PreToolCallGate, this has no Woo-specific tool-naming dependency (it reads
+    // the real ability id off the adapter's own $mcp_tool observability context),
+    // so it is wired for ANY governed namespace, not gated on WooIntegration.
+    // Dormant no-op unless a real mcp-adapter carrying this filter is loaded
+    // (fires only >= 0.5.0) and $agsafe_governed_namespaces is non-empty.
+    (new ToolCallResultRedactor($agsafe_packs, $agsafe_governed_namespaces))->register();
 
     // Audit every ability that actually executes (SPEC §5) — successes and failures.
     if ($agsafe_sink !== null) {
