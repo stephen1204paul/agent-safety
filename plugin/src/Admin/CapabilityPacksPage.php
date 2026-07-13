@@ -10,7 +10,7 @@ use Specflux\AgentSafety\Plugin\Identity\IdentityProvider;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 
 /**
- * Tools → "Agent Capability Packs" (SPEC §3): the human side of credential scoping.
+ * Tools → "Agent Capability Packs": the human side of credential scoping.
  *
  * Shows the pack catalog (read-only) and lets an admin bind each identity a
  * configured {@see IdentityProvider} exposes (an application password, a user,
@@ -23,7 +23,7 @@ use Specflux\AgentSafety\Plugin\Support\PackResolver;
  *
  * A pack with `deny_class: ["tier2"]` makes every irreversible verb unreachable
  * for the bound credential BY CONSTRUCTION — the gate denies it before approval,
- * so prompt injection cannot reach it (D9).
+ * so prompt injection cannot reach it.
  */
 final class CapabilityPacksPage
 {
@@ -64,7 +64,7 @@ final class CapabilityPacksPage
 
         echo '<div class="wrap">';
         echo '<h1>' . esc_html__('Agent Capability Packs', 'agent-safety') . '</h1>';
-        echo '<p>' . esc_html__('A pack is a credentialed, purpose-scoped view of the verb catalog (SPEC §3). Enforced in the gate, not via WP roles. A pack that denies a tier class is injection-proof against that class by construction.', 'agent-safety') . '</p>';
+        echo '<p>' . esc_html__('A pack is a credentialed, purpose-scoped view of the verb catalog. Enforced in the gate, not via WP roles. A pack that denies a tier class is injection-proof against that class by construction.', 'agent-safety') . '</p>';
 
         if (isset($_GET['agsafe_saved'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only flash.
             echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Capability pack bindings saved.', 'agent-safety') . '</p></div>';

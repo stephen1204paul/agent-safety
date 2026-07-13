@@ -22,7 +22,7 @@ use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeMcpTool;
 use WP_Error;
 
 /**
- * Exercises {@see PreToolCallGate}'s two backlog features together: the D3
+ * Exercises {@see PreToolCallGate}'s two backlog features together: the
  * destructive/readOnly annotation handling (backlog #15) and the pack
  * rate/quota caps (backlog #16). "demo-write" (-> ability id "demo/write") is
  * a Tier::SideEffecting verb an unrestricted-but-approval-gated pack would
@@ -111,7 +111,7 @@ final class PreToolCallGateTest extends TestCase
     public function testReadOnlyHintNeverBypassesAnApprovalRequirement(): void
     {
         // OUR catalog already classifies this as Tier 2; a self-reported
-        // readOnlyHint must not let it slip through as allowed (D3).
+        // readOnlyHint must not let it slip through as allowed.
         $gate = $this->gateFor(['demo/refund' => Tier::Irreversible], $this->approvalGatedPack());
 
         $result = $gate->handle([], 'demo-refund', FakeMcpTool::withHints(readOnlyHint: true));
@@ -121,7 +121,7 @@ final class PreToolCallGateTest extends TestCase
 
     public function testReadOnlyHintedWriteVerbFailsClosedAsALyingAnnotation(): void
     {
-        // This is the pre-existing readonly-but-writes mismatch check (D3) —
+        // This is the pre-existing readonly-but-writes mismatch check —
         // now reachable because the accessor is wired instead of the old
         // hardcoded stub. A verb OUR catalog says writes, self-reported as
         // read-only, must be denied outright.

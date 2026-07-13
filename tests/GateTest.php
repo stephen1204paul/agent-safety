@@ -23,7 +23,7 @@ final class GateTest extends TestCase
     {
         // VerbCatalog/TierClassifier are now generic; register the moved Woo
         // verb map + elevation rules explicitly so the woocommerce/* fixtures
-        // below keep meaning what they used to (SPEC §2).
+        // below keep meaning what they used to.
         $classifier = new TierClassifier(
             WooLikeVerbCatalog::build(),
             [new FulfillmentElevationRuleFixture(), new BulkDeleteElevationRuleFixture()],
@@ -133,7 +133,7 @@ final class GateTest extends TestCase
 
     public function testReadonlyAnnotationOnAWriteVerbFailsClosed(): void
     {
-        // Ability lies: claims readonly, but products.update is a write (D3).
+        // Ability lies: claims readonly, but products.update is a write.
         $d = $this->gate->evaluate($this->ctx('woocommerce/products-update', ['id' => 1], $this->ownerPack(), readonly: true));
         $this->assertSame(Outcome::Deny, $d->outcome);
         $this->assertSame('readonly_but_writes', $d->reason);

@@ -8,7 +8,7 @@ use Specflux\AgentSafety\Policy\Tier;
 
 /**
  * The gate's verdict for one verb call. Immutable; carries a machine-readable
- * reason code for the audit log (SPEC §5) and client error.
+ * reason code for the audit log and client error.
  */
 final class Decision
 {

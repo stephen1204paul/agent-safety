@@ -8,7 +8,7 @@ use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Packs\PackRegistry;
 
 /**
- * Resolves the calling credential to a Capability Pack (SPEC §3 / D20).
+ * Resolves the calling credential to a Capability Pack.
  *
  * The principal is whichever {@see RequestContext::currentTokens()} candidate
  * (application password, user, role, or an integration's own identity — e.g.

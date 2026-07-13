@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Approval;
 
 /**
- * Persistence contract for the async approval flow (SPEC §4). The core defines the
+ * Persistence contract for the async approval flow. The core defines the
  * seam; the host implements it over real storage ($wpdb). Keeping it an interface
- * preserves the open-core dependency rule (D19): the gate depends on this
+ * preserves a clean dependency direction: the gate depends on this
  * abstraction, never on WordPress.
  *
  * Lifecycle of one approval record:

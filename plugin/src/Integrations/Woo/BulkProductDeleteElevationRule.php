@@ -9,7 +9,7 @@ use Specflux\AgentSafety\Policy\Tier;
 
 /**
  * Bulk product delete elevates beyond single-item (single = recoverable from
- * snapshot; bulk is not) (SPEC §2).
+ * snapshot; bulk is not).
  */
 final class BulkProductDeleteElevationRule implements ElevationRule
 {

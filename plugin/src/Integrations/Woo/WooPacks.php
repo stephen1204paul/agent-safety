@@ -7,7 +7,7 @@ namespace Specflux\AgentSafety\Plugin\Integrations\Woo;
 use Specflux\AgentSafety\Packs\Pack;
 
 /**
- * Woo-flavoured Capability Packs (SPEC §3), registered into the core
+ * Woo-flavoured Capability Packs, registered into the core
  * {@see \Specflux\AgentSafety\Packs\PackRegistry} by {@see WooIntegration::register()}
  * on top of the (now generic, fail-closed) core builtins:
  *   - woo-default-agent — catalog read/write, but every Tier-2 (irreversible)
@@ -17,7 +17,7 @@ use Specflux\AgentSafety\Packs\Pack;
  *                         sensible non-fail-closed option to bind credentials to.
  *   - support-agent     — catalog read/write with Tier-2 HARD-WALLED via
  *                         `deny_class` — injection-proof against refund/email
- *                         abuse by construction (D9): the verb isn't reachable.
+ *                         abuse by construction: the verb isn't reachable.
  */
 final class WooPacks
 {

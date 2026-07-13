@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Audit;
 
 /**
- * One immutable audit event in the PCI-Req-10 shape (SPEC §5).
+ * One immutable audit event in the PCI-Req-10 shape.
  *
  * Deterministic by design: the host (plugin) injects `id`, `ts`, `correlationId`
  * and `ip` — the core never reads a clock, RNG, or WordPress globals — so records
@@ -18,7 +18,7 @@ final class AuditRecord
      * @param array{token_id: ?string, wp_user: ?int} $actor
      * @param array<string, mixed>                     $input            Redacted per pack policy.
      * @param array{id: string, approver: ?int}|null   $approval
-     * @param list<string>                             $externalEffects  What left the box (D5/Tier-1).
+     * @param list<string>                             $externalEffects  What left the box (Tier-1 side effects).
      */
     private function __construct(
         public readonly string $id,
@@ -121,7 +121,7 @@ final class AuditRecord
     }
 
     /**
-     * Ordered associative array in the SPEC §5 field order. Insertion order is
+     * Ordered associative array in the canonical audit-record field order. Insertion order is
      * fixed, so {@see canonicalJson()} is deterministic for a given payload.
      *
      * @return array<string, mixed>

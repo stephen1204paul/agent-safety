@@ -10,7 +10,7 @@ use WP_Application_Passwords;
  * Identity provider for WordPress core Application Passwords (WP >= 5.6):
  * a REST/MCP request authenticated with an application password is bound to
  * that specific credential, namespaced "app:{uuid}" (a token id, never the
- * secret itself — D14).
+ * secret itself).
  */
 final class ApplicationPasswordIdentity implements IdentityProvider
 {

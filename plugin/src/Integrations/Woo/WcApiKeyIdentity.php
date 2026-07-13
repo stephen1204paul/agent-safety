@@ -9,8 +9,8 @@ use wpdb;
 
 /**
  * Identity provider for the WooCommerce REST API key behind an MCP request
- * (per D20: auth = `X-MCP-API-Key: ck:cs`). We record the key's row id
- * ("wc:key_7"), NOT the secret — tokens, not PANs (D14).
+ * (auth = `X-MCP-API-Key: ck:cs`). We record the key's row id
+ * ("wc:key_7"), NOT the secret — tokens, not PANs.
  */
 final class WcApiKeyIdentity implements IdentityProvider
 {
@@ -40,7 +40,7 @@ final class WcApiKeyIdentity implements IdentityProvider
     }
 
     /**
-     * Live WooCommerce REST API keys (D20: each key is a principal). The secret
+     * Live WooCommerce REST API keys (each key is a principal). The secret
      * is never read — only the row id, description, and permission scope.
      *
      * @return array<string, string>

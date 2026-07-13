@@ -12,9 +12,9 @@ use Specflux\AgentSafety\Plugin\Support\RequestContext;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeIdentityProvider;
 
 /**
- * Exercises the provider-chain resolution PackResolver now owns (SPEC seam
- * 4/5): every current candidate token is tried, in provider order, and the
- * FIRST one with a stored binding wins.
+ * Exercises the provider-chain resolution PackResolver now owns: every
+ * current candidate token is tried, in provider order, and the FIRST one
+ * with a stored binding wins.
  */
 final class PackResolverTest extends TestCase
 {

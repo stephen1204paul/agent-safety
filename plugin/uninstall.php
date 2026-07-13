@@ -5,7 +5,7 @@
  * standalone file — no bootstrap, no autoloader guaranteed).
  *
  * Default behaviour: KEEP all data. The audit log is a compliance record
- * (SPEC §5/§6, PCI Req-10 shape); silently destroying it on uninstall would
+ * (PCI Req-10 shape); silently destroying it on uninstall would
  * defeat the point of having it. Table data and options are only dropped when
  * the site operator explicitly opts in by defining AGSAFE_REMOVE_DATA as true
  * (e.g. in wp-config.php) before deleting the plugin.

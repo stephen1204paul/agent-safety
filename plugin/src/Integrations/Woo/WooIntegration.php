@@ -15,7 +15,7 @@ use wpdb;
  * bootstrap ONLY when {@see available()} — a site without WooCommerce never
  * sees a `woocommerce/*` verb, pack, or identity provider, and the governed
  * ability namespace list stays empty (the permission/audit hooks become inert
- * no-ops; SPEC seams 1-6).
+ * no-ops).
  *
  * {@see register()} MUTATES the two registries that already exist and can
  * grow incrementally ({@see VerbCatalog::register()}, {@see IdentityChain::register()}).

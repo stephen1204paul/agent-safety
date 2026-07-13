@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Identity;
 
 /**
- * Ordered chain of {@see IdentityProvider}s (SPEC seam 4). {@see currentTokens()}
+ * Ordered chain of {@see IdentityProvider}s. {@see currentTokens()}
  * concatenates every provider's candidates in registration order, so
  * {@see \Specflux\AgentSafety\Plugin\Support\PackResolver} can walk them and let
  * the first bound token win. Integrations {@see register()} their own provider

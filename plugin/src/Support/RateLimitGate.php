@@ -17,7 +17,7 @@ use Specflux\AgentSafety\Packs\Pack;
  * {@see admit()} is only ever meant to be consulted for a decision that is
  * OTHERWISE Allow — a denial must never consume quota (a blocked retry is
  * free to retry once whatever blocked it clears). A pack with no configured
- * limits short-circuits before any storage read (SPEC: unlimited is the
+ * limits short-circuits before any storage read (unlimited is the
  * common case for builtin packs).
  */
 final class RateLimitGate

@@ -9,14 +9,14 @@ use Specflux\AgentSafety\Plugin\Support\Schema;
 use wpdb;
 
 /**
- * Approval store (SPEC §4) backed by a custom table (shape owned by
+ * Approval store backed by a custom table (shape owned by
  * {@see Schema}). Implements the core {@see ApprovalStore} seam plus the
  * host-only read/mutate methods the wp-admin "Pending Agent Actions" screen
  * and the {@see deleteExpired()} cron sweep need.
  *
  * Security / correctness properties:
  *  - The bearer token is shown to the approver ONCE and never persisted in the
- *    clear — only its SHA-256 hash is stored (tokens-not-PANs, D14). A DB read
+ *    clear — only its SHA-256 hash is stored (tokens, not PANs). A DB read
  *    cannot recover a live token.
  *  - {@see reserve()} is single-claim and atomic: a conditional UPDATE flips one
  *    `approved` row to `in_flight`, so two concurrent retries can claim a grant at
@@ -297,7 +297,7 @@ final class WpdbApprovalStore implements ApprovalStore
      *    into an execution, so the grant is now permanently unusable.
      *
      * Kept — still actionable, or the operational anchor for a real decision
-     * already immutably recorded (SPEC §5) in the hash-chained audit log via
+     * already immutably recorded in the hash-chained audit log via
      * {@see \Specflux\AgentSafety\Plugin\Admin\PendingActionsPage::reconcile()}
      * (approve/reject) or {@see \Specflux\AgentSafety\Plugin\Hooks\AbilityPermissionGate::onExecuted()}
      * (finalize on execution):

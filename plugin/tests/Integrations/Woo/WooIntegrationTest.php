@@ -37,7 +37,7 @@ final class WooIntegrationTest extends TestCase
 
         $contributions = WooIntegration::register($catalog, $identity, null);
 
-        // VerbCatalog was mutated in place with the Woo verb map (SPEC seam 1).
+        // VerbCatalog was mutated in place with the Woo verb map.
         $this->assertSame(Tier::Reversible, $catalog->baseTier('woocommerce/products-list'));
         $this->assertSame(Tier::Irreversible, $catalog->baseTier('woocommerce/orders-refund'));
         $this->assertNull($catalog->baseTier('woocommerce/unknown-verb'));

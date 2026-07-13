@@ -7,10 +7,10 @@ namespace Specflux\AgentSafety\Plugin\Integrations\Woo;
 use Specflux\AgentSafety\Policy\Tier;
 
 /**
- * OUR tier assignments for WooCommerce verbs (SPEC §2), contributed into the
+ * OUR tier assignments for WooCommerce verbs, contributed into the
  * core {@see \Specflux\AgentSafety\Policy\VerbCatalog} by {@see WooIntegration::register()}.
  * This is authoritative and overrides any self-reported readonly/destructive
- * annotation (D3): if a Woo ability claims read-only but appears here as a
+ * annotation: if a Woo ability claims read-only but appears here as a
  * write, the gate fails closed.
  */
 final class WooVerbCatalog

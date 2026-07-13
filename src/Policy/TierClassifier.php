@@ -6,7 +6,7 @@ namespace Specflux\AgentSafety\Policy;
 
 /**
  * Resolves a verb (plus its call args) to a Tier, applying arg-aware
- * elevation rules where a single verb spans blast radii (SPEC §2).
+ * elevation rules where a single verb spans blast radii.
  *
  * Framework-agnostic and integration-agnostic: the verb catalog and the
  * elevation rules are both injected, so this class carries no knowledge of any
@@ -51,7 +51,7 @@ final class TierClassifier
     }
 
     /**
-     * Fail-closed guard for self-reported annotations (D3): an ability that
+     * Fail-closed guard for self-reported annotations: an ability that
      * claims read-only while OUR catalog classifies it as a write is a lie or
      * a misconfiguration — refuse to trust it.
      *

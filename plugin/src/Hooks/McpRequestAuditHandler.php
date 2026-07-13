@@ -216,7 +216,7 @@ final class McpRequestAuditHandler implements McpObservabilityHandlerInterface
         // the CSV export just json_encode() whatever's here, so nesting is safe
         // and doesn't distort AuditRecord's own (fixed, PCI-Req-10) field set —
         // that's exactly why external_effects (a specific "what left the box"
-        // list per SPEC §5) was NOT repurposed for this instead.
+        // list with a fixed meaning) was NOT repurposed for this instead.
         $input = Redactor::apply(
             [
                 'args' => $rawArgs ?? [

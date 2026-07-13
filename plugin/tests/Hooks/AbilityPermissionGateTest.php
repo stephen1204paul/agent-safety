@@ -20,7 +20,7 @@ use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeIdentityProvider;
 use WP_Error;
 
 /**
- * Exercises the governed-namespace gate behaviour (SPEC seam 6): {@see
+ * Exercises the governed-namespace gate behaviour: {@see
  * AbilityPermissionGate::wrap()} must be a complete no-op for any ability name
  * outside the injected namespace list, and an inert no-op for EVERYTHING when
  * that list is empty (a site with no integration active).

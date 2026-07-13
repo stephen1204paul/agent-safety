@@ -12,7 +12,7 @@ use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\InMemoryAuditSink;
 
 /**
- * Exercises the governed-namespace gate behaviour (SPEC seam 6) on the
+ * Exercises the governed-namespace gate behaviour on the
  * execution-audit hook: {@see AbilityAuditLog} must ignore any ability name
  * outside the injected namespace list, and ignore EVERYTHING when that list
  * is empty (a site with no integration active) -- same contract as {@see

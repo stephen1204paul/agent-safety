@@ -12,7 +12,7 @@ use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
 
 /**
- * Tools → "Pending Agent Actions" (SPEC §4): the human side of the approval flow.
+ * Tools → "Pending Agent Actions": the human side of the approval flow.
  * Lists irreversible verbs an agent tried to run that were blocked pending review.
  * Approving mints a single-use, verb+args-bound token (shown ONCE) and appends an
  * `approved` event to the audit chain; rejecting appends a `rejected` event.
@@ -64,7 +64,7 @@ final class PendingActionsPage
 
         echo '<div class="wrap">';
         echo '<h1>' . esc_html__('Pending Agent Actions', 'agent-safety') . '</h1>';
-        echo '<p>' . esc_html__('Irreversible agent actions blocked pending human approval (SPEC §4). Approving mints a single-use token bound to the exact verb + arguments.', 'agent-safety') . '</p>';
+        echo '<p>' . esc_html__('Irreversible agent actions blocked pending human approval. Approving mints a single-use token bound to the exact verb + arguments.', 'agent-safety') . '</p>';
 
         $this->maybeShowMintedToken();
 

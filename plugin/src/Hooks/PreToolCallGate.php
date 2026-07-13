@@ -18,7 +18,7 @@ use Specflux\AgentSafety\Policy\Tier;
 use WP_Error;
 
 /**
- * Forward-compat gate seam (SPEC §1, code-confirmed mcp-adapter v0.5.0): hooks
+ * Forward-compat gate seam (code-confirmed against mcp-adapter v0.5.0): hooks
  * `mcp_adapter_pre_tool_call`. Returning a WP_Error short-circuits the agent's
  * tool call entirely; returning the args array lets it proceed. (Dormant on the
  * shipping stack — Woo 10.8.1 vendors adapter 0.1.0, which never fires this
@@ -72,7 +72,7 @@ final class PreToolCallGate
             hasValidApproval: $hasValidApproval,
         ));
 
-        // D3 (SAFETY-CRITICAL): a self-reported destructiveHint may only TIGHTEN
+        // SAFETY-CRITICAL: a self-reported destructiveHint may only TIGHTEN
         // this verdict, never loosen it — see elevateForDestructiveHint().
         $decision = $this->elevateForDestructiveHint(
             $decision,
@@ -128,7 +128,7 @@ final class PreToolCallGate
     /**
      * Resolve the calling identity to a Capability Pack via the shared
      * {@see PackResolver} — the SAME registry + bindings the live Abilities-API
-     * seam uses (keyed on the authenticated WC API key, SPEC §3 / D20). Keeping
+     * seam uses (keyed on the authenticated WC API key). Keeping
      * one resolver means this forward-compat seam can never apply a stale pack
      * that diverges from the admin-configured bindings.
      */
@@ -138,7 +138,7 @@ final class PreToolCallGate
     }
 
     /**
-     * D3 (SAFETY-CRITICAL): a tool's SELF-REPORTED annotations may only make
+     * SAFETY-CRITICAL: a tool's SELF-REPORTED annotations may only make
      * gating STRICTER, never looser. A destructiveHint === true on a call OUR
      * OWN classifier placed below the approval tier ({@see Tier::Irreversible})
      * is treated as though it HAD classified there: the call now faces
@@ -159,7 +159,7 @@ final class PreToolCallGate
      * Denied or ApprovalRequired for an unrelated reason is already at least
      * as strict as what this method could produce, so it is a no-op there —
      * meaning this method can turn Allow into Deny/ApprovalRequired, but never
-     * the reverse, which is what makes D3's "never relax" hold by construction.
+     * the reverse, which is what makes the "never relax" rule hold by construction.
      */
     private function elevateForDestructiveHint(
         Decision $decision,

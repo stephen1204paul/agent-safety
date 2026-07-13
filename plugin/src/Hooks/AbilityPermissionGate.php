@@ -32,7 +32,7 @@ use WP_Error;
  * On this seam the ability NAME is already our canonical verb id
  * ("woocommerce/orders-update"), so no tool-name mapping is needed.
  *
- * Approval flow (SPEC §4) is async and "consume on execution success":
+ * Approval flow is async and "consume on execution success":
  *   - First touch of an irreversible verb with no grant → WP_Error('approval_required')
  *     plus a persisted pending request for a human to review.
  *   - On the retry the gate ATOMICALLY RESERVES the human's grant (approved →
@@ -88,7 +88,7 @@ final class AbilityPermissionGate
      */
     public function wrap(array $args, string $name): array
     {
-        // Only govern the namespaces integrations have registered (SPEC seam 6).
+        // Only govern the namespaces integrations have registered.
         // Pass everything else (core/*, other plugins, or ALL abilities on a site
         // with no integration active) through untouched so we never break them.
         if (!$this->isGoverned($name)) {
@@ -201,7 +201,7 @@ final class AbilityPermissionGate
     }
 
     /**
-     * Emit a gate-decision audit record (SPEC §5) for a non-executing verdict —
+     * Emit a gate-decision audit record for a non-executing verdict —
      * a denial or a pending approval. The caller supplies the event id so the same
      * id can link the pending approval row. No-op when no sink is wired. Public so
      * the permission-callback closure ($self) can reach it.
@@ -248,7 +248,7 @@ final class AbilityPermissionGate
     }
 
     /**
-     * Atomically claim a human grant for this exact verb+args (SPEC §4) — by bearer
+     * Atomically claim a human grant for this exact verb+args — by bearer
      * token if the agent threaded one back, else by-reference for the requesting key.
      * Records the reservation so {@see onExecuted} can finalize it after the action
      * runs. Public so the permission-callback closure ($self) can reach it.

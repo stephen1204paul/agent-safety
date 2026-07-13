@@ -9,7 +9,7 @@ use Specflux\AgentSafety\Policy\Tier;
 
 /**
  * An order status update flipping to a fulfillment status fires fulfillment +
- * customer emails, which is irreversible (SPEC §2) regardless of the verb's
+ * customer emails, which is irreversible regardless of the verb's
  * base tier.
  */
 final class OrderFulfillmentElevationRule implements ElevationRule

@@ -7,7 +7,7 @@ namespace Specflux\AgentSafety\Audit;
 use Specflux\AgentSafety\Gate\Outcome;
 
 /**
- * The audit-log `decision` field (SPEC §5). Distinct from {@see Outcome}: the gate
+ * The audit-log `decision` field. Distinct from {@see Outcome}: the gate
  * emits an Outcome synchronously, but the audit trail also records lifecycle states
  * that the gate never returns (an approval being granted or rejected out-of-band).
  */

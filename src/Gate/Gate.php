@@ -7,14 +7,14 @@ namespace Specflux\AgentSafety\Gate;
 use Specflux\AgentSafety\Policy\TierClassifier;
 
 /**
- * The decision core (SPEC §1 gate). Pure function of (verb, args, pack):
+ * The decision core. Pure function of (verb, args, pack):
  * no WordPress, no I/O, no side effects — so it is exhaustively unit-testable.
  *
  * Evaluation order is deliberately fail-closed:
  *   1. unknown verb            -> deny (never trust an unclassified verb)
- *   2. readonly-but-writes     -> deny (annotation lied; D3)
+ *   2. readonly-but-writes     -> deny (annotation lied)
  *   3. not in pack allow-list  -> deny
- *   4. tier class hard-denied  -> deny (the injection-proof wall; D9)
+ *   4. tier class hard-denied  -> deny (the injection-proof wall)
  *   5. approval required + none -> approval_required
  *   6. otherwise               -> allow
  */

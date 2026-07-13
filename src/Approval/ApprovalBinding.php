@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Approval;
 
 /**
- * Binds an approval to one exact action (SPEC §4): an approval token minted for
+ * Binds an approval to one exact action: an approval token minted for
  * `orders-update {id:1,status:completed}` can NOT be replayed on a different verb
  * or different args. The binding is a deterministic hash of the verb plus the
  * canonicalised call arguments.

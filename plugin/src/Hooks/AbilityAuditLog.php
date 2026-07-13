@@ -13,7 +13,7 @@ use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
 
 /**
- * Audits every ability that EXECUTES (SPEC §5) — both successes and failures,
+ * Audits every ability that EXECUTES — both successes and failures,
  * independent of the mcp-adapter version.
  *
  * Core's Abilities API fires `wp_before_execute_ability` for every permitted run,
@@ -212,7 +212,7 @@ final class AbilityAuditLog
     }
 
     /**
-     * Coarse "what left the box" signal (SPEC §5 external_effects; D5). Refine
+     * Coarse "what left the box" signal (the audit record's external_effects field). Refine
      * per-verb later (e.g. refund → psp.refund, email).
      *
      * @return list<string>

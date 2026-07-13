@@ -7,7 +7,7 @@ namespace Specflux\AgentSafety\Plugin\Support;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 
 /**
- * The host-derived, non-deterministic bits an audit record needs (SPEC §5):
+ * The host-derived, non-deterministic bits an audit record needs:
  * ids, timestamp, client IP, actor. Kept out of the pure core so {@see \Specflux\AgentSafety\Audit\AuditRecord}
  * stays clock-/RNG-free and unit-testable.
  *
@@ -28,7 +28,7 @@ final class RequestContext
     /** @var list<string>|null */
     private static ?array $tokens = null;
 
-    /** Wire the identity chain the plugin bootstrap assembled (SPEC seam 4). */
+    /** Wire the identity chain the plugin bootstrap assembled. */
     public static function configure(IdentityChain $identity): void
     {
         self::$identity = $identity;
@@ -96,7 +96,7 @@ final class RequestContext
 
     /**
      * Back-compat single token for the audit actor `token_id` field: the FIRST
-     * current candidate, or null when none applies (SPEC seam 4).
+     * current candidate, or null when none applies.
      */
     public static function tokenId(): ?string
     {

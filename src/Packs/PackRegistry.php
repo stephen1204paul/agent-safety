@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Packs;
 
 /**
- * The catalog of Capability Packs plus the credential→pack bindings (SPEC §3 / D20).
+ * The catalog of Capability Packs plus the credential→pack bindings.
  *
  * Pure core: holds named {@see Pack} definitions and a map of subject (a
  * namespaced credential/role token id, e.g. "wc:key_7" or "role:editor") →
@@ -54,7 +54,7 @@ final class PackRegistry
     /**
      * The framework-agnostic pack catalog. Two reference scopes:
      *   - owner         — unrestricted (`allow: ["*"]`, no approval); the same
-     *                     machinery with nothing walled off (SPEC §3).
+     *                     machinery with nothing walled off.
      *   - default-agent — GENERIC FAIL-CLOSED (`allow: []`): the safe default
      *                     for an unbound credential on a host with no verbs
      *                     registered yet. Integrations widen this per-site by

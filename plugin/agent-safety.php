@@ -9,7 +9,7 @@
  * License:           GPL-2.0-or-later
  * Text Domain:       agent-safety
  *
- * Thin host (D19): wires the security core (specflux/agent-safety-core) into
+ * Thin host: wires the security core (specflux/agent-safety-core) into
  * WordPress hooks. All decision logic lives in the package under ../src. The
  * plugin itself is WordPress-general; ALL WooCommerce-specific wiring lives in
  * Integrations\Woo\WooIntegration, registered ONLY when WooCommerce is active.
@@ -109,15 +109,15 @@ if (class_exists(Gate::class)) {
         });
     }
 
-    // Identity chain (SPEC seam 4): application passwords and users/roles apply
+    // Identity chain: application passwords and users/roles apply
     // on ANY WordPress site; an integration appends its own provider below.
     $agsafe_identity = new IdentityChain([
         new ApplicationPasswordIdentity(),
         new UserRoleIdentity(),
     ]);
 
-    // Verb catalog + elevation rules (SPEC seams 1-2) and the pack/namespace
-    // contributions (SPEC seams 3/6) start empty — a Woo-less site classifies
+    // Verb catalog + elevation rules and the pack/namespace
+    // contributions start empty — a Woo-less site classifies
     // nothing, gates nothing beyond the generic fail-closed default pack, and
     // governs no ability namespace.
     $agsafe_catalog = new VerbCatalog();
@@ -171,7 +171,7 @@ if (class_exists(Gate::class)) {
     $agsafe_approvals = isset($wpdb) ? new WpdbApprovalStore($wpdb) : null;
 
     // Shared decision-recorder: BOTH gate seams audit verdicts + persist pending
-    // approvals through this one object, so they can never diverge (SPEC §4/§5).
+    // approvals through this one object, so they can never diverge.
     $agsafe_recorder = new DecisionRecorder($agsafe_sink, $agsafe_approvals);
 
     // Shared rate-limit gate (backlog #16): BOTH seams enforce a pack's
@@ -182,8 +182,8 @@ if (class_exists(Gate::class)) {
 
     // Primary seam on the shipping stack (WP core Abilities API; adapter-version-independent).
     // Audits the verdicts that never execute (denied / approval-pending) and owns the
-    // reserve→finalize approval lifecycle (SPEC §4). Inert no-op for any ability
-    // outside $agsafe_governed_namespaces (SPEC seam 6).
+    // reserve→finalize approval lifecycle. Inert no-op for any ability
+    // outside $agsafe_governed_namespaces.
     (new AbilityPermissionGate($agsafe_gate, $agsafe_packs, $agsafe_recorder, $agsafe_approvals, $agsafe_governed_namespaces, $agsafe_rate_limits))->register();
 
     // Forward-compat seam: fires only if a mcp-adapter >= 0.5.0 is the loaded copy.
@@ -204,7 +204,7 @@ if (class_exists(Gate::class)) {
     // (fires only >= 0.5.0) and $agsafe_governed_namespaces is non-empty.
     (new ToolCallResultRedactor($agsafe_packs, $agsafe_governed_namespaces))->register();
 
-    // Audit every ability that actually executes (SPEC §5) — successes and failures.
+    // Audit every ability that actually executes — successes and failures.
     if ($agsafe_sink !== null) {
         (new AbilityAuditLog($agsafe_sink, $agsafe_classifier, $agsafe_packs, $agsafe_governed_namespaces))->register();
 
@@ -232,7 +232,7 @@ if (class_exists(Gate::class)) {
     }
 
     // Human approval queue (Tools → Pending Agent Actions): approve/reject blocked
-    // irreversible actions, minting single-use tokens (SPEC §4).
+    // irreversible actions, minting single-use tokens.
     if ($agsafe_approvals !== null) {
         (new PendingActionsPage($agsafe_approvals, $agsafe_sink, $agsafe_packs))->register();
 
@@ -245,6 +245,6 @@ if (class_exists(Gate::class)) {
     }
 
     // Capability-pack admin (Tools → Agent Capability Packs): bind each identity
-    // the configured providers expose to a pack from the catalog (SPEC §3).
+    // the configured providers expose to a pack from the catalog.
     (new CapabilityPacksPage($agsafe_packs, $agsafe_identity))->register();
 }

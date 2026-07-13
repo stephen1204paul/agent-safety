@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Policy;
 
 /**
- * The catalog of verb -> tier assignments (SPEC §2). OUR tier assignment is
- * authoritative and overrides any self-reported readonly/destructive annotation
- * (D3): if an ability claims read-only but appears here as a write, the gate
+ * The catalog of verb -> tier assignments. OUR tier assignment is
+ * authoritative and overrides any self-reported readonly/destructive
+ * annotation: if an ability claims read-only but appears here as a write, the gate
  * fails closed.
  *
  * Instance-based registry: integrations (e.g. a WooCommerce module) {@see
@@ -31,7 +31,7 @@ final class VerbCatalog
     /**
      * Merge a verb => tier map into the catalog. Later registrations overwrite
      * an earlier entry for the same exact key or prefix pattern; callers own
-     * conflict resolution (SPEC leaves "last registered wins" to the host).
+     * conflict resolution ("last registered wins" is left to the host).
      *
      * @param array<string, Tier> $verbToTier
      */

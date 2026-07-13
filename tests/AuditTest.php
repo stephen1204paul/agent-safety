@@ -47,7 +47,7 @@ final class AuditTest extends TestCase
     {
         $arr = $this->record('evt_1', 'woocommerce/orders-update', AuditDecision::Pending)->toArray();
 
-        // SPEC §5 field set, in order.
+        // The canonical audit-record field set, in order.
         $this->assertSame(
             ['id', 'ts', 'correlation_id', 'pack', 'actor', 'ability', 'tier', 'input', 'dry_run', 'decision', 'approval', 'result', 'external_effects', 'ip'],
             array_keys($arr),

@@ -38,7 +38,7 @@ final class DecisionRecorder
     }
 
     /**
-     * Emit a gate-decision audit record (SPEC §5) for a NON-executing verdict — a
+     * Emit a gate-decision audit record for a NON-executing verdict — a
      * denial or a pending approval. Allowed calls are audited at execution time by
      * {@see \Specflux\AgentSafety\Plugin\Hooks\AbilityAuditLog}. No-op without a sink.
      *

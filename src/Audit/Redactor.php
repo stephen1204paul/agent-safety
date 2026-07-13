@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Audit;
 
 /**
- * Masks known PII fields before they enter the audit trail (SPEC §5: "input: PII
- * redacted per pack policy"). Coarse by design — a denylist of common
- * customer/PII key fragments, applied recursively. Tokens, not PANs (D14): we
+ * Masks known PII fields before they enter the audit trail, so the logged
+ * input is PII-redacted per pack policy. Coarse by design — a denylist of common
+ * customer/PII key fragments, applied recursively. Tokens, not PANs: we
  * never want a card number, email, or address sitting in the log.
  *
  * This masking is applied on BOTH sides of the boundary: what we WRITE TO THE

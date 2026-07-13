@@ -6,7 +6,7 @@ namespace Specflux\AgentSafety\Plugin\Support;
 
 /**
  * Fixed-window call counters backing a Pack's rate/quota caps (backlog #16;
- * SPEC's Policy Envelope: "rate/quota caps" per pack). Storage is WordPress
+ * the caps are declared per pack in its policy envelope). Storage is WordPress
  * transients, keyed by (pack name, identity token, window bucket) — a fresh
  * bucket per calendar minute/hour, so two identities under the same pack (or
  * the same identity under two packs) never share a counter.

@@ -9,8 +9,9 @@ use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 use wpdb;
 
 /**
- * WpdbApprovalStore is wpdb-coupled by design (SPEC §4's atomicity guarantees
- * live in the SQL itself — e.g. reserve()'s conditional UPDATE). The fake
+ * WpdbApprovalStore is wpdb-coupled by design (the approval lifecycle's
+ * atomicity guarantees live in the SQL itself — e.g. reserve()'s conditional
+ * UPDATE). The fake
  * wpdb (tests/stubs/wpdb.php) doesn't execute SQL, so these tests assert on
  * the CONSTRUCTED query string rather than on rows actually being filtered —
  * deleteExpired() has no branching logic of its own besides building this one

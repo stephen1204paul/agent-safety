@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Audit;
 
 /**
- * Tamper-evident hash chain for the audit log (SPEC §5: "append-only;
- * tamper-evident (hash chain)"). Each entry commits to the previous entry's
- * hash, so altering or deleting any record breaks every link after it.
+ * Tamper-evident hash chain for the append-only audit log. Each entry
+ * commits to the previous entry's hash, so altering or deleting any record
+ * breaks every link after it.
  *
  * Pure and storage-agnostic: the {@see AuditSink} supplies the previous hash and
  * persists the (prev_hash, canonical_json, entry_hash) triple; this class only

@@ -8,7 +8,7 @@ use Specflux\AgentSafety\Plugin\Audit\AuditReader;
 
 /**
  * Tools → "Agent Audit Log": a read-only wp-admin viewer for the append-only audit
- * trail (SPEC §5). Shows a tamper-evidence banner (re-verifies the hash chain on
+ * trail. Shows a tamper-evidence banner (re-verifies the hash chain on
  * every load), a paged table of recent events, and a CSV export of the full log.
  */
 final class AuditLogPage

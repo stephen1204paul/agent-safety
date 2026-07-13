@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Policy;
 
 /**
- * Blast-radius classification for an agent verb (D5).
+ * Blast-radius classification for an agent verb.
  *
  * Tier 0 — reversible / read-only.
  * Tier 1 — locally reversible / side-effecting (inverse-op or field revert).

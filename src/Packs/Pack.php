@@ -7,9 +7,9 @@ namespace Specflux\AgentSafety\Packs;
 use Specflux\AgentSafety\Policy\Tier;
 
 /**
- * A Capability Pack: a credentialed, purpose-scoped view of the verb catalog
- * (SPEC §3). Enforced in the gate, NOT via WP roles. A pack that denies a tier
- * class is injection-proof against that class by construction (D9).
+ * A Capability Pack: a credentialed, purpose-scoped view of the verb catalog.
+ * Enforced in the gate, NOT via WP roles. A pack that denies a tier
+ * class is injection-proof against that class by construction.
  */
 final class Pack
 {

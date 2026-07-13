@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Policy;
 
 /**
- * An arg-aware tier-elevation rule (SPEC §2): a verb's BASE tier (from {@see
+ * An arg-aware tier-elevation rule: a verb's BASE tier (from {@see
  * VerbCatalog}) can span more than one blast radius depending on its call args
  * (e.g. a status update that fires fulfillment, or a single delete vs. a bulk
  * one). A rule inspects one call and either elevates it to a higher tier, or
