@@ -47,6 +47,7 @@ use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
 use Specflux\AgentSafety\Plugin\Support\Schema;
+use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -187,11 +188,16 @@ if (class_exists(Gate::class)) {
     // stops one call being accumulated into the day totals once per seam.
     $agsafe_argument_caps = new ArgumentCapGate();
 
+    // Shadow mode (roadmap 0.2): per-pack log-only observation, read from the
+    // agsafe_shadow_packs option + agent_safety_shadow_packs filter. Shared so
+    // both seams and the admin toggle agree on which packs are shadowed.
+    $agsafe_shadow = new ShadowMode();
+
     // Primary seam on the shipping stack (WP core Abilities API; adapter-version-independent).
     // Audits the verdicts that never execute (denied / approval-pending) and owns the
     // reserve→finalize approval lifecycle. Inert no-op for any ability
     // outside $agsafe_governed_namespaces.
-    (new AbilityPermissionGate($agsafe_gate, $agsafe_packs, $agsafe_recorder, $agsafe_approvals, $agsafe_governed_namespaces, $agsafe_rate_limits, $agsafe_argument_caps))->register();
+    (new AbilityPermissionGate($agsafe_gate, $agsafe_packs, $agsafe_recorder, $agsafe_approvals, $agsafe_governed_namespaces, $agsafe_rate_limits, $agsafe_argument_caps, $agsafe_shadow))->register();
 
     // Forward-compat seam: fires only if a mcp-adapter >= 0.5.0 is the loaded copy.
     // Shares the same PackResolver + DecisionRecorder as the live seam so both honour
@@ -199,7 +205,7 @@ if (class_exists(Gate::class)) {
     // WooCommerce's "namespace-resource-action" tool-naming convention, so this seam
     // is only meaningful (and only wired up) when WooCommerce is the active integration.
     if (WooIntegration::available()) {
-        (new PreToolCallGate($agsafe_gate, new VerbMapper(), $agsafe_packs, $agsafe_recorder, $agsafe_rate_limits, $agsafe_argument_caps))->register();
+        (new PreToolCallGate($agsafe_gate, new VerbMapper(), $agsafe_packs, $agsafe_recorder, $agsafe_rate_limits, $agsafe_argument_caps, $agsafe_shadow))->register();
     }
 
     // Read-path PII redaction (backlog #11): masks the payload RETURNED TO THE
@@ -258,5 +264,5 @@ if (class_exists(Gate::class)) {
 
     // Capability-pack admin (Tools → Agent Capability Packs): bind each identity
     // the configured providers expose to a pack from the catalog.
-    (new CapabilityPacksPage($agsafe_packs, $agsafe_identity))->register();
+    (new CapabilityPacksPage($agsafe_packs, $agsafe_identity, $agsafe_shadow))->register();
 }

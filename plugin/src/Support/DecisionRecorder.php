@@ -41,10 +41,12 @@ final class DecisionRecorder
      * Emit a gate-decision audit record for a NON-executing verdict — a
      * denial or a pending approval. Allowed calls are audited at execution time by
      * {@see \Specflux\AgentSafety\Plugin\Hooks\AbilityAuditLog}. No-op without a sink.
+     * $shadow = true marks a shadow-mode verdict (observed, not enforced —
+     * the call DID execute) via the record's dry_run field.
      *
      * @param array<string, mixed> $input
      */
-    public function auditDecision(string $eventId, string $verb, array $input, Pack $pack, Decision $decision, ?string $approvalId = null): void
+    public function auditDecision(string $eventId, string $verb, array $input, Pack $pack, Decision $decision, ?string $approvalId = null, bool $shadow = false): void
     {
         if ($this->sink === null) {
             return;
@@ -62,6 +64,7 @@ final class DecisionRecorder
             decision: AuditDecision::fromOutcome($decision->outcome),
             approval: $approvalId !== null ? ['id' => $approvalId, 'approver' => null] : null,
             ip: RequestContext::ip(),
+            dryRun: $shadow,
         ));
     }
 

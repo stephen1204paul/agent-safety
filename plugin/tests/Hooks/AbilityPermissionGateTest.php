@@ -18,6 +18,7 @@ use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 use Specflux\AgentSafety\Plugin\Support\ValueAccumulator;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeApprovalStore;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeIdentityProvider;
@@ -230,6 +231,56 @@ final class AbilityPermissionGateTest extends TestCase
         // Under the bound pack this verb is allowed; under the stale default
         // pack (allow: []) it would come back as a WP_Error denial.
         $this->assertTrue(($wrapped['permission_callback'])([]));
+    }
+
+    public function testShadowedPackAuditsTheWouldBeDenialAndLetsTheCallRun(): void
+    {
+        $pack = new Pack(name: 'observed', allow: []); // every verb would be not_in_pack
+        $sink = new InMemoryAuditSink();
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['observed'];
+        $gate = $this->gateWithPackAndRecording($pack, $sink, new FakeApprovalStore());
+        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+
+        $result = $callback(['id' => 1]);
+
+        $this->assertTrue($result);
+        $this->assertCount(1, $sink->records);
+        $record = $sink->records[0]->toArray();
+        $this->assertSame('denied', $record['decision']);
+        $this->assertTrue($record['dry_run']);
+    }
+
+    public function testShadowedPackDoesNotPersistAPendingApprovalForAWouldBePark(): void
+    {
+        $pack = new Pack(name: 'observed', allow: ['woocommerce/*'], approvalByClass: ['tier0' => true]);
+        $sink = new InMemoryAuditSink();
+        $approvals = new FakeApprovalStore();
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['observed'];
+        $gate = $this->gateWithPackAndRecording($pack, $sink, $approvals);
+        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+
+        $result = $callback(['id' => 1]);
+
+        $this->assertTrue($result);
+        $this->assertSame([], $approvals->requestCalls);
+        $this->assertCount(1, $sink->records);
+        $record = $sink->records[0]->toArray();
+        $this->assertSame('pending', $record['decision']);
+        $this->assertTrue($record['dry_run']);
+    }
+
+    public function testANonShadowedPackStillEnforcesWhileAnotherPackIsShadowed(): void
+    {
+        $pack = new Pack(name: 'enforced', allow: []);
+        $sink = new InMemoryAuditSink();
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['some-other-pack'];
+        $gate = $this->gateWithPackAndRecording($pack, $sink, new FakeApprovalStore());
+        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+
+        $result = $callback(['id' => 1]);
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertFalse($sink->records[0]->toArray()['dry_run']);
     }
 
     public function testArgumentCapMaxPerCallDeniesOverCapCallAndAudits(): void

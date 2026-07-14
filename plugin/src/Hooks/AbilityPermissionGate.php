@@ -17,6 +17,7 @@ use Specflux\AgentSafety\Plugin\Support\ExecutionResult;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 use Specflux\AgentSafety\Policy\Tier;
 use WP_Error;
 
@@ -67,6 +68,7 @@ final class AbilityPermissionGate
         private readonly array $governedNamespaces = [],
         private readonly RateLimitGate $rateLimits = new RateLimitGate(),
         private readonly ArgumentCapGate $argumentCaps = new ArgumentCapGate(),
+        private readonly ShadowMode $shadow = new ShadowMode(),
     ) {
     }
 
@@ -166,6 +168,17 @@ final class AbilityPermissionGate
                 $decision = $self->enforceArgumentCaps($pack, $decision, $name, $callArgs, $claimed);
             }
 
+            // Shadow mode (roadmap 0.2): this pack is in log-only observation.
+            // Audit the verdict that WOULD have applied (dry_run marker) and let
+            // the call proceed. No pending approval is persisted — minting
+            // approvable grants for actions that already ran would corrupt the
+            // approval queue's meaning.
+            if (Outcome::Allow !== $decision->outcome && $self->isShadowed($pack)) {
+                $self->audit(RequestContext::event(), $name, $callArgs, $pack, $decision, null, true);
+
+                return true;
+            }
+
             // For calls that do NOT execute (denied / approval-pending): persist a
             // pending approval (when required) and audit the verdict. Allowed calls
             // are audited at execution time by AbilityAuditLog.
@@ -221,9 +234,18 @@ final class AbilityPermissionGate
      *
      * @param array<string, mixed> $input
      */
-    public function audit(string $eventId, string $name, array $input, Pack $pack, Decision $decision, ?string $approvalId = null): void
+    public function audit(string $eventId, string $name, array $input, Pack $pack, Decision $decision, ?string $approvalId = null, bool $shadow = false): void
     {
-        $this->recorder->auditDecision($eventId, $name, $input, $pack, $decision, $approvalId);
+        $this->recorder->auditDecision($eventId, $name, $input, $pack, $decision, $approvalId, $shadow);
+    }
+
+    /**
+     * Is this pack in log-only observation ({@see ShadowMode})? Public so the
+     * permission-callback closure ($self) can reach it.
+     */
+    public function isShadowed(Pack $pack): bool
+    {
+        return $this->shadow->isShadow($pack->name);
     }
 
     /**

@@ -48,6 +48,12 @@ final class AuditRecord
      * @param array<string, mixed>                     $input
      * @param array{id: string, approver: ?int}|null   $approval         The approval this verdict relates to.
      * @param list<string>                             $externalEffects
+     * @param bool                                     $dryRun           True when the verdict was OBSERVED but not
+     *                                                                   enforced (a shadow-mode pack): the call ran
+     *                                                                   anyway, and this row records only what WOULD
+     *                                                                   have happened. Without this marker a
+     *                                                                   shadow-mode "denied" row would read as a call
+     *                                                                   that never executed.
      */
     public static function decision(
         string $id,
@@ -62,6 +68,7 @@ final class AuditRecord
         ?array $approval = null,
         array $externalEffects = [],
         ?string $ip = null,
+        bool $dryRun = false,
     ): self {
         return new self(
             $id,
@@ -72,7 +79,7 @@ final class AuditRecord
             $ability,
             $tier,
             $input,
-            false,
+            $dryRun,
             $decision,
             $approval,
             null,

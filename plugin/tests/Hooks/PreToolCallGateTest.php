@@ -19,6 +19,7 @@ use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeApprovalStore;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeIdentityProvider;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeMcpTool;
@@ -223,6 +224,43 @@ final class PreToolCallGateTest extends TestCase
         // free up (or spend down further than) the same single slot.
         $third = $gate->handle(['id' => 3], 'demo-read');
         $this->assertInstanceOf(WP_Error::class, $third);
+    }
+
+    public function testShadowedPackAuditsTheWouldBeDenialAndLetsTheCallProceed(): void
+    {
+        $pack = new Pack(name: 'observed', allow: []); // every verb would be not_in_pack
+        $sink = new InMemoryAuditSink();
+        $approvals = new FakeApprovalStore();
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['observed'];
+        $gate = $this->gateForRecording(['demo/refund' => Tier::Reversible], $pack, new DecisionRecorder($sink, $approvals));
+
+        $args = ['amount' => 5];
+        $result = $gate->handle($args, 'demo-refund');
+
+        $this->assertSame($args, $result);
+        $this->assertSame([], $approvals->requestCalls);
+        $this->assertCount(1, $sink->records);
+        $record = $sink->records[0]->toArray();
+        $this->assertSame('denied', $record['decision']);
+        $this->assertTrue($record['dry_run']);
+    }
+
+    public function testShadowedPackDoesNotPersistAPendingApprovalForAWouldBePark(): void
+    {
+        $pack = new Pack(name: 'observed', allow: ['demo/*'], approvalByClass: ['tier2' => true]);
+        $sink = new InMemoryAuditSink();
+        $approvals = new FakeApprovalStore();
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['observed'];
+        $gate = $this->gateForRecording(['demo/refund' => Tier::Irreversible], $pack, new DecisionRecorder($sink, $approvals));
+
+        $args = ['amount' => 5];
+        $result = $gate->handle($args, 'demo-refund');
+
+        $this->assertSame($args, $result);
+        $this->assertSame([], $approvals->requestCalls);
+        $record = $sink->records[0]->toArray();
+        $this->assertSame('pending', $record['decision']);
+        $this->assertTrue($record['dry_run']);
     }
 
     public function testArgumentCapOverCapShortCircuitsAndAuditsTheDenial(): void

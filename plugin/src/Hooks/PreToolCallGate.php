@@ -15,6 +15,7 @@ use Specflux\AgentSafety\Plugin\Integrations\Woo\VerbMapper;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 use Specflux\AgentSafety\Policy\Tier;
 use WP_Error;
 
@@ -46,6 +47,7 @@ final class PreToolCallGate
         private readonly DecisionRecorder $recorder,
         private readonly RateLimitGate $rateLimits = new RateLimitGate(),
         private readonly ArgumentCapGate $argumentCaps = new ArgumentCapGate(),
+        private readonly ShadowMode $shadow = new ShadowMode(),
     ) {
     }
 
@@ -100,6 +102,15 @@ final class PreToolCallGate
         // Allowed (incl. an already-approved retry): proceed. Execution audit and the
         // reserve→finalize of any grant happen in the permission_callback seam.
         if (Outcome::Allow === $decision->outcome) {
+            return $args;
+        }
+
+        // Shadow mode (roadmap 0.2): this pack is in log-only observation.
+        // Audit the verdict that WOULD have applied (dry_run marker) and let the
+        // call proceed — no pending approval, no short-circuit.
+        if ($this->shadow->isShadow($pack->name)) {
+            $this->recorder->auditDecision(RequestContext::event(), $verb, $args, $pack, $decision, null, true);
+
             return $args;
         }
 

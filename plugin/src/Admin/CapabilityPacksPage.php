@@ -8,6 +8,7 @@ use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Identity\IdentityProvider;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 
 /**
  * Tools → "Agent Capability Packs": the human side of credential scoping.
@@ -30,10 +31,12 @@ final class CapabilityPacksPage
     private const SLUG = 'agent-safety-packs';
     private const CAP = 'manage_options';
     private const SAVE = 'agsafe_save_pack_bindings';
+    private const SHADOW = 'agsafe_save_shadow_packs';
 
     public function __construct(
         private readonly PackResolver $packs,
         private readonly IdentityChain $identity,
+        private readonly ShadowMode $shadow = new ShadowMode(),
     ) {
     }
 
@@ -41,6 +44,7 @@ final class CapabilityPacksPage
     {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_post_' . self::SAVE, [$this, 'save']);
+        add_action('admin_post_' . self::SHADOW, [$this, 'saveShadow']);
     }
 
     public function menu(): void
@@ -82,8 +86,11 @@ final class CapabilityPacksPage
         $registry = $this->packs->registry();
 
         echo '<h2>' . esc_html__('Pack catalog', 'agent-safety') . '</h2>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="' . esc_attr(self::SHADOW) . '">';
+        echo wp_nonce_field(self::SHADOW, '_wpnonce', true, false); // phpcs:ignore WordPress.Security.EscapeOutput -- core-built hidden fields.
         echo '<table class="widefat striped"><thead><tr>';
-        foreach (['Pack', 'Allows', 'Hard-denied (deny_class)', 'Approval-gated', 'PII'] as $col) {
+        foreach (['Pack', 'Allows', 'Hard-denied (deny_class)', 'Approval-gated', 'PII', 'Shadow (log only)'] as $col) {
             echo '<th>' . esc_html($col) . '</th>';
         }
         echo '</tr></thead><tbody>';
@@ -99,10 +106,46 @@ final class CapabilityPacksPage
             echo '<td>' . ($pack->denyClass === [] ? '—' : $this->codeList($pack->denyClass)) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- esc_html in helper.
             echo '<td>' . $this->codeList(array_keys(array_filter($pack->approvalByClass))) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- esc_html in helper.
             echo '<td>' . esc_html($pack->pii) . '</td>';
+            printf(
+                '<td><label><input type="checkbox" name="shadow[]" value="%s"%s> %s</label></td>',
+                esc_attr($pack->name),
+                checked($this->shadow->isShadow($pack->name), true, false),
+                esc_html__('audit only, enforce nothing', 'agent-safety'),
+            );
             echo '</tr>';
         }
 
         echo '</tbody></table>';
+        echo '<p>' . esc_html__('A shadowed pack still audits every verdict (marked dry_run) but blocks nothing — run a week of observation before turning enforcement on. Pending approvals are not created for shadowed calls.', 'agent-safety') . '</p>';
+        echo '<p><button type="submit" class="button">' . esc_html__('Save shadow mode', 'agent-safety') . '</button></p>';
+        echo '</form>';
+    }
+
+    public function saveShadow(): void
+    {
+        if (!current_user_can(self::CAP)) {
+            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
+        }
+        check_admin_referer(self::SHADOW);
+
+        $valid = $this->packs->registry()->names();
+        $posted = isset($_POST['shadow']) && is_array($_POST['shadow']) ? wp_unslash($_POST['shadow']) : [];
+
+        $clean = [];
+        foreach ($posted as $pack) {
+            $pack = sanitize_text_field((string) $pack);
+            if ($pack !== '' && in_array($pack, $valid, true)) {
+                $clean[] = $pack;
+            }
+        }
+
+        update_option(ShadowMode::OPTION, $clean, false);
+
+        wp_safe_redirect(add_query_arg(
+            ['page' => self::SLUG, 'agsafe_saved' => '1'],
+            admin_url('tools.php')
+        ));
+        exit;
     }
 
     /**
