@@ -98,9 +98,18 @@ function deactivate_agent_safety(): void
     }
 }
 
-// Register at plugin-load time (NOT on init): the ability seam must be wired
-// before an integration (e.g. WooCommerce) registers its abilities.
-if (class_exists(Gate::class)) {
+// Wired on plugins_loaded (priority 0), NOT at include time: WordPress keeps
+// active_plugins sorted, so this plugin's directory loads BEFORE woocommerce/
+// and an include-time class_exists('WooCommerce') is always false — the whole
+// Woo integration would silently never register (found by live smoke test
+// 2026-07-14). By plugins_loaded every plugin file is included, and the seams
+// are still wired long before any ability exists: the Abilities API registry
+// fires wp_abilities_api_init lazily, no earlier than init.
+add_action('plugins_loaded', static function (): void {
+    if (!class_exists(Gate::class)) {
+        return;
+    }
+
     global $wpdb;
 
     // Cheap version check on every wp-admin load: an admin visiting after a
@@ -265,4 +274,4 @@ if (class_exists(Gate::class)) {
     // Capability-pack admin (Tools → Agent Capability Packs): bind each identity
     // the configured providers expose to a pack from the catalog.
     (new CapabilityPacksPage($agsafe_packs, $agsafe_identity, $agsafe_shadow))->register();
-}
+}, 0);
