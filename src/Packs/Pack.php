@@ -29,6 +29,12 @@ final class Pack
      *     counting) — this class only carries the config, never the counts. Builtin
      *     packs (owner, default-agent) ship unlimited; the shape exists for site
      *     owners/integrations that bind a specific credential to a capped pack.
+     * @param list<ArgumentCap> $argumentCaps Argument-aware caps (roadmap 0.2 "spend
+     *     limits"): constraints that read a value out of the call's arguments — daily
+     *     value totals, per-call ceilings, approval thresholds, bulk item counts.
+     *     Evaluated by the pure {@see ArgumentCapPolicy}; day-window totals are
+     *     tracked by the plugin's `ValueAccumulator`/`ArgumentCapGate`. Like
+     *     $limits, this class only carries the declarations.
      */
     public function __construct(
         public readonly string $name,
@@ -37,6 +43,7 @@ final class Pack
         public readonly array $approvalByClass = [],
         public readonly string $pii = 'redacted',
         public readonly array $limits = [],
+        public readonly array $argumentCaps = [],
     ) {
     }
 
@@ -47,11 +54,17 @@ final class Pack
             || ($this->limits['calls_per_hour'] ?? null) !== null;
     }
 
+    /** True when this pack carries at least one argument-aware cap to enforce. */
+    public function hasArgumentCaps(): bool
+    {
+        return $this->argumentCaps !== [];
+    }
+
     /** Does any allow-glob admit this verb? */
     public function allows(string $verb): bool
     {
         foreach ($this->allow as $pattern) {
-            if (self::globMatch($pattern, $verb)) {
+            if (VerbGlob::matches($pattern, $verb)) {
                 return true;
             }
         }
@@ -73,16 +86,5 @@ final class Pack
     public function redactsPii(): bool
     {
         return $this->pii === 'redacted';
-    }
-
-    /** Treat "*" as match-anything; everything else is a literal with "*" wildcards. */
-    private static function globMatch(string $pattern, string $subject): bool
-    {
-        if ($pattern === '*') {
-            return true;
-        }
-        $regex = '#^' . str_replace('\*', '.*', preg_quote($pattern, '#')) . '$#';
-
-        return (bool) preg_match($regex, $subject);
     }
 }

@@ -9,6 +9,7 @@ use Specflux\AgentSafety\Gate\Gate;
 use Specflux\AgentSafety\Gate\GateContext;
 use Specflux\AgentSafety\Gate\Outcome;
 use Specflux\AgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\VerbMapper;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
@@ -44,6 +45,7 @@ final class PreToolCallGate
         private readonly PackResolver $packs,
         private readonly DecisionRecorder $recorder,
         private readonly RateLimitGate $rateLimits = new RateLimitGate(),
+        private readonly ArgumentCapGate $argumentCaps = new ArgumentCapGate(),
     ) {
     }
 
@@ -85,6 +87,14 @@ final class PreToolCallGate
         // proceed — a denial must never itself consume quota.
         if (Outcome::Allow === $decision->outcome) {
             $decision = $this->enforceRateLimit($pack, $decision, $verb, $args);
+        }
+
+        // Argument-aware caps (roadmap 0.2 "spend limits") bind last, same
+        // admitted-calls-only rule. No grant is claimed here — like the
+        // approval flow itself, the permission_callback seam is the single
+        // owner of reserve→finalize; this seam only peeks ($hasValidApproval).
+        if (Outcome::Allow === $decision->outcome) {
+            $decision = $this->enforceArgumentCaps($pack, $decision, $verb, $args, $hasValidApproval);
         }
 
         // Allowed (incl. an already-approved retry): proceed. Execution audit and the
@@ -196,6 +206,38 @@ final class PreToolCallGate
         $tripped = $this->rateLimits->admit($pack, RequestContext::tokenId(), $verb, $args);
 
         return $tripped === null ? $decision : Decision::deny('rate_limited_' . $tripped, $decision->tier);
+    }
+
+    /**
+     * Enforce this pack's argument-aware caps (roadmap 0.2 "spend limits") on
+     * a decision that is otherwise Allow. Hard trips deny, naming the cap and
+     * constraint like rate-limit denials name their window; a tripped
+     * approval threshold parks the call as approval-required, and the
+     * caller's existing non-Allow branch persists the pending request. An
+     * already-approved retry sails through: $hasValidApproval (the caller's
+     * non-mutating peek) satisfies the threshold, and hard caps still apply.
+     *
+     * @param array<string, mixed> $args
+     */
+    private function enforceArgumentCaps(
+        Pack $pack,
+        Decision $decision,
+        string $verb,
+        array $args,
+        bool $hasValidApproval,
+    ): Decision {
+        $check = $this->argumentCaps->check($pack, RequestContext::tokenId(), $verb, $args, $hasValidApproval);
+        if ($check->allowed) {
+            return $decision;
+        }
+
+        if ($check->requiresApproval) {
+            // An Allow decision always carries its tier; the fallback exists
+            // only to fail closed (treat as irreversible) if that ever changes.
+            return Decision::approvalRequired($decision->tier ?? Tier::Irreversible);
+        }
+
+        return Decision::deny('argument_cap_' . $check->trippedCap . '_' . $check->constraint, $decision->tier);
     }
 
     /** @param mixed $mcpTool */

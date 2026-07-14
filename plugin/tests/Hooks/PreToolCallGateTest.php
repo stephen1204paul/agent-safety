@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Tests\Hooks;
 
 use PHPUnit\Framework\TestCase;
+use Specflux\AgentSafety\Approval\ApprovalBinding;
 use Specflux\AgentSafety\Gate\Gate;
+use Specflux\AgentSafety\Packs\ArgumentCap;
 use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Policy\Tier;
 use Specflux\AgentSafety\Policy\TierClassifier;
@@ -17,8 +19,10 @@ use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeApprovalStore;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeIdentityProvider;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeMcpTool;
+use Specflux\AgentSafety\Plugin\Tests\Fakes\InMemoryAuditSink;
 use WP_Error;
 
 /**
@@ -60,6 +64,27 @@ final class PreToolCallGateTest extends TestCase
         return $rateLimits === null
             ? new PreToolCallGate($gate, new VerbMapper(), $packs, new DecisionRecorder())
             : new PreToolCallGate($gate, new VerbMapper(), $packs, new DecisionRecorder(), $rateLimits);
+    }
+
+    /**
+     * Same wiring as {@see gateFor()}, but with the caller's own
+     * {@see DecisionRecorder} (audit sink + approval store) instead of an
+     * inert one, for the argument-cap scenarios below.
+     *
+     * @param array<string, Tier> $verbToTier
+     */
+    private function gateForRecording(array $verbToTier, Pack $pack, DecisionRecorder $recorder): PreToolCallGate
+    {
+        $catalog = new VerbCatalog();
+        $catalog->register($verbToTier);
+        $gate = new Gate(new TierClassifier($catalog));
+
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: ['test:token']),
+        ]));
+        $GLOBALS['wpas_test_options'][PackResolver::BINDINGS_OPTION] = ['test:token' => $pack->name];
+
+        return new PreToolCallGate($gate, new VerbMapper(), new PackResolver([$pack]), $recorder);
     }
 
     private function approvalGatedPack(): Pack
@@ -198,5 +223,50 @@ final class PreToolCallGateTest extends TestCase
         // free up (or spend down further than) the same single slot.
         $third = $gate->handle(['id' => 3], 'demo-read');
         $this->assertInstanceOf(WP_Error::class, $third);
+    }
+
+    public function testArgumentCapOverCapShortCircuitsAndAuditsTheDenial(): void
+    {
+        $cap = new ArgumentCap('refund_total', 'demo/*', 'amount', maxPerCall: 100.0);
+        $pack = new Pack(name: 'capped-args', allow: ['demo/*'], argumentCaps: [$cap]);
+        $sink = new InMemoryAuditSink();
+        $gate = $this->gateForRecording(['demo/refund' => Tier::Reversible], $pack, new DecisionRecorder($sink));
+
+        $result = $gate->handle(['amount' => 500], 'demo-refund');
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('agent_safety_denied', $result->get_error_code());
+        $this->assertStringContainsString('argument_cap_refund_total_max_per_call', $result->get_error_message());
+        $this->assertCount(1, $sink->records);
+        $this->assertSame('denied', $sink->records[0]->toArray()['decision']);
+    }
+
+    public function testArgumentCapApprovalAboveParksAsApprovalRequiredAndPersistsPending(): void
+    {
+        $cap = new ArgumentCap('big_edit', 'demo/*', 'amount', approvalAbove: 100.0);
+        $pack = new Pack(name: 'approval-args', allow: ['demo/*'], argumentCaps: [$cap]);
+        $approvals = new FakeApprovalStore();
+        $gate = $this->gateForRecording(['demo/refund' => Tier::Reversible], $pack, new DecisionRecorder(new InMemoryAuditSink(), $approvals));
+
+        $result = $gate->handle(['amount' => 500], 'demo-refund');
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('approval_required', $result->get_error_code());
+        $this->assertCount(1, $approvals->requestCalls);
+        $this->assertSame('demo/refund', $approvals->requestCalls[0]['verb']);
+    }
+
+    public function testArgumentCapApprovalAboveWithAPeekableApprovedGrantProceeds(): void
+    {
+        $cap = new ArgumentCap('big_edit', 'demo/*', 'amount', approvalAbove: 100.0, maxTotalPerDay: 1000.0);
+        $pack = new Pack(name: 'approval-args', allow: ['demo/*'], argumentCaps: [$cap]);
+        $approvals = new FakeApprovalStore();
+        $args = ['amount' => 500];
+        $approvals->seedApproved('demo/refund', ApprovalBinding::hash('demo/refund', $args), 'test:token');
+        $gate = $this->gateForRecording(['demo/refund' => Tier::Reversible], $pack, new DecisionRecorder(new InMemoryAuditSink(), $approvals));
+
+        $result = $gate->handle($args, 'demo-refund');
+
+        $this->assertSame($args, $result);
     }
 }

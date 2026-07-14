@@ -11,11 +11,13 @@ use Specflux\AgentSafety\Gate\Gate;
 use Specflux\AgentSafety\Gate\GateContext;
 use Specflux\AgentSafety\Gate\Outcome;
 use Specflux\AgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\ExecutionResult;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Policy\Tier;
 use WP_Error;
 
 /**
@@ -64,6 +66,7 @@ final class AbilityPermissionGate
         private readonly ?ApprovalStore $approvals = null,
         private readonly array $governedNamespaces = [],
         private readonly RateLimitGate $rateLimits = new RateLimitGate(),
+        private readonly ArgumentCapGate $argumentCaps = new ArgumentCapGate(),
     ) {
     }
 
@@ -133,7 +136,9 @@ final class AbilityPermissionGate
 
             // Approval is the sole blocker: try to claim a human grant for this exact
             // action. If we get one, re-evaluate as approved → Allow.
+            $claimed = false;
             if (Outcome::ApprovalRequired === $decision->outcome && $self->claimApproval($name, $callArgs)) {
+                $claimed = true;
                 $decision = $gate->evaluate(new GateContext(
                     verb: $name,
                     args: $callArgs,
@@ -151,6 +156,14 @@ final class AbilityPermissionGate
             // cap can still reuse the same human grant.
             if (Outcome::Allow === $decision->outcome) {
                 $decision = $self->enforceRateLimit($pack, $decision, $name, $callArgs);
+            }
+
+            // Argument-aware caps (roadmap 0.2 "spend limits") bind last, on a
+            // call that would otherwise proceed: only an admitted call
+            // accumulates into the day totals, so a denial here never consumes
+            // budget — same rule as the rate caps above.
+            if (Outcome::Allow === $decision->outcome) {
+                $decision = $self->enforceArgumentCaps($pack, $decision, $name, $callArgs, $claimed);
             }
 
             // For calls that do NOT execute (denied / approval-pending): persist a
@@ -227,6 +240,57 @@ final class AbilityPermissionGate
         $tripped = $this->rateLimits->admit($pack, RequestContext::tokenId(), $verb, $args);
 
         return $tripped === null ? $decision : Decision::deny('rate_limited_' . $tripped, $decision->tier);
+    }
+
+    /**
+     * Enforce this pack's argument-aware caps (roadmap 0.2 "spend limits") on
+     * a decision that is otherwise Allow. Hard trips become a Deny naming the
+     * cap and the constraint (e.g. "argument_cap_refund_total_max_total_per_day"),
+     * exactly like rate-limit denials name their window.
+     *
+     * A tripped approval threshold routes through the SAME human-approval
+     * machinery the tier gate uses: if a grant for this exact verb+args
+     * already exists, claim it now (otherwise the approved retry would trip
+     * the threshold again forever — the tier path never claims for a verb
+     * whose tier needs no approval); with no grant, park the call as
+     * approval-required and let the caller persist the pending request.
+     * The claim is re-checked because the day totals are re-read live: a
+     * concurrent request may have spent the remaining budget since the first
+     * check, and a human grant satisfies only the threshold, never a hard cap.
+     * Public so the permission-callback closure ($self) can reach it.
+     *
+     * @param array<string, mixed> $args
+     */
+    public function enforceArgumentCaps(
+        Pack $pack,
+        Decision $decision,
+        string $verb,
+        array $args,
+        bool $hasValidApproval,
+    ): Decision {
+        $check = $this->argumentCaps->check($pack, RequestContext::tokenId(), $verb, $args, $hasValidApproval);
+        if ($check->allowed) {
+            return $decision;
+        }
+
+        if ($check->requiresApproval) {
+            if ($this->claimApproval($verb, $args)) {
+                $recheck = $this->argumentCaps->check($pack, RequestContext::tokenId(), $verb, $args, true);
+
+                return $recheck->allowed
+                    ? $decision
+                    : Decision::deny(
+                        'argument_cap_' . $recheck->trippedCap . '_' . $recheck->constraint,
+                        $decision->tier,
+                    );
+            }
+
+            // An Allow decision always carries its tier; the fallback exists
+            // only to fail closed (treat as irreversible) if that ever changes.
+            return Decision::approvalRequired($decision->tier ?? Tier::Irreversible);
+        }
+
+        return Decision::deny('argument_cap_' . $check->trippedCap . '_' . $check->constraint, $decision->tier);
     }
 
     /**

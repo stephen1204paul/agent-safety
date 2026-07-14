@@ -40,6 +40,7 @@ use Specflux\AgentSafety\Plugin\Identity\UserRoleIdentity;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\VerbMapper;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\WooIntegration;
 use Specflux\AgentSafety\Plugin\Support\ApprovalSweep;
+use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
@@ -180,11 +181,16 @@ if (class_exists(Gate::class)) {
     // seam intercepts a call first.
     $agsafe_rate_limits = new RateLimitGate();
 
+    // Shared argument-cap gate (roadmap 0.2 "spend limits"): shared for the same
+    // reason as $agsafe_rate_limits — and because its per-request memo is what
+    // stops one call being accumulated into the day totals once per seam.
+    $agsafe_argument_caps = new ArgumentCapGate();
+
     // Primary seam on the shipping stack (WP core Abilities API; adapter-version-independent).
     // Audits the verdicts that never execute (denied / approval-pending) and owns the
     // reserve→finalize approval lifecycle. Inert no-op for any ability
     // outside $agsafe_governed_namespaces.
-    (new AbilityPermissionGate($agsafe_gate, $agsafe_packs, $agsafe_recorder, $agsafe_approvals, $agsafe_governed_namespaces, $agsafe_rate_limits))->register();
+    (new AbilityPermissionGate($agsafe_gate, $agsafe_packs, $agsafe_recorder, $agsafe_approvals, $agsafe_governed_namespaces, $agsafe_rate_limits, $agsafe_argument_caps))->register();
 
     // Forward-compat seam: fires only if a mcp-adapter >= 0.5.0 is the loaded copy.
     // Shares the same PackResolver + DecisionRecorder as the live seam so both honour
@@ -192,7 +198,7 @@ if (class_exists(Gate::class)) {
     // WooCommerce's "namespace-resource-action" tool-naming convention, so this seam
     // is only meaningful (and only wired up) when WooCommerce is the active integration.
     if (WooIntegration::available()) {
-        (new PreToolCallGate($agsafe_gate, new VerbMapper(), $agsafe_packs, $agsafe_recorder, $agsafe_rate_limits))->register();
+        (new PreToolCallGate($agsafe_gate, new VerbMapper(), $agsafe_packs, $agsafe_recorder, $agsafe_rate_limits, $agsafe_argument_caps))->register();
     }
 
     // Read-path PII redaction (backlog #11): masks the payload RETURNED TO THE
