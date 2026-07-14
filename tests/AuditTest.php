@@ -49,12 +49,50 @@ final class AuditTest extends TestCase
 
         // The canonical audit-record field set, in order.
         $this->assertSame(
-            ['id', 'ts', 'correlation_id', 'pack', 'actor', 'ability', 'tier', 'input', 'dry_run', 'decision', 'approval', 'result', 'external_effects', 'ip'],
+            ['id', 'ts', 'correlation_id', 'pack', 'actor', 'ability', 'tier', 'input', 'dry_run', 'decision', 'reason', 'approval', 'result', 'external_effects', 'ip'],
             array_keys($arr),
         );
         $this->assertSame('pending', $arr['decision']);
         $this->assertNull($arr['result']);
         $this->assertFalse($arr['dry_run']);
+    }
+
+    public function testDecisionRecordCarriesTheGateReasonCode(): void
+    {
+        $rec = AuditRecord::decision(
+            id: 'evt_r',
+            ts: '2026-07-14T10:00:00Z',
+            correlationId: 'sess_test',
+            pack: 'default-agent',
+            actor: ['token_id' => 'ck_abc', 'wp_user' => 7],
+            ability: 'woocommerce/orders-refund',
+            tier: 2,
+            input: ['amount' => 600],
+            decision: AuditDecision::Denied,
+            reason: 'argument_cap_refund_amount_max_per_call',
+        );
+
+        $this->assertSame('argument_cap_refund_amount_max_per_call', $rec->toArray()['reason']);
+        // The reason is part of the hash-chain payload, not display-only.
+        $this->assertStringContainsString('"reason":"argument_cap_refund_amount_max_per_call"', $rec->canonicalJson());
+    }
+
+    public function testReasonDefaultsToNullAndExecutionRecordsNeverCarryOne(): void
+    {
+        $this->assertNull($this->record('evt_1', 'woocommerce/orders-update', AuditDecision::Denied)->reason);
+
+        $exec = AuditRecord::execution(
+            id: 'evt_x',
+            ts: '2026-07-14T10:00:00Z',
+            correlationId: 'sess_test',
+            pack: 'default-agent',
+            actor: ['token_id' => 'ck_abc', 'wp_user' => 7],
+            ability: 'woocommerce/orders-update',
+            tier: 1,
+            input: [],
+            result: 'success',
+        );
+        $this->assertNull($exec->reason);
     }
 
     public function testExecutionRecordCarriesResult(): void

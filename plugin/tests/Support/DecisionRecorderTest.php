@@ -60,6 +60,51 @@ final class DecisionRecorderTest extends TestCase
         $this->assertSame('a@b.com', $sink->records[0]->toArray()['input']['email']);
     }
 
+    public function testAuditRecordCarriesTheDecisionReasonCode(): void
+    {
+        $sink = new InMemoryAuditSink();
+        $recorder = new DecisionRecorder($sink, null);
+        $pack = new Pack(name: 'support', allow: ['*']);
+
+        $recorder->auditDecision('evt_1', 'orders/refund', ['amount' => 600], $pack, Decision::deny('argument_cap_refund_max_per_call', Tier::Irreversible));
+
+        $this->assertSame('argument_cap_refund_max_per_call', $sink->records[0]->toArray()['reason']);
+    }
+
+    public function testReauditingTheSameVerdictInOneRequestAppendsExactlyOneRecord(): void
+    {
+        // WordPress re-enters ability permission callbacks many times per REST
+        // request (~11 observed live); every re-entry re-derives the same
+        // verdict. The dedup guard is what keeps one denied call = one row.
+        $sink = new InMemoryAuditSink();
+        $recorder = new DecisionRecorder($sink, null);
+        $pack = new Pack(name: 'support', allow: ['*']);
+        $decision = Decision::deny('denied_by_pack', Tier::Irreversible);
+
+        for ($i = 0; $i < 11; $i++) {
+            $recorder->auditDecision('evt_' . $i, 'orders/refund', ['id' => 1], $pack, $decision);
+        }
+
+        $this->assertCount(1, $sink->records);
+    }
+
+    public function testDistinctVerdictsInOneRequestAreEachAudited(): void
+    {
+        $sink = new InMemoryAuditSink();
+        $recorder = new DecisionRecorder($sink, null);
+        $pack = new Pack(name: 'support', allow: ['*']);
+        $deny = Decision::deny('denied_by_pack', Tier::Irreversible);
+
+        // Different args, different reason, and a shadow-mode re-observation of
+        // the first verdict: none of these may collapse into another's row.
+        $recorder->auditDecision('evt_1', 'orders/refund', ['id' => 1], $pack, $deny);
+        $recorder->auditDecision('evt_2', 'orders/refund', ['id' => 2], $pack, $deny);
+        $recorder->auditDecision('evt_3', 'orders/refund', ['id' => 1], $pack, Decision::deny('rate_limited_minute', Tier::Irreversible));
+        $recorder->auditDecision('evt_4', 'orders/refund', ['id' => 1], $pack, $deny, null, true);
+
+        $this->assertCount(4, $sink->records);
+    }
+
     public function testAuditDecisionIsANoOpWithoutASink(): void
     {
         // No sink to append to and an approvals store that auditDecision never

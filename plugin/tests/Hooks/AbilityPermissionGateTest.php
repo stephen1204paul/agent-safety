@@ -300,6 +300,26 @@ final class AbilityPermissionGateTest extends TestCase
         $this->assertSame('denied', $sink->records[0]->toArray()['decision']);
     }
 
+    public function testReenteredPermissionCallbackAuditsADenialExactlyOnce(): void
+    {
+        // WordPress invokes an ability's permission callback repeatedly within
+        // one REST request (~11 times observed live on WP 7.0). One denied
+        // call must produce ONE audit row, and that row must name the rule
+        // that denied it.
+        $cap = new ArgumentCap('refund_total', 'woocommerce/*', 'amount', maxPerCall: 100.0);
+        $pack = new Pack(name: 'capped-args', allow: ['woocommerce/*'], argumentCaps: [$cap]);
+        $sink = new InMemoryAuditSink();
+        $gate = $this->gateWithPackAndRecording($pack, $sink, new FakeApprovalStore());
+        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+
+        for ($i = 0; $i < 11; $i++) {
+            $this->assertInstanceOf(WP_Error::class, $callback(['amount' => 500]));
+        }
+
+        $this->assertCount(1, $sink->records);
+        $this->assertSame('argument_cap_refund_total_max_per_call', $sink->records[0]->toArray()['reason']);
+    }
+
     public function testArgumentCapApprovalAboveWithNoGrantParksAsApprovalRequired(): void
     {
         $cap = new ArgumentCap('big_edit', 'woocommerce/*', 'amount', approvalAbove: 100.0);

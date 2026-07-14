@@ -31,6 +31,23 @@ use Specflux\AgentSafety\Packs\Pack;
  */
 final class DecisionRecorder
 {
+    /**
+     * Verdicts already audited THIS REQUEST, keyed by everything that makes a
+     * verdict distinct. WordPress re-enters ability permission callbacks many
+     * times per REST request (route matching, Allow-header probing, the
+     * ability's own execute-time re-check — ~11 invocations observed live on
+     * WP 7.0), and every re-entry re-derives the same verdict. The decision
+     * gates memoize their SIDE EFFECTS (quota, approvals, notifications), so
+     * without this guard the audit append was the one path still firing per
+     * invocation: one denied HTTP call wrote ~11 identical rows (found by
+     * live smoke test 2026-07-14). Living here, the guard also covers both
+     * seams at once — a call intercepted by PreToolCallGate AND the
+     * permission callback still audits exactly once.
+     *
+     * @var array<string, true>
+     */
+    private array $audited = [];
+
     public function __construct(
         private readonly ?AuditSink $sink = null,
         private readonly ?ApprovalStore $approvals = null,
@@ -52,6 +69,20 @@ final class DecisionRecorder
             return;
         }
 
+        $memoKey = implode('|', [
+            $pack->name,
+            (string) RequestContext::tokenId(),
+            $verb,
+            md5(serialize($input)),
+            $decision->outcome->name,
+            $decision->reason,
+            $shadow ? '1' : '0',
+        ]);
+        if (isset($this->audited[$memoKey])) {
+            return;
+        }
+        $this->audited[$memoKey] = true;
+
         $this->sink->append(AuditRecord::decision(
             id: $eventId,
             ts: RequestContext::nowUtc(),
@@ -65,6 +96,7 @@ final class DecisionRecorder
             approval: $approvalId !== null ? ['id' => $approvalId, 'approver' => null] : null,
             ip: RequestContext::ip(),
             dryRun: $shadow,
+            reason: $decision->reason,
         ));
     }
 

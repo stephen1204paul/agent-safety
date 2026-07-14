@@ -78,19 +78,20 @@ final class AuditLogPage
 
         // Table.
         echo '<table class="widefat striped"><thead><tr>';
-        foreach (['ID', 'Time (UTC)', 'Correlation', 'Ability', 'Tier', 'Decision', 'Result', 'Token', 'IP', 'Input'] as $col) {
+        foreach (['ID', 'Time (UTC)', 'Correlation', 'Ability', 'Tier', 'Decision', 'Reason', 'Result', 'Token', 'IP', 'Input'] as $col) {
             echo '<th>' . esc_html($col) . '</th>';
         }
         echo '</tr></thead><tbody>';
 
         if (!$rows) {
-            echo '<tr><td colspan="10">' . esc_html__('No events yet.', 'agent-safety') . '</td></tr>';
+            echo '<tr><td colspan="11">' . esc_html__('No events yet.', 'agent-safety') . '</td></tr>';
         }
 
         foreach ($rows as $r) {
             $decoded = json_decode((string) ($r['record_json'] ?? '{}'), true);
             $token = is_array($decoded) && isset($decoded['actor']['token_id']) ? (string) $decoded['actor']['token_id'] : '';
             $input = is_array($decoded) && isset($decoded['input']) ? (string) wp_json_encode($decoded['input']) : '';
+            $reason = is_array($decoded) && isset($decoded['reason']) ? (string) $decoded['reason'] : '';
 
             echo '<tr>';
             echo '<td>' . esc_html((string) $r['id']) . '</td>';
@@ -99,6 +100,7 @@ final class AuditLogPage
             echo '<td><code>' . esc_html((string) $r['ability']) . '</code></td>';
             echo '<td>' . esc_html($r['tier'] === null ? '—' : (string) $r['tier']) . '</td>';
             echo '<td>' . self::badge((string) $r['decision']) . '</td>';
+            echo '<td><code>' . esc_html($reason ?: '—') . '</code></td>';
             echo '<td>' . esc_html((string) ($r['result'] ?? '—')) . '</td>';
             echo '<td>' . esc_html($token ?: '—') . '</td>';
             echo '<td>' . esc_html((string) ($r['ip'] ?? '—')) . '</td>';

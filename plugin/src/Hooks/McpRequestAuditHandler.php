@@ -265,6 +265,7 @@ final class McpRequestAuditHandler implements McpObservabilityHandlerInterface
                 input: $input,
                 decision: AuditDecision::Denied,
                 ip: RequestContext::ip(),
+                reason: $failureReason,
             ));
 
             return;

@@ -31,6 +31,7 @@ final class AuditRecord
         public readonly array $input,
         public readonly bool $dryRun,
         public readonly AuditDecision $decision,
+        public readonly ?string $reason,
         public readonly ?array $approval,
         public readonly ?string $result,
         public readonly array $externalEffects,
@@ -54,6 +55,11 @@ final class AuditRecord
      *                                                                   have happened. Without this marker a
      *                                                                   shadow-mode "denied" row would read as a call
      *                                                                   that never executed.
+     * @param ?string                                  $reason           The gate's reason code — WHICH rule produced
+     *                                                                   this verdict (e.g. `argument_cap_<id>_<constraint>`,
+     *                                                                   `rate_limited_<window>`, `not_in_pack`). A
+     *                                                                   "denied" row without it cannot answer the one
+     *                                                                   question an auditor asks: denied WHY?
      */
     public static function decision(
         string $id,
@@ -69,6 +75,7 @@ final class AuditRecord
         array $externalEffects = [],
         ?string $ip = null,
         bool $dryRun = false,
+        ?string $reason = null,
     ): self {
         return new self(
             $id,
@@ -81,6 +88,7 @@ final class AuditRecord
             $input,
             $dryRun,
             $decision,
+            $reason,
             $approval,
             null,
             $externalEffects,
@@ -121,6 +129,7 @@ final class AuditRecord
             false,
             AuditDecision::Allowed,
             null,
+            null,
             $result,
             $externalEffects,
             $ip,
@@ -146,6 +155,7 @@ final class AuditRecord
             'input' => $this->input,
             'dry_run' => $this->dryRun,
             'decision' => $this->decision->value,
+            'reason' => $this->reason,
             'approval' => $this->approval,
             'result' => $this->result,
             'external_effects' => $this->externalEffects,
