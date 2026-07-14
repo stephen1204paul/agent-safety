@@ -70,6 +70,38 @@ final class WpdbApprovalStoreTest extends TestCase
         $this->assertSame(0, $store->deleteExpired('2026-07-07 12:00:00'));
     }
 
+    public function testFreshRequestFiresTheApprovalRequestedAction(): void
+    {
+        $GLOBALS['wpas_test_actions'] = [];
+        $db = new wpdb();
+        $store = new WpdbApprovalStore($db);
+
+        $approvalId = $store->request('woocommerce/orders-refund', 'hash123', 'summary text', 'corr', 'evt', 'key_1');
+
+        $fired = array_values(array_filter(
+            $GLOBALS['wpas_test_actions'],
+            static fn (array $a): bool => $a[0] === 'agent_safety_approval_requested',
+        ));
+        $this->assertCount(1, $fired);
+        $this->assertSame([$approvalId, 'woocommerce/orders-refund', 'summary text'], array_slice($fired[0], 1));
+    }
+
+    public function testReusedPendingRequestDoesNotReNotify(): void
+    {
+        $GLOBALS['wpas_test_actions'] = [];
+        $db = new wpdb();
+        $db->varReturn = 'apr_existing'; // a live pending row for the same (verb, args_hash, subject)
+        $store = new WpdbApprovalStore($db);
+
+        $approvalId = $store->request('woocommerce/orders-refund', 'hash123', 'summary text', 'corr', 'evt', 'key_1');
+
+        $this->assertSame('apr_existing', $approvalId);
+        $this->assertSame([], array_filter(
+            $GLOBALS['wpas_test_actions'],
+            static fn (array $a): bool => $a[0] === 'agent_safety_approval_requested',
+        ));
+    }
+
     private function lastDeleteQuery(wpdb $db): string
     {
         $deletes = array_values(array_filter($db->queries, static fn (string $q): bool => str_starts_with(trim($q), 'DELETE')));

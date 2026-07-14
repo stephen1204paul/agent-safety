@@ -8,6 +8,7 @@ use Specflux\AgentSafety\Audit\AuditDecision;
 use Specflux\AgentSafety\Audit\AuditRecord;
 use Specflux\AgentSafety\Audit\AuditSink;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
+use Specflux\AgentSafety\Plugin\Support\ApprovalNotifier;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
 
@@ -27,6 +28,7 @@ final class PendingActionsPage
     private const CAP = 'manage_options';
     private const APPROVE = 'agsafe_approve_action';
     private const REJECT = 'agsafe_reject_action';
+    private const NOTIFY = 'agsafe_save_notifications';
     private const FLASH = 'agsafe_minted_token_';
 
     public function __construct(
@@ -41,6 +43,7 @@ final class PendingActionsPage
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_post_' . self::APPROVE, [$this, 'approve']);
         add_action('admin_post_' . self::REJECT, [$this, 'reject']);
+        add_action('admin_post_' . self::NOTIFY, [$this, 'saveNotifications']);
     }
 
     public function menu(): void
@@ -91,7 +94,60 @@ final class PendingActionsPage
             echo '</tr>';
         }
 
-        echo '</tbody></table></div>';
+        echo '</tbody></table>';
+        $this->renderNotificationSettings();
+        echo '</div>';
+    }
+
+    /**
+     * Where new pending actions get routed: an email recipient (empty = the
+     * site's admin_email) and an optional webhook URL. Lives on this screen
+     * because the settings only matter to whoever clears this queue.
+     */
+    private function renderNotificationSettings(): void
+    {
+        echo '<h2>' . esc_html__('Notifications', 'agent-safety') . '</h2>';
+        echo '<p>' . esc_html__('Each NEW pending action sends an email (with a link to this screen) and, if a webhook URL is set, an identifiers-only JSON POST — no call arguments leave the site.', 'agent-safety') . '</p>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="' . esc_attr(self::NOTIFY) . '">';
+        echo wp_nonce_field(self::NOTIFY, '_wpnonce', true, false); // phpcs:ignore WordPress.Security.EscapeOutput -- core-built hidden fields.
+        echo '<table class="form-table"><tbody>';
+        printf(
+            '<tr><th scope="row"><label for="agsafe_notify_email">%s</label></th>'
+            . '<td><input type="email" id="agsafe_notify_email" name="agsafe_notify_email" class="regular-text" value="%s" placeholder="%s"></td></tr>',
+            esc_html__('Notification email', 'agent-safety'),
+            esc_attr((string) get_option(ApprovalNotifier::EMAIL_OPTION, '')),
+            esc_attr__('Site admin email (default)', 'agent-safety'),
+        );
+        printf(
+            '<tr><th scope="row"><label for="agsafe_webhook_url">%s</label></th>'
+            . '<td><input type="url" id="agsafe_webhook_url" name="agsafe_webhook_url" class="regular-text" value="%s" placeholder="https://"></td></tr>',
+            esc_html__('Webhook URL', 'agent-safety'),
+            esc_attr((string) get_option(ApprovalNotifier::WEBHOOK_OPTION, '')),
+        );
+        echo '</tbody></table>';
+        echo '<p><button type="submit" class="button button-primary">' . esc_html__('Save notification settings', 'agent-safety') . '</button></p>';
+        echo '</form>';
+    }
+
+    public function saveNotifications(): void
+    {
+        if (!current_user_can(self::CAP)) {
+            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
+        }
+        check_admin_referer(self::NOTIFY);
+
+        $email = isset($_POST['agsafe_notify_email'])
+            ? sanitize_email(wp_unslash($_POST['agsafe_notify_email']))
+            : '';
+        $webhook = isset($_POST['agsafe_webhook_url'])
+            ? esc_url_raw(wp_unslash($_POST['agsafe_webhook_url']), ['https', 'http'])
+            : '';
+
+        update_option(ApprovalNotifier::EMAIL_OPTION, $email);
+        update_option(ApprovalNotifier::WEBHOOK_OPTION, $webhook);
+
+        $this->redirectBack();
     }
 
     public function approve(): void

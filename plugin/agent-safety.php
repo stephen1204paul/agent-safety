@@ -39,6 +39,7 @@ use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Identity\UserRoleIdentity;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\VerbMapper;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\WooIntegration;
+use Specflux\AgentSafety\Plugin\Support\ApprovalNotifier;
 use Specflux\AgentSafety\Plugin\Support\ApprovalSweep;
 use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
@@ -248,6 +249,11 @@ if (class_exists(Gate::class)) {
         add_action(ApprovalSweep::HOOK, static function () use ($agsafe_approvals): void {
             ApprovalSweep::run($agsafe_approvals);
         });
+
+        // Route each NEW pending approval to the humans who must clear it:
+        // email (+ optional webhook), on the agent_safety_approval_requested
+        // action the store fires from its fresh-insert path only.
+        (new ApprovalNotifier())->register();
     }
 
     // Capability-pack admin (Tools → Agent Capability Packs): bind each identity

@@ -269,3 +269,74 @@ if (!function_exists('delete_transient')) {
         return $existed;
     }
 }
+
+if (!function_exists('do_action')) {
+    $GLOBALS['wpas_test_actions'] = [];
+
+    /**
+     * Test control knob: fired actions are recorded into
+     * $GLOBALS['wpas_test_actions'] as [hook, ...args] so a test can assert
+     * exactly which hooks fired (and how often). Callbacks are NOT dispatched
+     * — the add_action shim above is a no-op, matching how these tests drive
+     * subscribers directly.
+     *
+     * @param mixed ...$args
+     */
+    function do_action(string $hook, ...$args): void
+    {
+        $GLOBALS['wpas_test_actions'][] = array_merge([$hook], $args);
+    }
+}
+
+if (!function_exists('wp_mail')) {
+    $GLOBALS['wpas_test_mail'] = [];
+
+    /**
+     * Test control knob: sent mail is recorded into $GLOBALS['wpas_test_mail']
+     * as ['to' =>, 'subject' =>, 'message' =>].
+     *
+     * @param string|list<string> $to
+     */
+    function wp_mail($to, string $subject, string $message): bool
+    {
+        $GLOBALS['wpas_test_mail'][] = ['to' => $to, 'subject' => $subject, 'message' => $message];
+
+        return true;
+    }
+}
+
+if (!function_exists('wp_remote_post')) {
+    $GLOBALS['wpas_test_http'] = [];
+
+    /**
+     * Test control knob: outgoing POSTs are recorded into
+     * $GLOBALS['wpas_test_http'] as ['url' =>, 'args' =>].
+     *
+     * @param array<string, mixed> $args
+     * @return array<string, mixed>
+     */
+    function wp_remote_post(string $url, array $args = []): array
+    {
+        $GLOBALS['wpas_test_http'][] = ['url' => $url, 'args' => $args];
+
+        return [];
+    }
+}
+
+if (!function_exists('admin_url')) {
+    function admin_url(string $path = ''): string
+    {
+        return 'https://example.test/wp-admin/' . ltrim($path, '/');
+    }
+}
+
+if (!function_exists('wp_json_encode')) {
+    /**
+     * @param mixed $data
+     * @return string|false
+     */
+    function wp_json_encode($data)
+    {
+        return json_encode($data);
+    }
+}

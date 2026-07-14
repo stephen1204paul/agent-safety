@@ -92,6 +92,13 @@ final class WpdbApprovalStore implements ApprovalStore
             ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'],
         );
 
+        // Fires only for a genuinely NEW pending approval — the idempotent
+        // reuse path above returns early, so a retrying agent hammering the
+        // same blocked call never re-notifies the humans who must clear it.
+        // Consumed by Support\ApprovalNotifier (email + webhook) and open to
+        // any site code that wants its own routing.
+        do_action('agent_safety_approval_requested', $approvalId, $verb, $summary);
+
         return $approvalId;
     }
 
