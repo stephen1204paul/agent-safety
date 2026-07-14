@@ -6,32 +6,30 @@ here can change; the constraint that can't is the design principle: every
 addition must fail closed, and nothing a tool or agent self-reports may ever
 loosen a decision.
 
-## Near term (0.2)
+## Shipped for 0.2 (on main, unreleased)
 
-**Argument-aware caps (spend limits).** Today's rate limits count calls. The
-next step is limits that read the call's arguments: refund totals capped per
-day, order edits above a value threshold always requiring approval, bulk
-operations capped by item count. This extends the existing `LimitPolicy` /
-`LimitCheck` seam in the core — packs declare the cap, the gate enforces it,
-denials name the tripped limit in the audit log like rate limits already do.
+**Argument-aware caps (spend limits).** Packs can declare caps read from the
+call's arguments: a per-call value ceiling, a per-UTC-day spend total, a bulk
+item-count cap, and a value threshold above which a call needs human approval
+(routed through the existing approval flow). Fail-closed: a call that hides
+or malforms the governed argument is denied; denials name the tripped cap in
+the audit log like rate limits do, and never consume budget.
 
-**Approval notifications.** Pending approvals currently wait in
-**Tools → Pending Agent Actions** until someone looks. Add email notification
-on new pending actions (with approve/reject links), then a generic webhook so
-sites can route to Slack or anything else. Without this, the realistic failure
-mode is admins loosening packs to avoid friction — the approval flow has to be
-fast enough to keep.
+**Approval notifications.** Each genuinely new pending action (retries reuse
+their row and stay silent) sends an email linking to the review screen, plus
+an optional identifiers-only JSON webhook for Slack or anything else —
+configured on **Tools → Pending Agent Actions**. The email deliberately has
+no one-click approve link: a forwarded email must not be a grant.
 
-**Shadow mode.** A per-pack "log only" toggle: the gate evaluates and audits
-every decision but enforces nothing. Lets an existing store run a week of
-observation — see exactly what would have been denied or queued — before
-turning enforcement on. The Gate already produces the decision; this is mostly
-plumbing and admin UI.
+**Shadow mode.** A per-pack "log only" toggle on the Capability Packs screen:
+every decision is still evaluated and audited (marked `dry_run` in the
+record), nothing is enforced, and no pending approvals are minted for calls
+that already ran. Run a week of observation before turning enforcement on.
 
-**Pack presets.** Ship named starter packs so first-run configuration is a
-choice, not policy authoring: a read-only analyst, a support agent (reads plus
-order notes, approval for refunds), a fulfillment bot (fulfillment writes,
-nothing destructive).
+**Pack presets.** Three starter packs alongside the existing two:
+`readonly-analyst` (reads only, write classes hard-denied), `fulfillment-bot`
+(order updates, refunds unreachable by construction), and `refund-desk`
+(every refund approval-gated and spend-bounded).
 
 ## Next (0.3)
 

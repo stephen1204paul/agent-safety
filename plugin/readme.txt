@@ -39,6 +39,19 @@ runs on any WordPress 6.9+ site, WooCommerce or not.
   with a tamper-evidence check that re-verifies the chain on load.
 * **Rate limits.** A pack can cap calls per minute and per hour per identity; a denied call never
   consumes quota.
+* **Spend limits.** A pack can also cap what a call's *arguments* say: a per-call value ceiling,
+  a per-day spend total, a bulk item-count cap, or a value threshold above which the call needs
+  human approval. A call that hides the governed value is denied, and denials never consume
+  budget.
+* **Approval notifications.** Each new pending action emails a link to the review screen, and an
+  optional webhook (identifiers only — no call arguments leave the site) can route to Slack or
+  anything else.
+* **Shadow mode.** Toggle any pack to "log only": every decision is still audited (marked
+  dry-run) but nothing is enforced — observe a week of would-be denials before turning
+  enforcement on.
+* **Starter packs.** Bind a credential to a preset instead of authoring policy: a read-only
+  analyst, a fulfillment bot that can never refund, a refund desk that is approval-gated and
+  spend-bounded.
 * **PII redaction.** Known PII fields (email, phone, name, address, etc.) are masked both in what
   is written to the audit log and, for packs that request it, in the data returned to the agent.
 * **MCP (mcp-adapter) integration.** Where a site runs an MCP server built on the WordPress
