@@ -31,22 +31,35 @@ that already ran. Run a week of observation before turning enforcement on.
 (order updates, refunds unreachable by construction), and `refund-desk`
 (every refund approval-gated and spend-bounded).
 
-## Next (0.3)
+## Shipped for 0.3 (on main, unreleased)
 
-**Core WordPress integration module.** Govern `core/*` content abilities
-(posts, media, users) the way the WooCommerce module governs `woocommerce/*`:
-a verb map, tier classifications, and default packs for content-editing
-agents. This is what makes "WordPress-general, WooCommerce as one capability
-pack" concrete.
+**Core WordPress integration module.** The `core/` ability namespace is
+governed unconditionally (D23): the three abilities WordPress ships today are
+classified reversible, the six verbs proposed by the July 2026 core merge
+proposal are pre-classified as named constants, and anything else in the
+namespace fails closed as `unknown_verb`. Argument-aware elevation rules send
+publishing/scheduling and bulk delete/trash of content, plus any user role or
+capability change, to Tier 2; three starter packs ship (`site-readonly`,
+`content-editor`, `site-admin-agent` — the last with a 25-item bulk cap).
+Read-path redaction masks `user_pass`, `user_activation_key`, and `user_email`
+on user-info results; logins stay visible so approvals can name their target.
 
-**End-to-end tests in CI.** The unit suites are thorough but the bugs that
-matter most have been the ones only a real WordPress request path exposes
-(identity timing, DB-backed transient types, double permission checks). Add a
-wp-env-based smoke suite to CI that exercises the live gate, approval, and
-audit flow over HTTP.
+**Programmatic approvals API.** A shared `Approvals` service (`agent_safety()->approvals()`)
+exposes approve/reject/lookup gated by `manage_options` through the new
+`agent_safety_can_approve` filter, writing the same hash-chained reconciliation
+rows as the wp-admin form and firing `agent_safety_approval_resolved`. The
+Pending Agent Actions screen delegates to it, so every approver takes one code
+path.
 
-**Release automation.** Tagged releases build an installable plugin zip
-(plugin directory plus its vendored core) from GitHub Actions.
+**End-to-end tests in CI.** A de-hosted wp-env smoke drives mcp-adapter's HTTP
+transport with an application password bound to `site-readonly`: an allowed
+governed call lands in the audit chain, an unmapped verb in a governed
+namespace is denied as `unknown_verb`, no unmasked user PII reaches the agent,
+and the Audit Log page reports the chain intact. Runs on a WordPress
+(latest/trunk) × Woo (off/on) matrix in GitHub Actions.
+
+**Release automation.** Tagged releases build a WordPress-installable zip from
+GitHub Actions, failing loudly when the tag does not match the plugin header.
 
 ## Later
 
