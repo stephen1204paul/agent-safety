@@ -3,3 +3,9 @@ composer.lock
 .phpunit.result.cache
 .phpunit.cache/
 HANDOFF*.md
+
+# Local release dry-run artifacts
+/build
+/*.zip
+dev/smoke/shots
+node_modules/

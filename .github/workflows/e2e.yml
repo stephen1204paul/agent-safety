@@ -1,0 +1,104 @@
+name: E2E
+
+# Live wp-env smoke of the governed core/ namespace (spec-0.3 D29): drives
+# mcp-adapter's HTTP transport end to end and asserts the audit trail, the
+# fail-closed unknown-verb denial, and read-path PII redaction. Woo-off legs
+# are mandatory; Woo-on legs prove the core module coexists with the Woo
+# integration (presets merge, namespaces unique).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # null = latest released WordPress; trunk = the moving target.
+        core: [null, 'WordPress/WordPress#trunk']
+        woo: [true, false]
+    env:
+      # Pinned upstream mcp-adapter (0.6.0). Bump deliberately: the smoke
+      # drives its public HTTP transport + default-server config filter.
+      MCP_ADAPTER_REF: 07c9912
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+
+      - name: Clone pinned mcp-adapter and install its runtime deps
+        run: |
+          git clone --quiet https://github.com/WordPress/mcp-adapter.git ../mcp-adapter
+          git -C ../mcp-adapter checkout --quiet "$MCP_ADAPTER_REF"
+          composer install --working-dir=../mcp-adapter --no-dev --prefer-dist
+
+      - name: Generate .wp-env.json (matrix core)
+        run: |
+          node -e '
+            const core = process.env.WPENV_CORE === "null" ? null : process.env.WPENV_CORE;
+            const fs = require("fs");
+            const config = {
+              "$schema": "https://schemas.wp.org/trunk/wp-env.json",
+              core,
+              phpVersion: "8.3",
+              mappings: {
+                "wp-content/plugins/agent-safety": "./plugin",
+                "wp-content/plugins/mcp-adapter": "../mcp-adapter",
+                "wp-content/mu-plugins/agsafe-smoke-fixture.php": "./dev/smoke/agsafe-smoke-fixture.php"
+              },
+              config: { WP_DEBUG: true, WP_DEBUG_LOG: true }
+            };
+            fs.writeFileSync(".wp-env.json", JSON.stringify(config, null, 4));
+          '
+        env:
+          WPENV_CORE: ${{ matrix.core }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start wp-env
+        run: |
+          npm install --no-save @wordpress/env
+          npx wp-env start
+
+      - name: Install WooCommerce (Woo-on legs only)
+        if: ${{ matrix.woo }}
+        run: npx wp-env run cli wp plugin install woocommerce --activate
+
+      - name: Create and bind the smoke credential
+        run: |
+          PW=$(npx wp-env run cli --quiet wp user application-password create admin e2e-smoke --porcelain | tail -1)
+          UUID=$(npx wp-env run cli --quiet wp user application-password list admin --format=csv --fields=uuid,name | awk -F, 'tolower($2) == "e2e-smoke" {print $1}' | tr -d '\r')
+          npx wp-env run cli --quiet wp option update agsafe_pack_bindings "{\"app:$UUID\":\"site-readonly\"}" --format=json
+          echo "AGSAFE_SMOKE_APP_PASSWORD=$PW" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dev/smoke/package.json
+
+      - name: Install Playwright
+        working-directory: dev/smoke
+        run: |
+          npm install
+          npx playwright install chromium --with-deps
+
+      - name: Run the core-module smoke
+        working-directory: dev/smoke
+        run: node smoke-core.js
+
+      - name: Upload smoke artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-shots-core-${{ matrix.core }}-woo-${{ matrix.woo }}
+          path: dev/smoke/shots/
+          if-no-files-found: ignore

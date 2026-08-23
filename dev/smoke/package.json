@@ -1,0 +1,8 @@
+{
+    "name": "agent-safety-smoke",
+    "private": true,
+    "description": "Live wp-env smoke harness dependencies (dev/smoke/smoke-core.js).",
+    "dependencies": {
+        "playwright": "^1.49.0"
+    }
+}

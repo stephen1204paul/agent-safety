@@ -1,0 +1,49 @@
+name: Release
+
+# D30: a tag push v* packages the plugin host into a WordPress-installable
+# zip and attaches it to a GitHub Release. The tag must match the plugin
+# header Version: (v0.3.0 -> 0.3.0) or the job fails loudly.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+
+      - name: Install runtime dependencies only
+        working-directory: plugin
+        run: composer install --no-dev --prefer-dist --optimize-autoloader --quiet
+
+      - name: Assert tag matches plugin header Version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          HEADER_VERSION=$(awk '/^[[:space:]]*\*[[:space:]]*Version:/ {print $NF; exit}' plugin/agent-safety.php)
+          echo "tag=$TAG_VERSION header=$HEADER_VERSION"
+          if [ "$TAG_VERSION" != "$HEADER_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match plugin header Version $HEADER_VERSION — bump the header and re-tag."
+            exit 1
+          fi
+
+      - name: Build the zip (top-level folder agent-safety/)
+        run: |
+          mkdir -p build/agent-safety
+          rsync -a --exclude 'tests' --exclude 'phpunit.xml.dist' --exclude '.DS_Store' plugin/ build/agent-safety/
+          cd build && zip -r "../agent-safety-${GITHUB_REF_NAME#v}.zip" agent-safety/
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: agent-safety-*.zip
+          generate_release_notes: true
