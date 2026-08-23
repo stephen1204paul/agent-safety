@@ -13,6 +13,16 @@
 declare(strict_types=1);
 
 if (!class_exists('wpdb', false)) {
+    // Real WordPress defines these row-output constants globally; the store
+    // passes them to get_row()/get_results() explicitly. Only defined when
+    // the genuine WP load order hasn't already.
+    if (!defined('ARRAY_A')) {
+        define('ARRAY_A', 'ARRAY_A');
+    }
+    if (!defined('ARRAY_N')) {
+        define('ARRAY_N', 'ARRAY_N');
+    }
+
     class wpdb
     {
         public string $prefix = 'wp_';

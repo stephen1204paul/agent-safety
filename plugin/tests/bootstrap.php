@@ -21,6 +21,10 @@ if (!is_readable($wpasPluginAutoload)) {
 }
 require_once $wpasPluginAutoload;
 
+// The global agent_safety() service locator — function_exists-guarded, and
+// require-once idempotent with the real plugin main file's own load of it.
+require_once __DIR__ . '/../src/api.php';
+
 // Test-only stand-in for mcp-adapter's public observability contract.
 if (!interface_exists(\WP\MCP\Infrastructure\Observability\Contracts\McpObservabilityHandlerInterface::class, false)) {
     require_once __DIR__ . '/stubs/mcp-observability-handler-interface.php';
@@ -59,6 +63,19 @@ if (!function_exists('get_current_user_id')) {
     function get_current_user_id(): int
     {
         return (int) ($GLOBALS['wpas_test_current_user_id'] ?? 0);
+    }
+}
+
+if (!function_exists('current_user_can')) {
+    $GLOBALS['wpas_test_user_caps'] = [];
+
+    /**
+     * Test control knob: set $GLOBALS['wpas_test_user_caps'][$capability]
+     * per-test; absent capabilities default to false (fail closed, like core).
+     */
+    function current_user_can(string $capability): bool
+    {
+        return (bool) ($GLOBALS['wpas_test_user_caps'][$capability] ?? false);
     }
 }
 

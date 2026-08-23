@@ -28,6 +28,7 @@ use Specflux\AgentSafety\Policy\VerbCatalog;
 use Specflux\AgentSafety\Plugin\Admin\AuditLogPage;
 use Specflux\AgentSafety\Plugin\Admin\CapabilityPacksPage;
 use Specflux\AgentSafety\Plugin\Admin\PendingActionsPage;
+use Specflux\AgentSafety\Plugin\Api\Approvals;
 use Specflux\AgentSafety\Plugin\Audit\AuditReader;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 use Specflux\AgentSafety\Plugin\Audit\WpdbAuditSink;
@@ -62,6 +63,12 @@ $agsafe_autoload = __DIR__ . '/vendor/autoload.php';
 if (is_readable($agsafe_autoload)) {
     require_once $agsafe_autoload;
 }
+
+// The global agent_safety() locator (function_exists-guarded): defined
+// unconditionally so feature-detecting consumers can rely on it existing the
+// moment this file has loaded — even on a load where the bootstrap closure
+// below bails (missing core lib) and the container stays null.
+require_once __DIR__ . '/src/api.php';
 
 // Registered UNCONDITIONALLY (not inside the class_exists(Gate::class) guard
 // below): WordPress calls activation/deactivation hooks by including this
@@ -269,7 +276,13 @@ add_action('plugins_loaded', static function (): void {
     // Human approval queue (Tools → Pending Agent Actions): approve/reject blocked
     // irreversible actions, minting single-use tokens.
     if ($agsafe_approvals !== null) {
-        (new PendingActionsPage($agsafe_approvals, $agsafe_sink, $agsafe_packs))->register();
+        // ONE approvals service for every caller (AS-10): the wp-admin page,
+        // the programmatic API below, and any consumer (e.g. SenroFlux inline
+        // approve) all resolve approvals through it, so capability checks,
+        // audit reconciliation and lifecycle actions can never diverge.
+        $agsafe_api_approvals = new Approvals($agsafe_approvals, $agsafe_sink, $agsafe_packs);
+
+        (new PendingActionsPage($agsafe_approvals, $agsafe_api_approvals))->register();
 
         // Backlog control for the table above: hourly sweep of expired/orphaned
         // approval rows (see WpdbApprovalStore::deleteExpired()). The schedule
@@ -282,7 +295,14 @@ add_action('plugins_loaded', static function (): void {
         // email (+ optional webhook), on the agent_safety_approval_requested
         // action the store fires from its fresh-insert path only.
         (new ApprovalNotifier())->register();
+    } else {
+        $agsafe_api_approvals = null;
     }
+
+    // Expose the external service surface: reachable from anywhere via the
+    // global agent_safety() locator. approvals() is null only on the
+    // pathological no-database path; consumers feature-detect on that.
+    Container::init($agsafe_api_approvals ?? null);
 
     // Capability-pack admin (Tools → Agent Capability Packs): bind each identity
     // the configured providers expose to a pack from the catalog.

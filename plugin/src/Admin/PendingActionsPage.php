@@ -4,13 +4,9 @@ declare(strict_types=1);
 
 namespace Specflux\AgentSafety\Plugin\Admin;
 
-use Specflux\AgentSafety\Audit\AuditDecision;
-use Specflux\AgentSafety\Audit\AuditRecord;
-use Specflux\AgentSafety\Audit\AuditSink;
+use Specflux\AgentSafety\Plugin\Api\Approvals;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 use Specflux\AgentSafety\Plugin\Support\ApprovalNotifier;
-use Specflux\AgentSafety\Plugin\Support\PackResolver;
-use Specflux\AgentSafety\Plugin\Support\RequestContext;
 
 /**
  * Tools → "Pending Agent Actions": the human side of the approval flow.
@@ -20,7 +16,11 @@ use Specflux\AgentSafety\Plugin\Support\RequestContext;
  *
  * Reconciliation is append-only: the audit log is hash-chained and immutable, so a
  * verdict change is a NEW linked row referencing the same approval id — never a
- * mutation of the original `pending` row.
+ * mutation of the original `pending` row. The page OWNS the queue UX but NOT the
+ * resolution semantics: mutations delegate to {@see Approvals} (AS-10), the same
+ * service every programmatic caller uses, so the audit rows and lifecycle actions
+ * here are identical to any other approver's by construction. This page keeps the
+ * two things only wp-admin needs: nonce verification and the show-once token flash.
  */
 final class PendingActionsPage
 {
@@ -33,8 +33,7 @@ final class PendingActionsPage
 
     public function __construct(
         private readonly WpdbApprovalStore $store,
-        private readonly ?AuditSink $sink = null,
-        private readonly ?PackResolver $packs = null,
+        private readonly Approvals $approvals,
     ) {
     }
 
@@ -155,9 +154,8 @@ final class PendingActionsPage
         $approvalId = $this->guard(self::APPROVE);
         $approver = get_current_user_id();
 
-        $token = $this->store->approve($approvalId, $approver);
+        $token = $this->approvals->approveReturningToken($approvalId, $approver);
         if ($token !== null) {
-            $this->reconcile($approvalId, AuditDecision::Approved, $approver);
             set_transient(self::FLASH . $approver, ['approval_id' => $approvalId, 'token' => $token], 120);
         }
 
@@ -169,43 +167,9 @@ final class PendingActionsPage
         $approvalId = $this->guard(self::REJECT);
         $approver = get_current_user_id();
 
-        if ($this->store->reject($approvalId, $approver)) {
-            $this->reconcile($approvalId, AuditDecision::Rejected, $approver);
-        }
+        $this->approvals->reject($approvalId, $approver);
 
         $this->redirectBack();
-    }
-
-    /**
-     * Append an `approved`/`rejected` event tied to the original request — the
-     * chain-safe reconciliation of the earlier `pending` row.
-     */
-    private function reconcile(string $approvalId, AuditDecision $decision, int $approver): void
-    {
-        if ($this->sink === null) {
-            return;
-        }
-
-        $record = $this->store->get($approvalId);
-        if ($record === null) {
-            return;
-        }
-
-        $pack = $this->packs?->resolve()->name ?? 'default-agent';
-
-        $this->sink->append(AuditRecord::decision(
-            id: RequestContext::event(),
-            ts: RequestContext::nowUtc(),
-            correlationId: (string) ($record['correlation_id'] ?? ''),
-            pack: $pack,
-            actor: RequestContext::actor(),
-            ability: (string) ($record['verb'] ?? ''),
-            tier: null,
-            input: ['args_hash' => (string) ($record['args_hash'] ?? '')],
-            decision: $decision,
-            approval: ['id' => $approvalId, 'approver' => $approver],
-            ip: RequestContext::ip(),
-        ));
     }
 
     private function maybeShowMintedToken(): void

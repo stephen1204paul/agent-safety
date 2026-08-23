@@ -42,6 +42,12 @@
     <rule ref="PSR1.Files.SideEffects">
         <exclude-pattern>plugin/tests/stubs/*</exclude-pattern>
         <exclude-pattern>plugin/tests/bootstrap.php</exclude-pattern>
+        <!--
+            The global agent_safety() locator is the plugin's external API by
+            definition: a function-only file other plugins reach through
+            function_exists(). Side effects ARE its contract.
+        -->
+        <exclude-pattern>plugin/src/api.php</exclude-pattern>
     </rule>
     <rule ref="Squiz.Classes.ValidClassName">
         <exclude-pattern>plugin/tests/stubs/*</exclude-pattern>
