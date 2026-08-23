@@ -137,4 +137,55 @@ final class ToolCallResultRedactorTest extends TestCase
 
         $this->assertSame($result, $redacted);
     }
+
+    /**
+     * D26: a governed core user verb's WP user record has its credential keys
+     * masked with the SAME mask the core Redactor uses. `user_login` and
+     * `user_url` stay visible on purpose — the approval UI names the target.
+     */
+    public function testCoreUserInfoStripsWpUserPii(): void
+    {
+        $redactor = $this->redactorFor(['core/']);
+        $result = [
+            'id'                => 1,
+            'user_login'        => 'stephen',
+            'user_email'        => 'agent@example.com',
+            'user_pass'         => '$P$Bhashedpasswordhash',
+            'user_activation_key' => 'activationtoken123',
+            'user_url'          => 'https://example.test',
+            'display_name'      => 'Stephen',
+        ];
+
+        $redacted = $redactor->redact($result, [], 'core-get-user-info', FakeMcpTool::withAbility('core/get-user-info'));
+
+        $this->assertSame('«redacted»', $redacted['user_email']);
+        $this->assertSame('«redacted»', $redacted['user_pass']);
+        $this->assertSame('«redacted»', $redacted['user_activation_key']);
+
+        // Deliberately NOT masked (approval UI needs to name the target).
+        $this->assertSame('stephen', $redacted['user_login']);
+        $this->assertSame('https://example.test', $redacted['user_url']);
+        $this->assertSame(1, $redacted['id']);
+        $this->assertSame('Stephen', $redacted['display_name']);
+    }
+
+    public function testCoreRedactionDoesNotTouchWooResults(): void
+    {
+        // The D26 exact-key extension is scoped to the two core user verbs:
+        // a Woo result carrying a key only THAT extension knows (`user_pass`,
+        // which the generic fragment denylist never matched before) must come
+        // back exactly as before D26 — untouched by the new masking.
+        $redactor = $this->redactorFor(['woocommerce/']);
+        $result = [
+            'email'     => 'agent@example.com',   // fragment rule: masked pre-D26 too
+            'user_pass' => 'secret-hash',
+            'user_activation_key' => 'token',
+        ];
+
+        $redacted = $redactor->redact($result, [], 'woocommerce-orders-list', FakeMcpTool::withAbility('woocommerce/orders-list'));
+
+        $this->assertSame('«redacted»', $redacted['email']);       // unchanged behaviour
+        $this->assertSame('secret-hash', $redacted['user_pass']);  // NOT masked for Woo
+        $this->assertSame('token', $redacted['user_activation_key']);
+    }
 }

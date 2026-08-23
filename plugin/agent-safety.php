@@ -2,8 +2,8 @@
 
 /**
  * Plugin Name:       Agent Safety
- * Description:       Governed safety and audit layer for AI agent tool calls — verb-tier gating, capability packs, human approval for irreversible actions, and a compliance-grade audit trail. WooCommerce is supported via an integration module.
- * Version:           0.1.0
+ * Description:       Governed safety and audit layer for AI agent tool calls — verb-tier gating, capability packs, human approval for irreversible actions, and a compliance-grade audit trail. Ships a WordPress-core module plus a WooCommerce integration module.
+ * Version:           0.3.0
  * Requires PHP:      8.1
  * Requires at least: 6.9
  * License:           GPL-2.0-or-later
@@ -11,8 +11,10 @@
  *
  * Thin host: wires the security core (specflux/agent-safety-core) into
  * WordPress hooks. All decision logic lives in the package under ../src. The
- * plugin itself is WordPress-general; ALL WooCommerce-specific wiring lives in
- * Integrations\Woo\WooIntegration, registered ONLY when WooCommerce is active.
+ * plugin itself is WordPress-general; integrations are capability-pack
+ * modules registered from Integrations\ — the WordPress-core module
+ * (Integrations\Core) unconditionally on every site, WooCommerce-specific
+ * wiring (Integrations\Woo) ONLY when WooCommerce is active.
  */
 
 declare(strict_types=1);
@@ -37,6 +39,7 @@ use Specflux\AgentSafety\Plugin\Hooks\ToolCallResultRedactor;
 use Specflux\AgentSafety\Plugin\Identity\ApplicationPasswordIdentity;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Identity\UserRoleIdentity;
+use Specflux\AgentSafety\Plugin\Integrations\Core\CoreIntegration;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\VerbMapper;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\WooIntegration;
 use Specflux\AgentSafety\Plugin\Support\ApprovalNotifier;
@@ -129,19 +132,29 @@ add_action('plugins_loaded', static function (): void {
     ]);
 
     // Verb catalog + elevation rules and the pack/namespace
-    // contributions start empty — a Woo-less site classifies
-    // nothing, gates nothing beyond the generic fail-closed default pack, and
-    // governs no ability namespace.
+    // contributions start empty, then each integration module MERGES its
+    // contributions in — a Woo-less site still governs the core/ namespace
+    // (D23), while a Woo-less install of an older-style module order can
+    // never clobber another module's contributions (PackRegistry and
+    // VerbCatalog both overwrite silently by key).
     $agsafe_catalog = new VerbCatalog();
     $agsafe_elevation_rules = [];
     $agsafe_extra_packs = [];
     $agsafe_governed_namespaces = [];
 
+    // Core first (definitionally available on every site), then Woo.
+    $agsafe_core = CoreIntegration::register($agsafe_catalog, $agsafe_identity, isset($wpdb) ? $wpdb : null);
+    $agsafe_elevation_rules = [...$agsafe_core['elevationRules']];
+    $agsafe_extra_packs = [...$agsafe_core['packs']];
+    $agsafe_governed_namespaces = [...$agsafe_core['governedNamespaces']];
+
     if (WooIntegration::available()) {
         $agsafe_woo = WooIntegration::register($agsafe_catalog, $agsafe_identity, isset($wpdb) ? $wpdb : null);
-        $agsafe_elevation_rules = $agsafe_woo['elevationRules'];
-        $agsafe_extra_packs = $agsafe_woo['packs'];
-        $agsafe_governed_namespaces = $agsafe_woo['governedNamespaces'];
+        // Merge, never assign: Woo's contributions must ADD to the core
+        // module's, not replace them.
+        $agsafe_elevation_rules = [...$agsafe_elevation_rules, ...$agsafe_woo['elevationRules']];
+        $agsafe_extra_packs = [...$agsafe_extra_packs, ...$agsafe_woo['packs']];
+        $agsafe_governed_namespaces = array_values(array_unique([...$agsafe_governed_namespaces, ...$agsafe_woo['governedNamespaces']]));
     }
 
     // Site owners (or other plugins) can widen the governed namespace list

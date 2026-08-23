@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Hooks;
 
 use Specflux\AgentSafety\Audit\Redactor;
+use Specflux\AgentSafety\Plugin\Integrations\Core\CoreVerbCatalog;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 
 /**
@@ -67,6 +68,29 @@ final class ToolCallResultRedactor
     private const PRIORITY = PHP_INT_MAX;
 
     /**
+     * Core verbs whose payloads are WordPress USER records (D26): the core-lib
+     * {@see Redactor}'s fragment denylist catches `user_email` (it contains
+     * "email") but NOT `user_pass` / `user_activation_key`, which are
+     * credential material and must never reach an agent either. Masked here,
+     * plugin-side, so the framework-agnostic core lib stays WP-agnostic.
+     * `user_login` and `user_url` stay visible on purpose: the approval UI
+     * needs them to NAME the user an action targets.
+     */
+    private const CORE_USER_VERBS = [
+        CoreVerbCatalog::GET_USER_INFO,
+        CoreVerbCatalog::READ_USERS,
+    ];
+
+    /** Exact keys masked for the verbs above. */
+    private const CORE_USER_PII_KEYS = ['user_email', 'user_activation_key', 'user_pass'];
+
+    /**
+     * Byte-for-byte the core {@see Redactor} MASK constant (private there by
+     * design — this plugin-side copy is pinned to it in tests, not imported).
+     */
+    private const CORE_USER_MASK = '«redacted»';
+
+    /**
      * @param list<string> $governedNamespaces Ability-id prefixes this hook
      *                                          redacts for (contributed by
      *                                          integrations + the
@@ -97,11 +121,57 @@ final class ToolCallResultRedactor
             return $result;
         }
 
-        if (!$this->isGoverned($this->abilityName($toolName, $mcpTool))) {
+        $ability = $this->abilityName($toolName, $mcpTool);
+        if (!$this->isGoverned($ability)) {
             return $result;
         }
 
-        return Redactor::apply($result, $this->packs->resolve()->redactsPii());
+        // One pack decision drives BOTH masks: a pii:'full' pack sees the raw
+        // user record, exactly as it sees raw Woo emails today.
+        $enabled = $this->packs->resolve()->redactsPii();
+
+        $result = Redactor::apply($result, $enabled);
+
+        // D26 extension: WordPress user records carry credential keys the
+        // generic fragment denylist never matches. Exact-key masking applies
+        // ONLY to the core user verbs — every other governed namespace's
+        // results are byte-identical to the pre-D26 behaviour.
+        if (in_array($ability, self::CORE_USER_VERBS, true)) {
+            $result = $this->maskCoreUserKeys($result, $enabled);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Recursively replace the WP-user credential keys with the same mask the
+     * core {@see Redactor} uses. Exact-key match on purpose: `user_pass`
+     * must not drag unrelated keys like `passed_id` into masking.
+     *
+     * @param array<string, mixed> $result
+     * @return array<string, mixed>
+     */
+    private function maskCoreUserKeys(array $result, bool $enabled): array
+    {
+        if (!$enabled) {
+            return $result;
+        }
+
+        foreach ($result as $key => $value) {
+            if (is_array($value)) {
+                /** @var array<string, mixed> $value */
+                $result[$key] = $this->maskCoreUserKeys($value, $enabled);
+                continue;
+            }
+            if (
+                is_string($key)
+                && in_array(strtolower($key), self::CORE_USER_PII_KEYS, true)
+            ) {
+                $result[$key] = self::CORE_USER_MASK;
+            }
+        }
+
+        return $result;
     }
 
     /**
