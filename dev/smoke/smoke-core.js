@@ -136,8 +136,10 @@ function resultText(callResult) {
   // payload does have PII-shaped keys, read-path redaction masks them IN
   // PLACE («redacted») — the generic fragment rule catches first/last name.
   check('response carries no user_email key', !/"user_email"/.test(userText), userText.slice(0, 400));
-  const piiValues = [...userText.matchAll(/"(first_name|last_name|nickname|display_name)"\s*:\s*"([^"]*)"/g)].map(m => m[2]);
-  check('PII-shaped keys never carry raw identifying values', piiValues.every(v => v === '' || /redacted/i.test(v)), JSON.stringify(piiValues));
+  // Fragment-mask rule covers name fields; display_name/nickname/login stay
+  // visible BY DESIGN (approvals must be able to name their target).
+  const piiValues = [...userText.matchAll(/"(first_name|last_name)"\s*:\s*"([^"]*)"/g)].map(m => m[2]);
+  check('name fields carry nothing raw (empty or masked)', piiValues.every(v => v === '' || /redacted/i.test(v)), JSON.stringify(piiValues));
   check('no user_pass material in response', !/"user_pass"\s*:\s*(?!"«redacted»")/.test(userText), userText.slice(0, 200));
   // user_login/user_url stay readable so approvals can name their target.
   check('user_login kept visible', /"user_login"\s*:\s*"(?!«redacted»)/.test(userText), userText.slice(0, 400));
