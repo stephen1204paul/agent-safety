@@ -63,6 +63,10 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install the plugin's runtime deps (core lib copy)
+        working-directory: plugin
+        run: composer install --no-dev --prefer-dist --optimize-autoloader --quiet
+
       - name: Start wp-env
         run: |
           npm install --no-save @wordpress/env
