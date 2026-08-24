@@ -68,6 +68,9 @@ jobs:
           npm install --no-save @wordpress/env
           npx wp-env start
 
+      - name: Activate plugins
+        run: npx wp-env run cli wp plugin activate agent-safety mcp-adapter
+
       - name: Install WooCommerce (Woo-on legs only)
         if: ${{ matrix.woo }}
         run: npx wp-env run cli wp plugin install woocommerce --activate
