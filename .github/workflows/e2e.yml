@@ -106,6 +106,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-shots-core-${{ matrix.core }}-woo-${{ matrix.woo }}
+          name: smoke-shots-core-${{ matrix.core == 'null' && 'latest' || 'trunk' }}-woo-${{ matrix.woo }}
           path: dev/smoke/shots/
           if-no-files-found: ignore
