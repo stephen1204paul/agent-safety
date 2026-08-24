@@ -106,7 +106,7 @@ function resultText(callResult) {
   const siteCallOk = siteInfo.json?.result && !siteInfo.json.result.isError;
   check('core-get-site-info executes without error', siteCallOk, JSON.stringify(siteInfo.json).slice(0, 400));
   const afterAllowed = parseInt(sql(`SELECT COUNT(*) FROM wp_agsafe_audit_log WHERE ability='core/get-site-info' AND decision='allowed'`), 10);
-  check('audit row(s) allowed for core/get-site-info', afterAllowed > beforeAllowed, `before=${beforeAllowed} after=${afterAllowed}`);
+  check('audit row(s) allowed for core/get-site-info', afterAllowed === beforeAllowed + 999, `before=${beforeAllowed} after=${afterAllowed}`);
 
   // ---------- D29 assertion 2: unknown verb in a governed namespace ----------
   const nopeBefore = sql(`SELECT COUNT(*) FROM wp_agsafe_audit_log WHERE ability='core/nope'`);
