@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         # null = latest released WordPress; trunk = the moving target.
-        core: [null, 'WordPress/WordPress#trunk']
+        core: [null, 'WordPress/WordPress#master']
         woo: [true, false]
     env:
       # Pinned upstream mcp-adapter (0.6.0). Bump deliberately: the smoke
@@ -74,9 +74,9 @@ jobs:
 
       - name: Create and bind the smoke credential
         run: |
-          PW=$(npx wp-env run cli --quiet wp user application-password create admin e2e-smoke --porcelain | tail -1)
-          UUID=$(npx wp-env run cli --quiet wp user application-password list admin --format=csv --fields=uuid,name | awk -F, 'tolower($2) == "e2e-smoke" {print $1}' | tr -d '\r')
-          npx wp-env run cli --quiet wp option update agsafe_pack_bindings "{\"app:$UUID\":\"site-readonly\"}" --format=json
+          PW=$(npx wp-env run cli wp user application-password create admin e2e-smoke --porcelain | tail -1)
+          UUID=$(npx wp-env run cli wp user application-password list admin --format=csv --fields=uuid,name | awk -F, 'tolower($2) == "e2e-smoke" {print $1}' | tr -d '\r')
+          npx wp-env run cli wp option update agsafe_pack_bindings "{\"app:$UUID\":\"site-readonly\"}" --format=json
           echo "AGSAFE_SMOKE_APP_PASSWORD=$PW" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
