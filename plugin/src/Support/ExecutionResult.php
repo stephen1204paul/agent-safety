@@ -20,6 +20,9 @@ namespace Specflux\AgentSafety\Plugin\Support;
  */
 final class ExecutionResult
 {
+    /** Keys of a serialized WP_Error (see WP_REST_Server::error_to_response). */
+    private const WP_ERROR_KEYS = ['code', 'message', 'data', 'additional_errors', 'additional_data'];
+
     /** @param mixed $result */
     public static function isSuccess($result): bool
     {
@@ -38,8 +41,15 @@ final class ExecutionResult
             if (is_int($status) && $status >= 400) {
                 return true;
             }
-            // WP_Error-shaped payload (code + message) with no success data.
-            if (isset($result['code'], $result['message']) && is_string($result['code'])) {
+            // WP_Error-shaped payload (code + message) with no success data: any
+            // key outside the WP_Error array shape means a real result that
+            // happens to carry `code`/`message` fields, which must stay a success —
+            // misjudging it would roll an already-spent approval grant back.
+            if (
+                isset($result['code'], $result['message'])
+                && is_string($result['code'])
+                && array_diff_key($result, array_flip(self::WP_ERROR_KEYS)) === []
+            ) {
                 return true;
             }
         }
