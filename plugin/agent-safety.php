@@ -36,6 +36,7 @@ use Specflux\AgentSafety\Plugin\Hooks\AbilityAuditLog;
 use Specflux\AgentSafety\Plugin\Hooks\AbilityPermissionGate;
 use Specflux\AgentSafety\Plugin\Hooks\McpRequestAuditHandler;
 use Specflux\AgentSafety\Plugin\Hooks\PreToolCallGate;
+use Specflux\AgentSafety\Plugin\Verdict\VerdictPipeline;
 use Specflux\AgentSafety\Plugin\Hooks\ToolCallResultRedactor;
 use Specflux\AgentSafety\Plugin\Identity\ApplicationPasswordIdentity;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
@@ -222,11 +223,16 @@ add_action('plugins_loaded', static function (): void {
     // both seams and the admin toggle agree on which packs are shadowed.
     $agsafe_shadow = new ShadowMode();
 
+    // The ONE verdict pipeline both gate seams adapt (docs/adr/0001): the ordered
+    // evaluation, the approval claim and its re-entrancy memo, the caps, shadow
+    // mode, and the audit/pending-approval obligations of a blocked call all
+    // live here, so a call intercepted by either seam is judged identically.
+    $agsafe_pipeline = new VerdictPipeline($agsafe_gate, $agsafe_recorder, $agsafe_approvals, $agsafe_rate_limits, $agsafe_argument_caps, $agsafe_shadow);
+
     // Primary seam on the shipping stack (WP core Abilities API; adapter-version-independent).
-    // Audits the verdicts that never execute (denied / approval-pending) and owns the
-    // reserve→finalize approval lifecycle. Inert no-op for any ability
-    // outside $agsafe_governed_namespaces.
-    (new AbilityPermissionGate($agsafe_gate, $agsafe_packs, $agsafe_recorder, $agsafe_approvals, $agsafe_governed_namespaces, $agsafe_rate_limits, $agsafe_argument_caps, $agsafe_shadow))->register();
+    // Claim-mode adapter: owns the finalize/rollback of grants the pipeline
+    // reserved. Inert no-op for any ability outside $agsafe_governed_namespaces.
+    (new AbilityPermissionGate($agsafe_pipeline, $agsafe_packs, $agsafe_approvals, $agsafe_governed_namespaces))->register();
 
     // Forward-compat seam: fires only if a mcp-adapter >= 0.5.0 is the loaded copy.
     // Shares the same PackResolver + DecisionRecorder as the live seam so both honour
@@ -234,7 +240,7 @@ add_action('plugins_loaded', static function (): void {
     // WooCommerce's "namespace-resource-action" tool-naming convention, so this seam
     // is only meaningful (and only wired up) when WooCommerce is the active integration.
     if (WooIntegration::available()) {
-        (new PreToolCallGate($agsafe_gate, new VerbMapper(), $agsafe_packs, $agsafe_recorder, $agsafe_rate_limits, $agsafe_argument_caps, $agsafe_shadow))->register();
+        (new PreToolCallGate($agsafe_pipeline, new VerbMapper(), $agsafe_packs))->register();
     }
 
     // Read-path PII redaction (backlog #11): masks the payload RETURNED TO THE

@@ -52,6 +52,7 @@ require_once __DIR__ . '/Fakes/FakeApprovalStore.php';
 require_once __DIR__ . '/Fakes/FakeIdentityProvider.php';
 require_once __DIR__ . '/Fakes/FakeToolAnnotations.php';
 require_once __DIR__ . '/Fakes/FakeMcpTool.php';
+require_once __DIR__ . '/Fixtures/VerdictErrorFixture.php';
 
 // --- Minimal WP function shims -------------------------------------------
 // Only defined when absent, so a real WP load order (wp-env) always wins.

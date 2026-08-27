@@ -9,27 +9,40 @@ use Specflux\AgentSafety\Approval\ApprovalBinding;
 use Specflux\AgentSafety\Gate\Gate;
 use Specflux\AgentSafety\Packs\ArgumentCap;
 use Specflux\AgentSafety\Packs\Pack;
-use Specflux\AgentSafety\Policy\Tier;
-use Specflux\AgentSafety\Policy\TierClassifier;
-use Specflux\AgentSafety\Policy\VerbCatalog;
 use Specflux\AgentSafety\Plugin\Hooks\AbilityPermissionGate;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
-use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
-use Specflux\AgentSafety\Plugin\Support\ShadowMode;
-use Specflux\AgentSafety\Plugin\Support\ValueAccumulator;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeApprovalStore;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeIdentityProvider;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\InMemoryAuditSink;
+use Specflux\AgentSafety\Plugin\Verdict\VerdictPipeline;
+use Specflux\AgentSafety\Policy\Tier;
+use Specflux\AgentSafety\Policy\TierClassifier;
+use Specflux\AgentSafety\Policy\VerbCatalog;
 use WP_Error;
 
 /**
- * Exercises the governed-namespace gate behaviour: {@see
- * AbilityPermissionGate::wrap()} must be a complete no-op for any ability name
- * outside the injected namespace list, and an inert no-op for EVERYTHING when
- * that list is empty (a site with no integration active).
+ * {@see AbilityPermissionGate} is the CLAIM-mode ADAPTER of the shared
+ * {@see VerdictPipeline}, so this file only tests the adapting:
+ *
+ *   - WHICH abilities get wrapped at all (the governed-namespace list) and that
+ *     wrapping is otherwise a complete no-op;
+ *   - that the ability's own permission_callback still runs FIRST and its
+ *     denial wins (least privilege — we only ever add restrictions);
+ *   - that the pack is resolved inside the callback, at call time;
+ *   - that the registration's `meta.annotations` reach the pipeline as Hints;
+ *   - and the one piece of state this adapter owns itself: remembering the
+ *     reserved approval id so the action's execution can finalize or roll it
+ *     back.
+ *
+ * Every gating BEHAVIOUR behind the verdict — rate caps, argument caps, shadow
+ * mode, the approval flow, re-entrancy, what a hint does to a decision — is
+ * proven once, in both modes, in
+ * {@see \Specflux\AgentSafety\Plugin\Tests\Verdict\VerdictPipelineTest}
+ * (and hint PARSING in
+ * {@see \Specflux\AgentSafety\Plugin\Tests\Verdict\HintsTest}).
  */
 final class AbilityPermissionGateTest extends TestCase
 {
@@ -46,38 +59,26 @@ final class AbilityPermissionGateTest extends TestCase
         $GLOBALS['wpas_test_transients'] = [];
     }
 
+    /** @param list<string> $governedNamespaces */
     private function gate(array $governedNamespaces): AbilityPermissionGate
     {
         return new AbilityPermissionGate(
-            new Gate(),
+            new VerdictPipeline(new Gate(), new DecisionRecorder()),
             new PackResolver(),
-            new DecisionRecorder(),
             null,
             $governedNamespaces,
         );
     }
 
-    /** A gate wired so 'woocommerce/orders-list' resolves to $pack (backlog #16 rate-limit tests). */
-    private function gateWithPack(Pack $pack): AbilityPermissionGate
-    {
-        $catalog = new VerbCatalog();
-        $catalog->register(['woocommerce/orders-list' => Tier::Reversible]);
-        $gate = new Gate(new TierClassifier($catalog));
-
-        RequestContext::configure(new IdentityChain([
-            new FakeIdentityProvider(currentTokens: ['test:token']),
-        ]));
-        $GLOBALS['wpas_test_options'][PackResolver::BINDINGS_OPTION] = ['test:token' => $pack->name];
-
-        return new AbilityPermissionGate($gate, new PackResolver([$pack]), new DecisionRecorder(), null, ['woocommerce/']);
-    }
-
     /**
-     * A gate wired the same way as {@see gateWithPack()}, but with the audit
-     * sink + approval store the argument-cap scenarios below need to observe.
+     * A gate wired so 'woocommerce/orders-list' resolves to $pack, with the
+     * audit sink + approval store the reservation scenarios need to observe.
      */
-    private function gateWithPackAndRecording(Pack $pack, InMemoryAuditSink $sink, FakeApprovalStore $approvals): AbilityPermissionGate
-    {
+    private function gateWithPackAndRecording(
+        Pack $pack,
+        InMemoryAuditSink $sink,
+        FakeApprovalStore $approvals,
+    ): AbilityPermissionGate {
         $catalog = new VerbCatalog();
         $catalog->register(['woocommerce/orders-list' => Tier::Reversible]);
         $gate = new Gate(new TierClassifier($catalog));
@@ -88,9 +89,8 @@ final class AbilityPermissionGateTest extends TestCase
         $GLOBALS['wpas_test_options'][PackResolver::BINDINGS_OPTION] = ['test:token' => $pack->name];
 
         return new AbilityPermissionGate(
-            $gate,
+            new VerdictPipeline($gate, new DecisionRecorder($sink, $approvals), $approvals),
             new PackResolver([$pack]),
-            new DecisionRecorder($sink, $approvals),
             $approvals,
             ['woocommerce/'],
         );
@@ -145,43 +145,6 @@ final class AbilityPermissionGateTest extends TestCase
         $this->assertSame($original, $wrappedOther['permission_callback']);
     }
 
-    public function testRateLimitAllowsCallsUnderThePackCap(): void
-    {
-        $pack = new Pack(name: 'capped', allow: ['woocommerce/*'], limits: ['calls_per_minute' => 2]);
-        $gate = $this->gateWithPack($pack);
-        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
-
-        // Distinct args on purpose: identical (verb, args) within one request is
-        // memoized as the host re-checking the SAME call, not a new call.
-        $this->assertTrue($callback(['call' => 1]));
-        $this->assertTrue($callback(['call' => 2]));
-    }
-
-    public function testRateLimitBlocksCallsBeyondThePackCap(): void
-    {
-        $pack = new Pack(name: 'capped', allow: ['woocommerce/*'], limits: ['calls_per_minute' => 1]);
-        $gate = $this->gateWithPack($pack);
-        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
-
-        $this->assertTrue($callback(['call' => 1]));
-
-        $second = $callback(['call' => 2]);
-        $this->assertInstanceOf(WP_Error::class, $second);
-        $this->assertSame('agent_safety_denied', $second->get_error_code());
-        $this->assertStringContainsString('rate_limited_calls_per_minute', $second->get_error_message());
-    }
-
-    public function testUnlimitedPackIsNeverRateLimited(): void
-    {
-        $pack = new Pack(name: 'unlimited', allow: ['woocommerce/*']);
-        $gate = $this->gateWithPack($pack);
-        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
-
-        for ($i = 0; $i < 5; $i++) {
-            $this->assertTrue($callback([]));
-        }
-    }
-
     public function testUngovernedNamespaceIsNeverRateLimitedEitherWithACappedPack(): void
     {
         // wrap() is a no-op for an ungoverned ability -> the ORIGINAL callback
@@ -189,12 +152,30 @@ final class AbilityPermissionGateTest extends TestCase
         $pack = new Pack(name: 'capped', allow: ['*'], limits: ['calls_per_minute' => 1]);
         $catalog = new VerbCatalog();
         $catalog->register(['core/something-else' => Tier::Reversible]);
-        $gate = new AbilityPermissionGate(new Gate(new TierClassifier($catalog)), new PackResolver([$pack]), new DecisionRecorder(), null, ['woocommerce/']);
+        $gate = new AbilityPermissionGate(
+            new VerdictPipeline(new Gate(new TierClassifier($catalog)), new DecisionRecorder()),
+            new PackResolver([$pack]),
+            null,
+            ['woocommerce/'],
+        );
 
         $original = static fn () => true;
         $wrapped = $gate->wrap(['permission_callback' => $original], 'core/something-else');
 
         $this->assertSame($original, $wrapped['permission_callback']);
+    }
+
+    public function testTheAbilitysOwnPermissionDenialWinsAndTheGateNeverRelaxesIt(): void
+    {
+        // Least privilege: we only ever ADD restrictions. The wrapped callback
+        // runs the ability's own check first and returns its refusal verbatim,
+        // even though this pack would have allowed the verb.
+        $pack = new Pack(name: 'owner', allow: ['*']);
+        $gate = $this->gateWithPackAndRecording($pack, new InMemoryAuditSink(), new FakeApprovalStore());
+        $refusal = new WP_Error('woocommerce_rest_cannot_view', 'Sorry, you cannot list resources.');
+        $callback = $gate->wrap(['permission_callback' => static fn () => $refusal], 'woocommerce/orders-list')['permission_callback'];
+
+        $this->assertSame($refusal, $callback(['id' => 1]));
     }
 
     /**
@@ -212,9 +193,8 @@ final class AbilityPermissionGateTest extends TestCase
         $catalog->register(['woocommerce/orders-list' => Tier::Reversible]);
         $boundPack = new Pack(name: 'late-bound', allow: ['woocommerce/*']);
         $gate = new AbilityPermissionGate(
-            new Gate(new TierClassifier($catalog)),
+            new VerdictPipeline(new Gate(new TierClassifier($catalog)), new DecisionRecorder()),
             new PackResolver([$boundPack]),
-            new DecisionRecorder(),
             null,
             ['woocommerce/'],
         );
@@ -233,140 +213,67 @@ final class AbilityPermissionGateTest extends TestCase
         $this->assertTrue(($wrapped['permission_callback'])([]));
     }
 
-    public function testShadowedPackAuditsTheWouldBeDenialAndLetsTheCallRun(): void
+    public function testTheRegistrationsDestructiveAnnotationReachesThePipeline(): void
     {
-        $pack = new Pack(name: 'observed', allow: []); // every verb would be not_in_pack
-        $sink = new InMemoryAuditSink();
-        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['observed'];
-        $gate = $this->gateWithPackAndRecording($pack, $sink, new FakeApprovalStore());
-        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
-
-        $result = $callback(['id' => 1]);
-
-        $this->assertTrue($result);
-        $this->assertCount(1, $sink->records);
-        $record = $sink->records[0]->toArray();
-        $this->assertSame('denied', $record['decision']);
-        $this->assertTrue($record['dry_run']);
-    }
-
-    public function testShadowedPackDoesNotPersistAPendingApprovalForAWouldBePark(): void
-    {
-        $pack = new Pack(name: 'observed', allow: ['woocommerce/*'], approvalByClass: ['tier0' => true]);
-        $sink = new InMemoryAuditSink();
+        // Proves Hints::fromAbilityArgs() is wired into the claim-mode judge():
+        // the SAME verb and pack allow the call outright without the annotation,
+        // and demand approval with it. (What the elevation itself does is
+        // proven in VerdictPipelineTest.)
+        $pack = new Pack(name: 'support', allow: ['woocommerce/*'], approvalByClass: ['tier2' => true]);
         $approvals = new FakeApprovalStore();
-        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['observed'];
-        $gate = $this->gateWithPackAndRecording($pack, $sink, $approvals);
-        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+        $gate = $this->gateWithPackAndRecording($pack, new InMemoryAuditSink(), $approvals);
 
-        $result = $callback(['id' => 1]);
+        $plain = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+        $this->assertTrue($plain(['id' => 1]));
 
-        $this->assertTrue($result);
-        $this->assertSame([], $approvals->requestCalls);
-        $this->assertCount(1, $sink->records);
-        $record = $sink->records[0]->toArray();
-        $this->assertSame('pending', $record['decision']);
-        $this->assertTrue($record['dry_run']);
-    }
+        $annotated = $gate->wrap([
+            'permission_callback' => static fn () => true,
+            'meta' => ['annotations' => ['destructive' => true]],
+        ], 'woocommerce/orders-list')['permission_callback'];
 
-    public function testANonShadowedPackStillEnforcesWhileAnotherPackIsShadowed(): void
-    {
-        $pack = new Pack(name: 'enforced', allow: []);
-        $sink = new InMemoryAuditSink();
-        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['some-other-pack'];
-        $gate = $this->gateWithPackAndRecording($pack, $sink, new FakeApprovalStore());
-        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
-
-        $result = $callback(['id' => 1]);
-
+        $result = $annotated(['id' => 2]);
         $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertFalse($sink->records[0]->toArray()['dry_run']);
+        $this->assertSame('approval_required', $result->get_error_code());
     }
 
-    public function testArgumentCapMaxPerCallDeniesOverCapCallAndAudits(): void
-    {
-        $cap = new ArgumentCap('refund_total', 'woocommerce/*', 'amount', maxPerCall: 100.0);
-        $pack = new Pack(name: 'capped-args', allow: ['woocommerce/*'], argumentCaps: [$cap]);
-        $sink = new InMemoryAuditSink();
-        $gate = $this->gateWithPackAndRecording($pack, $sink, new FakeApprovalStore());
-        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
-
-        $result = $callback(['amount' => 500]);
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('agent_safety_denied', $result->get_error_code());
-        $this->assertStringContainsString('argument_cap_refund_total_max_per_call', $result->get_error_message());
-        $this->assertCount(1, $sink->records);
-        $this->assertSame('denied', $sink->records[0]->toArray()['decision']);
-    }
-
-    public function testReenteredPermissionCallbackAuditsADenialExactlyOnce(): void
-    {
-        // WordPress invokes an ability's permission callback repeatedly within
-        // one REST request (~11 times observed live on WP 7.0). One denied
-        // call must produce ONE audit row, and that row must name the rule
-        // that denied it.
-        $cap = new ArgumentCap('refund_total', 'woocommerce/*', 'amount', maxPerCall: 100.0);
-        $pack = new Pack(name: 'capped-args', allow: ['woocommerce/*'], argumentCaps: [$cap]);
-        $sink = new InMemoryAuditSink();
-        $gate = $this->gateWithPackAndRecording($pack, $sink, new FakeApprovalStore());
-        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
-
-        for ($i = 0; $i < 11; $i++) {
-            $this->assertInstanceOf(WP_Error::class, $callback(['amount' => 500]));
-        }
-
-        $this->assertCount(1, $sink->records);
-        $this->assertSame('argument_cap_refund_total_max_per_call', $sink->records[0]->toArray()['reason']);
-    }
-
-    public function testArgumentCapApprovalAboveWithNoGrantParksAsApprovalRequired(): void
+    /**
+     * Drives a governed call all the way to a reserved grant, which is the
+     * precondition for both onExecuted() cases below. Asserting the reservation
+     * here is also what proves the adapter REMEMBERED the verdict's
+     * reservedApprovalId — nothing else in this file could observe it.
+     *
+     * @return array{AbilityPermissionGate, FakeApprovalStore, string, array<string, mixed>}
+     */
+    private function reservedGrant(): array
     {
         $cap = new ArgumentCap('big_edit', 'woocommerce/*', 'amount', approvalAbove: 100.0);
         $pack = new Pack(name: 'approval-args', allow: ['woocommerce/*'], argumentCaps: [$cap]);
         $approvals = new FakeApprovalStore();
-        $gate = $this->gateWithPackAndRecording($pack, new InMemoryAuditSink(), $approvals);
-        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
-
-        $result = $callback(['amount' => 500]);
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('approval_required', $result->get_error_code());
-        $this->assertCount(1, $approvals->requestCalls);
-        $this->assertSame('woocommerce/orders-list', $approvals->requestCalls[0]['verb']);
-    }
-
-    public function testArgumentCapApprovalAboveWithASeededGrantClaimsItAndAccumulates(): void
-    {
-        $cap = new ArgumentCap('big_edit', 'woocommerce/*', 'amount', approvalAbove: 100.0, maxTotalPerDay: 1000.0);
-        $pack = new Pack(name: 'approval-args', allow: ['woocommerce/*'], argumentCaps: [$cap]);
-        $approvals = new FakeApprovalStore();
         $args = ['amount' => 500];
-        $approvals->seedApproved('woocommerce/orders-list', ApprovalBinding::hash('woocommerce/orders-list', $args), 'test:token');
+        $id = $approvals->seedApproved('woocommerce/orders-list', ApprovalBinding::hash('woocommerce/orders-list', $args), 'test:token');
         $gate = $this->gateWithPackAndRecording($pack, new InMemoryAuditSink(), $approvals);
         $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+        $this->assertTrue($callback($args));
+        $this->assertSame('in_flight', $approvals->rows[$id]['status']);
 
-        $result = $callback($args);
-
-        $this->assertTrue($result);
-        $accumulator = new ValueAccumulator();
-        $this->assertSame(['big_edit' => 500.0], $accumulator->totalsFor('approval-args', 'test:token', ['big_edit']));
+        return [$gate, $approvals, $id, $args];
     }
 
-    public function testArgumentCapMaxTotalPerDayDeniesTheCallThatWouldCrossIt(): void
+    public function testOnExecutedFinalizesTheGrantWhenTheResultCarriesCodeAndMessageAsData(): void
     {
-        $cap = new ArgumentCap('refund_total', 'woocommerce/*', 'amount', maxTotalPerDay: 150.0);
-        $pack = new Pack(name: 'daily-cap', allow: ['woocommerce/*'], argumentCaps: [$cap]);
-        $gate = $this->gateWithPackAndRecording($pack, new InMemoryAuditSink(), new FakeApprovalStore());
-        $callback = $gate->wrap(['permission_callback' => static fn () => true], 'woocommerce/orders-list')['permission_callback'];
+        [$gate, $approvals, $id, $args] = $this->reservedGrant();
 
-        // Distinct args per call -- each is a genuinely new call, not a re-check.
-        $this->assertTrue($callback(['amount' => 100, 'id' => 1]));
-        $this->assertTrue($callback(['amount' => 40, 'id' => 2]));
+        $gate->onExecuted('woocommerce/orders-list', $args, ['code' => 'ORDER-1042', 'message' => 'Shipped', 'id' => 1042]);
 
-        $third = $callback(['amount' => 20, 'id' => 3]); // 100 + 40 + 20 = 160 > 150
-        $this->assertInstanceOf(WP_Error::class, $third);
-        $this->assertSame('agent_safety_denied', $third->get_error_code());
-        $this->assertStringContainsString('argument_cap_refund_total_max_total_per_day', $third->get_error_message());
+        $this->assertSame('consumed', $approvals->rows[$id]['status'], 'a real success must spend the grant, never release it for reuse');
+    }
+
+    public function testOnExecutedRollsBackTheGrantOnARestErrorPayload(): void
+    {
+        [$gate, $approvals, $id, $args] = $this->reservedGrant();
+
+        $gate->onExecuted('woocommerce/orders-list', $args, ['code' => 'rest_invalid', 'message' => 'bad', 'data' => ['status' => 400]]);
+
+        $this->assertSame('approved', $approvals->rows[$id]['status']);
     }
 }
