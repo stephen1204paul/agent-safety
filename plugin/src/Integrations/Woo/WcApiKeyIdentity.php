@@ -18,7 +18,14 @@ final class WcApiKeyIdentity implements IdentityProvider
     {
     }
 
-    /** @return list<string> */
+    /**
+     * The header is read raw from the request, so the secret half must be
+     * verified here (same rule as WooCommerce's MCP transport): a request
+     * authenticated some other way could otherwise name any key it likes and
+     * inherit that key's pack binding and rate-limit bucket.
+     *
+     * @return list<string>
+     */
     public function currentTokens(): array
     {
         $header = $_SERVER['HTTP_X_MCP_API_KEY'] ?? '';
@@ -26,17 +33,24 @@ final class WcApiKeyIdentity implements IdentityProvider
             return [];
         }
 
-        [$consumerKey] = explode(':', $header, 2);
-        $hashed = wc_api_hash($consumerKey);
+        [$consumerKey, $consumerSecret] = explode(':', $header, 2);
+        $hashed = wc_api_hash(trim($consumerKey));
 
-        $keyId = $this->db->get_var(
+        $row = $this->db->get_row(
             $this->db->prepare(
-                "SELECT key_id FROM {$this->db->prefix}woocommerce_api_keys WHERE consumer_key = %s",
+                "SELECT key_id, consumer_secret FROM {$this->db->prefix}woocommerce_api_keys WHERE consumer_key = %s",
                 $hashed
-            )
+            ),
+            ARRAY_A
         );
+        if (!is_array($row) || !is_string($row['consumer_secret'] ?? null) || $row['consumer_secret'] === '') {
+            return [];
+        }
+        if (!hash_equals($row['consumer_secret'], trim($consumerSecret))) {
+            return [];
+        }
 
-        return $keyId ? ['wc:' . $keyId] : [];
+        return ['wc:' . (int) $row['key_id']];
     }
 
     /**
