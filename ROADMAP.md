@@ -31,6 +31,26 @@ that already ran. Run a week of observation before turning enforcement on.
 (order updates, refunds unreachable by construction), and `refund-desk`
 (every refund approval-gated and spend-bounded).
 
+## Planned for 0.4
+
+**AS-11 — Approval summary filter.** `DecisionRecorder::requestApproval()`
+passes the human-facing summary through `agent_safety_approval_summary`
+(filter receives the flat summary, the verb and the input; a non-string return
+falls back to the flat summary) before persisting, and the Pending Agent
+Actions screen renders the persisted summary through `wp_kses` with exactly
+one allowed element (`<a href="...">`) — a host can add a preview/edit link,
+never script or markup. The binding (verb + args hash + principal) is outside
+the filter's reach by construction. No schema change; grant-minted rows fire
+the same filter.
+
+**AS-12 — Pre-approval grants (behind `agent_safety_enable_grants`, default
+off).** A run-scoped grant table (`{prefix}agent_safety_grants`) with
+issue/reserve/release/revoke/expiry, host-settable request correlation
+(`RequestContext::withCorrelation()`), grant matching in the verdict pipeline
+gated by the default-false `agent_safety_grant_eligible` filter (a filter may
+narrow, never widen), and grant audit events. Consumed by SenroFlux's
+accept-with-pre-approval path.
+
 ## Shipped for 0.3 (on main, unreleased)
 
 **Core WordPress integration module.** The `core/` ability namespace is

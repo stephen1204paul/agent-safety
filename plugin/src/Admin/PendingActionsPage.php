@@ -87,7 +87,7 @@ final class PendingActionsPage
             echo '<td>' . esc_html((string) ($r['pending_expires_ts'] ?? '')) . '</td>';
             echo '<td><code>' . esc_html((string) ($r['correlation_id'] ?? '')) . '</code></td>';
             echo '<td><code>' . esc_html((string) ($r['verb'] ?? '')) . '</code></td>';
-            echo '<td>' . esc_html((string) ($r['summary'] ?? '')) . '</td>';
+            echo '<td>' . self::summaryHtml((string) ($r['summary'] ?? '')) . '</td>';
             echo '<td><code style="font-size:11px;">' . esc_html($approvalId) . '</code></td>';
             echo '<td>' . $this->actionButtons($approvalId) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- built from esc_* helpers below.
             echo '</tr>';
@@ -188,6 +188,19 @@ final class PendingActionsPage
             esc_html((string) $flash['token']),
             esc_html__('Valid once, for 15 minutes, bound to that exact verb + arguments. Shown only now and never stored in the clear.', 'agent-safety')
         );
+    }
+
+        /**
+     * AS-11: a host may enrich an approval summary with a preview/edit link.
+     * The summary cell is therefore rendered through wp_kses with an allow-list
+     * of exactly one element (`<a href="...">`) — every other tag and attribute
+     * is stripped, so a filter can add a link but never script or markup.
+     *
+     * @param string $summary The persisted summary (filtered at requestApproval).
+     */
+    public static function summaryHtml(string $summary): string
+    {
+        return wp_kses($summary, ['a' => ['href' => true]]);
     }
 
     private function actionButtons(string $approvalId): string

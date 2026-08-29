@@ -114,10 +114,16 @@ final class DecisionRecorder
             return null;
         }
 
+        // AS-11: a host may enrich the human-facing summary (e.g. SenroFlux's
+        // rich publish rows). The filter may narrow or reword — it can never
+        // touch the verb, the binding hash or the principal, so it can never
+        // loosen what the approval binds to.
+        $summary = apply_filters('agent_safety_approval_summary', $this->summarize($verb, $input), $verb, $input);
+
         return $this->approvals->request(
             $verb,
             ApprovalBinding::hash($verb, $input),
-            $this->summarize($verb, $input),
+            is_string($summary) ? $summary : $this->summarize($verb, $input),
             RequestContext::correlation(),
             $auditEventId,
             RequestContext::tokenId(),

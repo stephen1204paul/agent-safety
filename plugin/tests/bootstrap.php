@@ -93,23 +93,53 @@ if (!function_exists('__')) {
     }
 }
 
+$GLOBALS['wpas_test_filters'] = [];
+
 if (!function_exists('add_filter')) {
     /** @param mixed ...$args */
-    function add_filter(...$args): bool
+    function add_filter(string $hook, $callback, int $priority = 10, int $accepted_args = 1): bool
     {
+        $GLOBALS['wpas_test_filters'][$hook][$priority][] = [$callback, $accepted_args];
+
         return true;
     }
 }
 
 if (!function_exists('apply_filters')) {
     /**
+     * WP-style value threading through priority-ordered callbacks. A working
+     * registry (was a pass-through no-op): with no registered callbacks the
+     * behaviour is identical, so existing tests are unaffected; filter-contract
+     * tests (AS-11+) need real dispatch.
+     *
      * @param mixed $value
      * @param mixed ...$args
      * @return mixed
      */
     function apply_filters(string $tag, $value, ...$args)
     {
+        $callbacks = $GLOBALS['wpas_test_filters'][$tag] ?? [];
+        ksort($callbacks);
+        foreach ($callbacks as $group) {
+            foreach ($group as [$callback, $accepted_args]) {
+                $value = $callback($value, ...array_slice($args, 0, max(0, $accepted_args - 1)));
+            }
+        }
+
         return $value;
+    }
+}
+
+if (!function_exists('remove_all_filters')) {
+    /** Test control knob: drop every callback for one hook (or all hooks). */
+    function remove_all_filters(?string $hook = null): void
+    {
+        if ($hook === null) {
+            $GLOBALS['wpas_test_filters'] = [];
+
+            return;
+        }
+        unset($GLOBALS['wpas_test_filters'][$hook]);
     }
 }
 
@@ -348,6 +378,52 @@ if (!function_exists('admin_url')) {
     }
 }
 
+if (!function_exists('wp_kses')) {
+    /**
+     * SHIM for the summary-cell contract (AS-11): strips every tag not in the
+     * allow-list and every attribute not allowed for its tag. Minimal stand-in
+     * - the REAL sanitisation check is a wp-env smoke against core's wp_kses;
+     * this shim only locks the call shape so the unit suite can exercise the
+     * render path.
+     *
+     * @param string               $string       Content to sanitise.
+     * @param array<string, mixed> $allowed_html Allowed tags => allowed attributes.
+     */
+    function wp_kses(string $string, array $allowed_html = []): string
+    {
+        $allowed_tags = array_keys($allowed_html);
+
+        $result = preg_replace_callback(
+            '/<\s*\/?\s*([a-zA-Z0-9]+)((?:[^>"\']|"[^"]*"|\'[^\']*\')*)>/',
+            static function (array $m) use ($allowed_tags, $allowed_html): string {
+                $closing = str_starts_with(ltrim($m[0]), '</');
+                $tag = strtolower($m[1]);
+                if (!in_array($tag, $allowed_tags, true)) {
+                    return ''; // Not allowed: the whole element goes.
+                }
+                if ($closing) {
+                    return '</' . $tag . '>';
+                }
+                $attrs = $allowed_html[$tag] ?? [];
+                $kept = '';
+                foreach ($attrs as $attr => $enabled) {
+                    if (!$enabled) {
+                        continue;
+                    }
+                    $attr_name = (string) $attr;
+                    if (preg_match('/\b' . preg_quote($attr_name, '/') . '\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', $m[2], $am)) {
+                        $kept .= ' ' . strtolower($attr_name) . '=' . $am[1];
+                    }
+                }
+
+                return '<' . $tag . $kept . '>';
+            },
+            $string
+        );
+
+        return is_string($result) ? $result : $string;
+    }
+}
 if (!function_exists('wp_json_encode')) {
     /**
      * @param mixed $data
