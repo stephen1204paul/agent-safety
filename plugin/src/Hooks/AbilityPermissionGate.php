@@ -86,6 +86,17 @@ final class AbilityPermissionGate
             // Spend a reservation only when the action truly executed: finalize on
             // success, roll back on failure, and release anything still reserved at
             // shutdown (a fatal / abort before execution).
+            //
+            // `wp_before_execute_ability` is the SAME sweep applied one call
+            // earlier. Core's WP_Ability::execute() returns early when the
+            // execute callback hands back a WP_Error, so `wp_after_execute_ability`
+            // never fires for a refused write and onExecuted() never sees it.
+            // With only the shutdown sweep, a reservation for a refused action
+            // was held for the rest of the request — and one request here can
+            // carry a whole agent loop, so an agent retrying a write its own
+            // validator refused burned a human's pre-approval on writes that
+            // never happened, then parked for an approval already given.
+            add_action('wp_before_execute_ability', [$this, 'onBeforeExecute'], 10, 2);
             add_action('wp_after_execute_ability', [$this, 'onExecuted'], 10, 3);
             add_action('shutdown', [$this, 'onShutdown'], 0);
         }
@@ -210,6 +221,50 @@ final class AbilityPermissionGate
             $this->approvals->finalize($approvalId);
             unset($this->grantByApproval[$approvalId]);
         } else {
+            $this->rollback($approvalId);
+        }
+    }
+
+    /**
+     * A NEW call of this ability is about to execute, so any reservation still
+     * held from an EARLIER call of it never reached onExecuted — exactly the
+     * condition {@see onShutdown} sweeps, just recognised at the next call
+     * boundary instead of at the end of the request. Release those, and keep
+     * only the reservation belonging to the call now starting.
+     *
+     * The current call's approval id may sit on the stack more than once: a
+     * caller that checks permissions itself and then calls execute() runs the
+     * permission callback twice, and the second run re-claims the SAME approval
+     * row. So the rule is "everything that is not the current approval id",
+     * not "everything but the last entry".
+     *
+     * Idempotent by construction: {@see rollback()} forgets the grant behind an
+     * approval as it releases it, so a duplicate entry swept later credits
+     * nothing a second time.
+     *
+     * @param mixed $input
+     */
+    public function onBeforeExecute(string $name, $input = null): void
+    {
+        unset($input);
+
+        if ($this->approvals === null || empty($this->reserved[$name])) {
+            return;
+        }
+
+        $current = end($this->reserved[$name]);
+        $keep = [];
+        $stale = [];
+        foreach ($this->reserved[$name] as $approvalId) {
+            if ($approvalId === $current) {
+                $keep[] = $approvalId;
+                continue;
+            }
+            $stale[] = $approvalId;
+        }
+
+        $this->reserved[$name] = $keep;
+        foreach ($stale as $approvalId) {
             $this->rollback($approvalId);
         }
     }

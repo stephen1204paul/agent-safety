@@ -365,6 +365,57 @@ final class AbilityPermissionGateTest extends TestCase
         $this->assertSame(2, $grants->get($grantId)?->remainingCount);
     }
 
+    /**
+     * The case that defeated pre-approval in practice.
+     *
+     * Core's WP_Ability::execute() returns early on a WP_Error from the execute
+     * callback, so `wp_after_execute_ability` never fires and onExecuted() never
+     * sees a REFUSED write. One request here carries a whole agent loop, so
+     * before this sweep existed each refused attempt held a slot of the human's
+     * pre-approval for the rest of the request: a grant for two publishes was
+     * gone after two markup retries that wrote nothing, and the real publish
+     * parked for an approval the human had already given. Observed live on
+     * wp-env (senroflux run 48).
+     */
+    public function testAnAbandonedReservationIsReleasedWhenTheNextCallStarts(): void
+    {
+        [$gate, $grants, $grantId, $args] = $this->reservedUnderGrant();
+        $verb = 'woocommerce/orders-list';
+
+        // The refused attempt reports nothing: no onExecuted, reservation held.
+        $this->assertSame(1, $grants->get($grantId)?->remainingCount);
+
+        // The retry claims its own slot…
+        $callback = $gate->wrap(['permission_callback' => static fn () => true], $verb)['permission_callback'];
+        $retryArgs = ['order_id' => 2024];
+        $this->assertTrue(RequestContext::withCorrelation(
+            'senroflux:run:7',
+            static fn () => $callback($retryArgs)
+        ));
+        $this->assertSame(0, $grants->get($grantId)?->remainingCount, 'the retry spends the second slot');
+
+        // …and starting it gives the abandoned one back.
+        $gate->onBeforeExecute($verb, $retryArgs);
+        $this->assertSame(1, $grants->get($grantId)?->remainingCount, 'a write that never happened must not hold a slot');
+
+        // The retry itself still seals correctly.
+        $gate->onExecuted($verb, $retryArgs, ['id' => 2024, 'status' => 'completed']);
+        $this->assertSame(1, $grants->get($grantId)?->remainingCount);
+    }
+
+    /** The sweep must never credit the call it is about to run. */
+    public function testTheSweepKeepsTheReservationOfTheCallStartingNow(): void
+    {
+        [$gate, $grants, $grantId, $args] = $this->reservedUnderGrant();
+
+        $gate->onBeforeExecute('woocommerce/orders-list', $args);
+
+        $this->assertSame(1, $grants->get($grantId)?->remainingCount, 'the current call keeps its slot');
+
+        $gate->onExecuted('woocommerce/orders-list', $args, ['id' => 1042, 'status' => 'completed']);
+        $this->assertSame(1, $grants->get($grantId)?->remainingCount);
+    }
+
     public function testTheGrantIsReleasedExactlyOnce(): void
     {
         // onExecuted already rolled it back; the shutdown sweep must not credit
