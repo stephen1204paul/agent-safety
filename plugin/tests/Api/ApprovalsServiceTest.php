@@ -7,6 +7,7 @@ namespace Specflux\AgentSafety\Plugin\Tests\Api;
 use PHPUnit\Framework\TestCase;
 use Specflux\AgentSafety\Audit\AuditDecision;
 use Specflux\AgentSafety\Plugin\Api\Approvals;
+use Specflux\AgentSafety\Plugin\Api\ApprovalSummary;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 use Specflux\AgentSafety\Plugin\Container;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
@@ -196,5 +197,37 @@ final class ApprovalsServiceTest extends TestCase
             'created_ts' => '2026-08-23 10:00:00',
             'pending_expires_ts' => '2026-08-23 11:00:00',
         ];
+    }
+
+    public function testAGrantMintedRowCarriesItsGrantProvenance(): void
+    {
+        // AS-12: a consumer must be able to tell "auto-approved under a plan
+        // grant" apart from "a human reviewed this exact action".
+        $summary = ApprovalSummary::fromRow([
+            'approval_id' => 'apr_1',
+            'verb' => 'core/post-publish',
+            'status' => 'approved',
+            'summary' => 'core/post-publish { id=42 }',
+            'correlation_id' => 'senroflux:run:7',
+            'created_ts' => '2026-08-30 12:00:00',
+            'grant_id' => 'gnt_9',
+        ]);
+
+        $this->assertSame('gnt_9', $summary->grantId);
+    }
+
+    public function testAnOrdinaryApprovalHasNoGrantProvenance(): void
+    {
+        foreach ([[], ['grant_id' => null], ['grant_id' => '']] as $row) {
+            $summary = ApprovalSummary::fromRow(array_merge([
+                'approval_id' => 'apr_1',
+                'verb' => 'core/post-publish',
+                'status' => 'pending',
+                'summary' => 's',
+                'correlation_id' => 'c',
+            ], $row));
+
+            $this->assertNull($summary->grantId);
+        }
     }
 }

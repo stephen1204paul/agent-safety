@@ -44,12 +44,30 @@ the filter's reach by construction. No schema change; grant-minted rows fire
 the same filter.
 
 **AS-12 — Pre-approval grants (behind `agent_safety_enable_grants`, default
-off).** A run-scoped grant table (`{prefix}agent_safety_grants`) with
-issue/reserve/release/revoke/expiry, host-settable request correlation
-(`RequestContext::withCorrelation()`), grant matching in the verdict pipeline
-gated by the default-false `agent_safety_grant_eligible` filter (a filter may
-narrow, never widen), and grant audit events. Consumed by SenroFlux's
-accept-with-pre-approval path.
+off).** A human authorises up to N future calls of ONE verb inside ONE scope,
+instead of clicking once per action. New `{prefix}agent_safety_grants` table
+with issue/reserve/release/revoke/TTL, reached through
+`agent_safety()->grants()`; the scope is a host-set correlation id
+(`RequestContext::withCorrelation()`, restored in a `finally` so two runs
+ticked in one process never see each other's grants). A grant is matched on
+(correlation, verb, subject) — an empty subject never matches — and then has to
+pass the default-false `agent_safety_grant_eligible` filter before it mints an
+already-approved record bound to the real arguments, which the ordinary
+reserve/finalize/rollback path claims. That default is what keeps per-verb
+grants safe for per-object work: a missing hook means no grant applies, never
+that every grant applies to any object, and a filter may narrow but never
+widen. The count is restored on every path the call does not execute on, and
+`grant.issued` / `grant.revoked` / `grant.exhausted` land in the audit trail.
+Consumed by SenroFlux's accept-with-pre-approval path.
+
+**Argument-aware elevation rules from site code.** New
+`agent_safety_elevation_rules` filter, the companion the existing
+`agent_safety_governed_namespaces` / `agent_safety_verb_map` pair was missing:
+a site could govern its own namespace and map base tiers, but a verb whose
+blast radius depends on its arguments (publish vs draft, bulk vs single) had no
+seam and had to be over-classified as irreversible. The filter may only add
+rules, and a rule can only ever raise a tier — now enforced in
+`TierClassifier`, not merely documented.
 
 ## Shipped for 0.3 (on main, unreleased)
 
