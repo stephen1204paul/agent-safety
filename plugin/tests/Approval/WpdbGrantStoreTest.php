@@ -170,6 +170,42 @@ final class WpdbGrantStoreTest extends TestCase
         );
     }
 
+    /**
+     * The seal must be computed from the count as it stood BEFORE this claim.
+     *
+     * MySQL evaluates a multi-column SET left to right and a later expression
+     * reads what an earlier assignment already wrote, so with `remaining_count`
+     * assigned first the CASE subtracted twice: a grant of 2 went `exhausted`
+     * on its FIRST reservation, and the human's second pre-approved call parked
+     * for an approval they had already given. Observed live on wp-env before
+     * this was fixed (a plan accepted with pre-approval for two publishes; the
+     * first publish sealed the grant, the second parked).
+     *
+     * The fake wpdb executes no SQL, so the ORDER of the SET clauses is the
+     * only thing a unit test can hold on to — which is exactly the thing that
+     * was wrong.
+     */
+    public function testTheSealIsComputedBeforeTheCountIsDecremented(): void
+    {
+        $db = new wpdb();
+        $db->rowReturn = $this->row(['remaining_count' => 2]);
+        $db->queryReturn = 1;
+
+        (new WpdbGrantStore($db))->reserve('senroflux:run:7', 'core/post-publish', 'app:key-1');
+
+        $sql = end($db->queries);
+        $statusAt = strpos($sql, 'status = CASE WHEN');
+        $countAt = strpos($sql, 'remaining_count = remaining_count - 1');
+
+        $this->assertIsInt($statusAt, 'the claim must seal the grant in the same statement');
+        $this->assertIsInt($countAt, 'the claim must spend one reservation');
+        $this->assertLessThan(
+            $countAt,
+            $statusAt,
+            'status must be assigned BEFORE remaining_count, or the CASE reads the decremented value and seals a grant that still has budget'
+        );
+    }
+
     public function testALostRaceReservesNothing(): void
     {
         // The row looked claimable at SELECT time, but a concurrent reserve got

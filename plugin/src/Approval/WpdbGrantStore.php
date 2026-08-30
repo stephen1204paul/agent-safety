@@ -111,12 +111,21 @@ final class WpdbGrantStore implements GrantStore
         // Claim that exact row. The WHERE repeats every condition the core rule
         // just checked so a concurrent reserve between the SELECT and here loses
         // the race outright (affected = 0) rather than double-spending.
+        //
+        // THE SET ORDER IS LOAD-BEARING. MySQL evaluates a multi-column SET left
+        // to right, and a later expression sees the value an earlier assignment
+        // has ALREADY written. With `remaining_count` assigned first, the CASE
+        // read the decremented value and computed `remaining_count - 1` a second
+        // time, so a grant of 2 was sealed `exhausted` after its FIRST
+        // reservation — the human's second pre-approved call then parked.
+        // Assigning `status` first is what makes the CASE see the count as it
+        // stood before this claim.
         $affected = $this->db->query(
             $this->db->prepare(
                 // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name.
                 "UPDATE {$this->table()}
-                    SET remaining_count = remaining_count - 1,
-                        status = CASE WHEN remaining_count - 1 <= 0 THEN 'exhausted' ELSE 'active' END
+                    SET status = CASE WHEN remaining_count - 1 <= 0 THEN 'exhausted' ELSE 'active' END,
+                        remaining_count = remaining_count - 1
                   WHERE grant_id = %s AND status = 'active' AND remaining_count > 0
                     AND revoked_ts IS NULL AND expires_ts > UTC_TIMESTAMP()",
                 $candidate->grantId
