@@ -89,6 +89,11 @@ Agent Safety is configured mostly through wp-admin (**Tools → Agent Capability
 | `agent_safety_verb_map` | Map additional verbs to tiers (`Tier` instance or its backing int: `0` Reversible, `1` SideEffecting, `2` Irreversible). Required companion to the namespace filter above — an unmapped verb in a governed namespace is denied, not allowed. |
 | `agent_safety_pack_registry` | Replace or extend the `PackRegistry` (catalog + bindings) surfaced to the admin Packs UI, for bespoke pack catalogs. |
 | `agent_safety_map_verb` | Extend tool-name → verb mapping for extensions registering their own namespaced abilities (used internally by the WooCommerce integration for `woocommerce-{resource}-{action}` → `woocommerce/{resource}-{action}`). |
+| `agent_safety_elevation_rules` | Contribute argument-aware tier-elevation rules (`ElevationRule` instances), for a verb whose blast radius depends on its arguments — publish vs draft, bulk vs single. Companion to the two filters above. May only add rules, and a rule can only ever raise a tier, so this narrows and never widens. |
+| `agent_safety_approval_summary` | Rewrite the human-facing summary of a pending action before it is stored (receives the flat summary, the verb, the input). A rewritten summary is rendered on the review screen through `wp_kses` allowing only `<a href>`; the binding (verb + args hash + principal) is outside the filter's reach. |
+| `agent_safety_enable_grants` | **Default `false`.** Turn on pre-approval grants: a human authorises up to N future calls of one verb inside one scope, instead of clicking once per action. Nothing about grants happens while this is off. |
+| `agent_safety_grant_eligible` | **Default `false`.** Decide whether an active grant covers THESE call arguments (receives the `Grant`, the verb and the args). Grants are per-verb, so this is where a host that knows which objects the human accepted says yes. A missing hook means no grant applies — never that every grant applies to any object. |
+| `agent_safety_grant_ttl` | Hard grant lifetime in seconds, applied when a grant is issued (default 24 hours). |
 
 Identity bindings (which pack applies to which application password, user, role, or WooCommerce API key) are managed under **Tools → Agent Capability Packs**; there is no code-level API for bindings beyond that screen and the registry filter above.
 

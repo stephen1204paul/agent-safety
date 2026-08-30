@@ -158,6 +158,9 @@ final class AuditLogPage
             'pending'  => '#ffb900',
             'approved' => '#46b450',
             'rejected' => '#dc3232',
+            // A grant-lifecycle row (AS-12): issued/revoked/exhausted, told
+            // apart by the reason column beside it.
+            'grant'    => '#2271b1',
         ];
         $color = $colors[$decision] ?? '#888';
 

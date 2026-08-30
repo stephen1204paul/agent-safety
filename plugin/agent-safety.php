@@ -29,6 +29,8 @@ use Specflux\AgentSafety\Plugin\Admin\AuditLogPage;
 use Specflux\AgentSafety\Plugin\Admin\CapabilityPacksPage;
 use Specflux\AgentSafety\Plugin\Admin\PendingActionsPage;
 use Specflux\AgentSafety\Plugin\Api\Approvals;
+use Specflux\AgentSafety\Plugin\Api\Grants;
+use Specflux\AgentSafety\Plugin\Approval\WpdbGrantStore;
 use Specflux\AgentSafety\Plugin\Audit\AuditReader;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 use Specflux\AgentSafety\Plugin\Audit\WpdbAuditSink;
@@ -36,6 +38,7 @@ use Specflux\AgentSafety\Plugin\Hooks\AbilityAuditLog;
 use Specflux\AgentSafety\Plugin\Hooks\AbilityPermissionGate;
 use Specflux\AgentSafety\Plugin\Hooks\McpRequestAuditHandler;
 use Specflux\AgentSafety\Plugin\Hooks\PreToolCallGate;
+use Specflux\AgentSafety\Plugin\Verdict\GrantGate;
 use Specflux\AgentSafety\Plugin\Verdict\VerdictPipeline;
 use Specflux\AgentSafety\Plugin\Hooks\ToolCallResultRedactor;
 use Specflux\AgentSafety\Plugin\Identity\ApplicationPasswordIdentity;
@@ -48,6 +51,8 @@ use Specflux\AgentSafety\Plugin\Support\ApprovalNotifier;
 use Specflux\AgentSafety\Plugin\Support\ApprovalSweep;
 use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
+use Specflux\AgentSafety\Plugin\Support\ElevationRules;
+use Specflux\AgentSafety\Plugin\Support\GrantRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
@@ -195,6 +200,13 @@ add_action('plugins_loaded', static function (): void {
         }
     }
 
+    // Companion seam to the two filters above: a site that governs its own
+    // namespace and maps its verbs to base tiers can also contribute arg-aware
+    // elevation rules, for a verb whose blast radius depends on its arguments
+    // (publish vs draft, bulk vs single). A rule can only ever ELEVATE, so this
+    // narrows and never widens. Non-rule entries are dropped, not trusted.
+    $agsafe_elevation_rules = ElevationRules::filtered($agsafe_elevation_rules);
+
     RequestContext::configure($agsafe_identity);
 
     $agsafe_classifier = new TierClassifier($agsafe_catalog, $agsafe_elevation_rules);
@@ -223,16 +235,27 @@ add_action('plugins_loaded', static function (): void {
     // both seams and the admin toggle agree on which packs are shadowed.
     $agsafe_shadow = new ShadowMode();
 
+    // Pre-approval grants (AS-12), behind the default-false
+    // `agent_safety_enable_grants` filter. Constructed whenever there is a
+    // database — the objects are inert while the feature switch is off — so a
+    // host can feature-detect the service without the site having opted in yet.
+    $agsafe_grant_store = isset($wpdb) ? new WpdbGrantStore($wpdb) : null;
+    $agsafe_grant_gate = $agsafe_grant_store !== null
+        ? new GrantGate($agsafe_grant_store, $agsafe_approvals, $agsafe_recorder, new GrantRecorder($agsafe_sink))
+        : null;
+
     // The ONE verdict pipeline both gate seams adapt (docs/adr/0001): the ordered
     // evaluation, the approval claim and its re-entrancy memo, the caps, shadow
     // mode, and the audit/pending-approval obligations of a blocked call all
     // live here, so a call intercepted by either seam is judged identically.
-    $agsafe_pipeline = new VerdictPipeline($agsafe_gate, $agsafe_recorder, $agsafe_approvals, $agsafe_rate_limits, $agsafe_argument_caps, $agsafe_shadow);
+    $agsafe_pipeline = new VerdictPipeline($agsafe_gate, $agsafe_recorder, $agsafe_approvals, $agsafe_rate_limits, $agsafe_argument_caps, $agsafe_shadow, $agsafe_grant_gate);
 
     // Primary seam on the shipping stack (WP core Abilities API; adapter-version-independent).
     // Claim-mode adapter: owns the finalize/rollback of grants the pipeline
     // reserved. Inert no-op for any ability outside $agsafe_governed_namespaces.
-    (new AbilityPermissionGate($agsafe_pipeline, $agsafe_packs, $agsafe_approvals, $agsafe_governed_namespaces))->register();
+    // Also owns releasing a pre-approval grant's reservation whenever it rolls
+    // the approval back, so a grant's count is only spent on an action that ran.
+    (new AbilityPermissionGate($agsafe_pipeline, $agsafe_packs, $agsafe_approvals, $agsafe_governed_namespaces, $agsafe_grant_gate))->register();
 
     // Forward-compat seam: fires only if a mcp-adapter >= 0.5.0 is the loaded copy.
     // Shares the same PackResolver + DecisionRecorder as the live seam so both honour
@@ -293,8 +316,8 @@ add_action('plugins_loaded', static function (): void {
         // Backlog control for the table above: hourly sweep of expired/orphaned
         // approval rows (see WpdbApprovalStore::deleteExpired()). The schedule
         // itself is set up on activation; this just wires the callback.
-        add_action(ApprovalSweep::HOOK, static function () use ($agsafe_approvals): void {
-            ApprovalSweep::run($agsafe_approvals);
+        add_action(ApprovalSweep::HOOK, static function () use ($agsafe_approvals, $agsafe_grant_store): void {
+            ApprovalSweep::run($agsafe_approvals, $agsafe_grant_store);
         });
 
         // Route each NEW pending approval to the humans who must clear it:
@@ -306,9 +329,14 @@ add_action('plugins_loaded', static function (): void {
     }
 
     // Expose the external service surface: reachable from anywhere via the
-    // global agent_safety() locator. approvals() is null only on the
-    // pathological no-database path; consumers feature-detect on that.
-    Container::init($agsafe_api_approvals ?? null);
+    // global agent_safety() locator. approvals() and grants() are null only on
+    // the pathological no-database path; consumers feature-detect on that.
+    // A non-null grants() still does nothing until the site turns
+    // `agent_safety_enable_grants` on.
+    Container::init(
+        $agsafe_api_approvals ?? null,
+        $agsafe_grant_store !== null ? new Grants($agsafe_grant_store, new GrantRecorder($agsafe_sink)) : null,
+    );
 
     // Capability-pack admin (Tools → Agent Capability Packs): bind each identity
     // the configured providers expose to a pack from the catalog.

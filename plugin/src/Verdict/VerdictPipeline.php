@@ -35,6 +35,11 @@ use Specflux\AgentSafety\Policy\Tier;
  *      grant for this exact action and re-evaluate as approved. Reservation is
  *      a side effect, so it must never fire while any other deny gate
  *      (unknown verb, not-in-pack, class-denied) would still block the call.
+ *   3b. Only when THAT found nothing, a pre-approval grant may satisfy the call
+ *      ({@see GrantGate}, AS-12, off by default) by minting an already-approved
+ *      record for these exact args, which step 3's ordinary claim then reserves.
+ *      A human's decision about THIS action always outranks — and is spent
+ *      before — a standing pre-authorisation.
  *   4. Rate/quota caps, then argument-aware caps, bind only on a call that
  *      would otherwise proceed — a denial must never itself consume budget.
  *   5. Shadow mode: a pack in log-only observation audits the would-be verdict
@@ -61,6 +66,7 @@ final class VerdictPipeline
         private readonly RateLimitGate $rateLimits = new RateLimitGate(),
         private readonly ArgumentCapGate $argumentCaps = new ArgumentCapGate(),
         private readonly ShadowMode $shadow = new ShadowMode(),
+        private readonly ?GrantGate $grants = null,
     ) {
     }
 
@@ -72,8 +78,12 @@ final class VerdictPipeline
 
         $claimed = false;
         $reservedId = null;
+        $grantId = null;
         if (VerdictMode::Claim === $mode && Outcome::ApprovalRequired === $decision->outcome) {
             $claimed = $this->claim($verb, $args, $reservedId);
+            if (!$claimed) {
+                $claimed = $this->claimUnderGrant($verb, $args, $reservedId, $grantId);
+            }
             if ($claimed) {
                 $decision = $this->evaluate($verb, $args, $pack, $hints, true);
             }
@@ -89,7 +99,16 @@ final class VerdictPipeline
         }
 
         if (Outcome::Allow === $decision->outcome) {
-            return new Verdict($verb, $pack, $decision, null, $reservedId, $claimed);
+            return new Verdict($verb, $pack, $decision, null, $reservedId, $claimed, false, null, $grantId);
+        }
+
+        // A grant that was spent but did not carry the call through (a later cap
+        // tripped, a hint elevated it) must give its reservation back here: the
+        // adapter only releases what a Verdict tells it about, and this call is
+        // not going to execute.
+        if ($grantId !== null) {
+            $this->grants?->release($grantId);
+            $grantId = null;
         }
 
         $eventId = RequestContext::event();
@@ -106,6 +125,49 @@ final class VerdictPipeline
         $this->recorder->auditDecision($eventId, $verb, $args, $pack, $decision, $approvalId);
 
         return new Verdict($verb, $pack, $decision, $approvalId, $reservedId, $claimed, false, $eventId);
+    }
+
+    /**
+     * The pre-approval path (AS-12), tried ONLY after the exact-approval claim
+     * above has already failed — a human's decision about THIS action always
+     * outranks a standing pre-authorisation, and is spent first.
+     *
+     * Claim mode only: minting is a side effect, and the peek seam exists to
+     * decide without one. A peeking seam therefore parks the call, which is the
+     * stricter answer.
+     *
+     * Also only on the TIER approval path: a tripped spend cap
+     * ({@see enforceArgumentCaps()}) is a budget the human set on top of the
+     * tier, and a pre-approval of a verb is not consent to exceed it.
+     *
+     * @param array<string, mixed> $args
+     */
+    private function claimUnderGrant(string $verb, array $args, ?string &$reservedId, ?string &$grantId): bool
+    {
+        if ($this->grants === null) {
+            return false;
+        }
+
+        $minted = $this->grants->mint($verb, $args);
+        if ($minted === null) {
+            return false;
+        }
+
+        // Claim the row the grant just minted through the ORDINARY path, so a
+        // grant-authorised call is reserved, finalized and rolled back by exactly
+        // the same machinery a human-approved one is.
+        if (!$this->claim($verb, $args, $reservedId)) {
+            // Should not happen (the row was written for these exact args), so
+            // fail closed and hand the reservation back rather than proceeding
+            // on an approval nothing can prove was claimed.
+            $this->grants->release($minted);
+
+            return false;
+        }
+
+        $grantId = $minted;
+
+        return true;
     }
 
     /**

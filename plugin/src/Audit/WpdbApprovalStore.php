@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Audit;
 
 use Specflux\AgentSafety\Approval\ApprovalStore;
+use Specflux\AgentSafety\Plugin\Approval\ApprovalMinter;
 use Specflux\AgentSafety\Plugin\Support\Schema;
 use Specflux\AgentSafety\Plugin\Support\SummaryMarkup;
 use wpdb;
@@ -30,7 +31,7 @@ use wpdb;
  *  - All timestamps are stored and compared in UTC (UTC_TIMESTAMP()) to avoid
  *    server-timezone drift in the TTL checks.
  */
-final class WpdbApprovalStore implements ApprovalStore
+final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
 {
     /** Approved-grant lifetime. After this the grant is dead even if unused. */
     private const TTL_SECONDS = 900; // 15 minutes
@@ -134,6 +135,64 @@ final class WpdbApprovalStore implements ApprovalStore
         );
 
         return $affected === 1 ? $token : null;
+    }
+
+    /**
+     * {@see ApprovalMinter::mintApproved()} — write a row that is ALREADY
+     * `approved`, on the strength of a pre-approval grant the same human issued
+     * earlier (AS-12).
+     *
+     * Three deliberate differences from {@see approve()}:
+     *  - no bearer token is minted (`token_hash` stays NULL), so the record can
+     *    only ever be claimed BY REFERENCE by the exact principal the grant was
+     *    issued to. There is no human here to show a token to, and an
+     *    unreceived credential is one nobody can revoke.
+     *  - it is bound to the REAL call arguments via $argsHash exactly like any
+     *    other approval, so the grant's blast radius is still one exact action.
+     *  - `approver` is the GRANTOR and `grant_id` records which grant authorised
+     *    it, so the audit trail can say "auto-approved under plan grant by X".
+     *
+     * The grant window, not the pre-approval's own lifetime, is what bounds this
+     * record: it carries the same short {@see TTL_SECONDS} as a freshly approved
+     * request, because it exists only to be reserved by the call happening RIGHT
+     * NOW. A leftover row is therefore dead within minutes even if the call never
+     * comes back to claim it.
+     */
+    public function mintApproved(
+        string $verb,
+        string $argsHash,
+        string $summary,
+        string $correlationId,
+        string $auditEventId,
+        ?string $subject,
+        ?int $approver,
+        ?string $grantId,
+    ): ?string {
+        $this->ensureTable();
+
+        $approvalId = 'apr_' . $this->uuid();
+        $now = time();
+
+        $inserted = $this->db->insert(
+            $this->table(),
+            [
+                'approval_id' => $approvalId,
+                'verb' => $verb,
+                'args_hash' => $argsHash,
+                'summary' => $summary,
+                'correlation_id' => $correlationId,
+                'audit_event_id' => $auditEventId,
+                'key_id' => $subject,
+                'status' => 'approved',
+                'approver' => $approver,
+                'grant_id' => $grantId,
+                'created_ts' => gmdate('Y-m-d H:i:s', $now),
+                'expires_ts' => gmdate('Y-m-d H:i:s', $now + self::TTL_SECONDS),
+            ],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s'],
+        );
+
+        return $inserted === 1 ? $approvalId : null;
     }
 
     public function reject(string $approvalId, int $approver): bool

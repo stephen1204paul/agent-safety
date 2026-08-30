@@ -6,6 +6,7 @@ namespace Specflux\AgentSafety\Plugin\Hooks;
 
 use Specflux\AgentSafety\Approval\ApprovalStore;
 use Specflux\AgentSafety\Plugin\Support\ExecutionResult;
+use Specflux\AgentSafety\Plugin\Verdict\GrantGate;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Verdict\Hints;
 use Specflux\AgentSafety\Plugin\Verdict\VerdictMode;
@@ -45,6 +46,21 @@ final class AbilityPermissionGate
     private array $reserved = [];
 
     /**
+     * approval id => the pre-approval grant (AS-12) whose reservation minted it.
+     *
+     * A grant's count is decremented when the reservation is spent and must be
+     * given back on EVERY path where the approval is rolled back, or a human's
+     * budget is charged for an action that never ran. In-memory and
+     * request-scoped, exactly like $reserved: the mint, the reserve and the
+     * finalize/rollback all happen inside one request. A process that dies
+     * between them leaks the count until the grant's TTL — which fails closed
+     * (fewer calls authorised), the safe direction.
+     *
+     * @var array<string, string>
+     */
+    private array $grantByApproval = [];
+
+    /**
      * @param list<string> $governedNamespaces Ability-id prefixes this gate governs
      *                                          (contributed by integrations + the
      *                                          `agent_safety_governed_namespaces`
@@ -56,6 +72,7 @@ final class AbilityPermissionGate
         private readonly PackResolver $packs,
         private readonly ?ApprovalStore $approvals = null,
         private readonly array $governedNamespaces = [],
+        private readonly ?GrantGate $grants = null,
     ) {
     }
 
@@ -69,6 +86,17 @@ final class AbilityPermissionGate
             // Spend a reservation only when the action truly executed: finalize on
             // success, roll back on failure, and release anything still reserved at
             // shutdown (a fatal / abort before execution).
+            //
+            // `wp_before_execute_ability` is the SAME sweep applied one call
+            // earlier. Core's WP_Ability::execute() returns early when the
+            // execute callback hands back a WP_Error, so `wp_after_execute_ability`
+            // never fires for a refused write and onExecuted() never sees it.
+            // With only the shutdown sweep, a reservation for a refused action
+            // was held for the rest of the request — and one request here can
+            // carry a whole agent loop, so an agent retrying a write its own
+            // validator refused burned a human's pre-approval on writes that
+            // never happened, then parked for an approval already given.
+            add_action('wp_before_execute_ability', [$this, 'onBeforeExecute'], 10, 2);
             add_action('wp_after_execute_ability', [$this, 'onExecuted'], 10, 3);
             add_action('shutdown', [$this, 'onShutdown'], 0);
         }
@@ -115,7 +143,7 @@ final class AbilityPermissionGate
 
             $verdict = $pipeline->judge($name, is_array($input) ? $input : [], $pack, $hints, VerdictMode::Claim);
             if ($verdict->reservedApprovalId !== null) {
-                $self->remember($name, $verdict->reservedApprovalId);
+                $self->remember($name, $verdict->reservedApprovalId, $verdict->grantId);
             }
 
             return $verdict->error() ?? true;
@@ -136,10 +164,35 @@ final class AbilityPermissionGate
         return false;
     }
 
-    /** Record a reservation so {@see onExecuted} can finalize it after the action runs. */
-    private function remember(string $verb, string $approvalId): void
+    /**
+     * Record a reservation so {@see onExecuted} can finalize it after the action
+     * runs — and, when a pre-approval grant paid for it, which grant to give the
+     * count back to if it does not.
+     */
+    private function remember(string $verb, string $approvalId, ?string $grantId = null): void
     {
         $this->reserved[$verb][] = $approvalId;
+
+        if ($grantId !== null && $grantId !== '') {
+            $this->grantByApproval[$approvalId] = $grantId;
+        }
+    }
+
+    /**
+     * Release the approval AND, when a grant paid for it, that grant's
+     * reservation. "Consume on execution success" applies to both: a grant's
+     * count is sealed by finalize and restored by rollback, never spent on an
+     * action that did not happen.
+     */
+    private function rollback(string $approvalId): void
+    {
+        $this->approvals?->rollback($approvalId);
+
+        $grantId = $this->grantByApproval[$approvalId] ?? null;
+        if ($grantId !== null) {
+            unset($this->grantByApproval[$approvalId]);
+            $this->grants?->release($grantId);
+        }
     }
 
     /**
@@ -163,9 +216,56 @@ final class AbilityPermissionGate
         }
 
         if (ExecutionResult::isSuccess($result)) {
+            // Sealed: the irreversible action truly ran, so the grant's
+            // decremented count stands.
             $this->approvals->finalize($approvalId);
+            unset($this->grantByApproval[$approvalId]);
         } else {
-            $this->approvals->rollback($approvalId);
+            $this->rollback($approvalId);
+        }
+    }
+
+    /**
+     * A NEW call of this ability is about to execute, so any reservation still
+     * held from an EARLIER call of it never reached onExecuted — exactly the
+     * condition {@see onShutdown} sweeps, just recognised at the next call
+     * boundary instead of at the end of the request. Release those, and keep
+     * only the reservation belonging to the call now starting.
+     *
+     * The current call's approval id may sit on the stack more than once: a
+     * caller that checks permissions itself and then calls execute() runs the
+     * permission callback twice, and the second run re-claims the SAME approval
+     * row. So the rule is "everything that is not the current approval id",
+     * not "everything but the last entry".
+     *
+     * Idempotent by construction: {@see rollback()} forgets the grant behind an
+     * approval as it releases it, so a duplicate entry swept later credits
+     * nothing a second time.
+     *
+     * @param mixed $input
+     */
+    public function onBeforeExecute(string $name, $input = null): void
+    {
+        unset($input);
+
+        if ($this->approvals === null || empty($this->reserved[$name])) {
+            return;
+        }
+
+        $current = end($this->reserved[$name]);
+        $keep = [];
+        $stale = [];
+        foreach ($this->reserved[$name] as $approvalId) {
+            if ($approvalId === $current) {
+                $keep[] = $approvalId;
+                continue;
+            }
+            $stale[] = $approvalId;
+        }
+
+        $this->reserved[$name] = $keep;
+        foreach ($stale as $approvalId) {
+            $this->rollback($approvalId);
         }
     }
 
@@ -182,9 +282,10 @@ final class AbilityPermissionGate
 
         foreach ($this->reserved as $ids) {
             foreach ($ids as $approvalId) {
-                $this->approvals->rollback($approvalId);
+                $this->rollback($approvalId);
             }
         }
         $this->reserved = [];
+        $this->grantByApproval = [];
     }
 }

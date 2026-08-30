@@ -36,7 +36,7 @@ parameters:
             # attacker-controlled, so this is not a SQL-injection risk.
             message: '#^Parameter \#1 \$query of method wpdb::prepare\(\) expects literal\-string, non\-falsy\-string given\.$#'
             path: plugin/src/*
-            count: 12
+            count: 19
         -
             # wpdb::prepare()'s stub declares its return as `string|void` (real
             # wpdb only returns void for an EMPTY $query, which never happens
@@ -47,7 +47,7 @@ parameters:
             # behavioral defect.
             message: '#^Parameter \#1 \$query of method wpdb::query\(\) expects string, string\|null given\.$#'
             path: plugin/src/*
-            count: 6
+            count: 10
         -
             # Schema::ensureDbDelta()'s require_once is a real-WordPress-only
             # fallback (only reached when dbDelta() isn't already defined,

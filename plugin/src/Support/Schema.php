@@ -7,9 +7,10 @@ namespace Specflux\AgentSafety\Plugin\Support;
 use wpdb;
 
 /**
- * Single source of truth for the plugin's two custom tables
- * ({@see \Specflux\AgentSafety\Plugin\Audit\WpdbAuditSink} and
- * {@see \Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore}) and their
+ * Single source of truth for the plugin's three custom tables
+ * ({@see \Specflux\AgentSafety\Plugin\Audit\WpdbAuditSink},
+ * {@see \Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore} and
+ * {@see \Specflux\AgentSafety\Plugin\Approval\WpdbGrantStore}) and their
  * versioned installation.
  *
  * {@see install()} runs on activation (and on {@see maybeUpgrade()} whenever the
@@ -32,7 +33,7 @@ final class Schema
      * Bump whenever the column defintions below change; {@see maybeUpgrade()}
      * reinstalls (dbDelta-diffs) once the stored option falls behind this.
      */
-    public const VERSION = '1';
+    public const VERSION = '2';
 
     public const VERSION_OPTION = 'agsafe_schema_version';
 
@@ -44,6 +45,17 @@ final class Schema
     public static function approvalsTable(wpdb $db): string
     {
         return $db->prefix . 'agsafe_approvals';
+    }
+
+    /**
+     * Pre-approval grants (AS-12). A SEPARATE table on purpose: a grant is not
+     * an approval (it binds to a correlation scope + subject, never to one
+     * exact action) and it must survive a request, so it is neither a row in
+     * the approvals table nor a transient.
+     */
+    public static function grantsTable(wpdb $db): string
+    {
+        return $db->prefix . 'agent_safety_grants';
     }
 
     /** Column/key body (no surrounding `CREATE TABLE ... ( )`) for the audit log table. */
@@ -84,6 +96,7 @@ final class Schema
                 approver BIGINT NULL,
                 reserved_req VARCHAR(64) NULL,
                 reserved_ts DATETIME NULL,
+                grant_id VARCHAR(64) NULL,
                 created_ts DATETIME NOT NULL,
                 pending_expires_ts DATETIME NULL,
                 expires_ts DATETIME NULL,
@@ -94,6 +107,34 @@ final class Schema
                 KEY verb_args (verb, args_hash),
                 KEY ref (key_id, verb, args_hash),
                 KEY token_hash (token_hash)";
+    }
+
+    /**
+     * Column/key body (no surrounding `CREATE TABLE ... ( )`) for the grants
+     * table. The index mirrors the ONLY lookup the gate performs
+     * ({@see \Specflux\AgentSafety\Plugin\Approval\WpdbGrantStore::reserve()}):
+     * (correlation_id, verb, status). `subject` is deliberately NOT in the key
+     * — the candidate set per (correlation, verb) is tiny, and the subject
+     * comparison stays an exact string match in the WHERE clause where the
+     * "empty subject never matches" rule is enforced.
+     */
+    public static function grantsColumns(): string
+    {
+        return "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                grant_id VARCHAR(64) NOT NULL,
+                correlation_id VARCHAR(64) NOT NULL,
+                verb VARCHAR(191) NOT NULL,
+                remaining_count INT NOT NULL DEFAULT 0,
+                subject VARCHAR(64) NULL,
+                granted_by BIGINT NULL,
+                plan_step_id VARCHAR(64) NULL,
+                status VARCHAR(20) NOT NULL,
+                created_ts DATETIME NOT NULL,
+                expires_ts DATETIME NOT NULL,
+                revoked_ts DATETIME NULL,
+                PRIMARY KEY  (id),
+                UNIQUE KEY grant_id (grant_id),
+                KEY scope (correlation_id, verb, status)";
     }
 
     /**
@@ -109,6 +150,7 @@ final class Schema
         dbDelta([
             'CREATE TABLE ' . self::auditLogTable($db) . " (\n" . self::auditLogColumns() . "\n) {$charset};",
             'CREATE TABLE ' . self::approvalsTable($db) . " (\n" . self::approvalsColumns() . "\n) {$charset};",
+            'CREATE TABLE ' . self::grantsTable($db) . " (\n" . self::grantsColumns() . "\n) {$charset};",
         ]);
 
         update_option(self::VERSION_OPTION, self::VERSION, false);

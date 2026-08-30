@@ -114,6 +114,30 @@ final class DecisionRecorder
             return null;
         }
 
+        return $this->approvals->request(
+            $verb,
+            ApprovalBinding::hash($verb, $input),
+            $this->summaryFor($verb, $input),
+            RequestContext::correlation(),
+            $auditEventId,
+            RequestContext::tokenId(),
+        );
+    }
+
+    /**
+     * The summary as it will be PERSISTED: the flat summary, through the AS-11
+     * host filter, provenance-tagged when the filter actually changed it.
+     *
+     * Extracted so every writer of an approval row goes through one path — the
+     * pending request above AND the already-approved row a pre-approval grant
+     * mints ({@see \Specflux\AgentSafety\Plugin\Verdict\GrantGate}). "The filter
+     * fires for grant-minted rows too" is then true by construction rather than
+     * by two call sites remembering to agree.
+     *
+     * @param array<string, mixed> $input
+     */
+    public function summaryFor(string $verb, array $input): string
+    {
         // AS-11: a host may enrich the human-facing summary (e.g. SenroFlux's
         // rich publish rows). The filter may narrow or reword — it can never
         // touch the verb, the binding hash or the principal, so it can never
@@ -129,18 +153,10 @@ final class DecisionRecorder
         // opted that row into markup rendering.
         $flat = $this->summarize($verb, $input);
         $filtered = apply_filters('agent_safety_approval_summary', $flat, $verb, $input);
-        $summary = is_string($filtered) && $filtered !== $flat
+
+        return is_string($filtered) && $filtered !== $flat
             ? SummaryMarkup::wrap($filtered)
             : $flat;
-
-        return $this->approvals->request(
-            $verb,
-            ApprovalBinding::hash($verb, $input),
-            $summary,
-            RequestContext::correlation(),
-            $auditEventId,
-            RequestContext::tokenId(),
-        );
     }
 
     /**

@@ -35,13 +35,22 @@ final class SchemaTest extends TestCase
         $this->assertSame(Schema::VERSION, $GLOBALS['wpas_test_options'][Schema::VERSION_OPTION]);
     }
 
-    public function testInstallHandsBothTableStatementsToDbDelta(): void
+    public function testInstallHandsEveryTableStatementToDbDelta(): void
     {
         Schema::install(new wpdb());
 
-        $this->assertCount(2, $GLOBALS['wpas_test_dbdelta_queries']);
+        $this->assertCount(3, $GLOBALS['wpas_test_dbdelta_queries']);
         $this->assertStringContainsString('wp_agsafe_audit_log', $GLOBALS['wpas_test_dbdelta_queries'][0]);
         $this->assertStringContainsString('wp_agsafe_approvals', $GLOBALS['wpas_test_dbdelta_queries'][1]);
+        $this->assertStringContainsString('wp_agent_safety_grants', $GLOBALS['wpas_test_dbdelta_queries'][2]);
+    }
+
+    public function testTheGrantsTableIndexesTheOnlyLookupTheGatePerforms(): void
+    {
+        Schema::install(new wpdb());
+
+        $grants = $GLOBALS['wpas_test_dbdelta_queries'][2];
+        $this->assertStringContainsString('KEY scope (correlation_id, verb, status)', $grants);
     }
 
     public function testInstallStatementsNeverIncludeIfNotExists(): void
@@ -71,7 +80,7 @@ final class SchemaTest extends TestCase
 
         Schema::maybeUpgrade(new wpdb());
 
-        $this->assertCount(2, $GLOBALS['wpas_test_dbdelta_queries']);
+        $this->assertCount(3, $GLOBALS['wpas_test_dbdelta_queries']);
         $this->assertSame(Schema::VERSION, $GLOBALS['wpas_test_options'][Schema::VERSION_OPTION]);
     }
 

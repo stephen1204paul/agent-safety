@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Specflux\AgentSafety\Plugin\Support;
 
+use Specflux\AgentSafety\Plugin\Approval\WpdbGrantStore;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 
 /**
- * Hourly cron sweep of the approvals table. Without it, expired-and-unactioned
- * approval rows accumulate forever — see
- * {@see WpdbApprovalStore::deleteExpired()} for exactly which rows qualify and
+ * Hourly cron sweep of the approvals table — and, when grants are wired, of the
+ * grants table too. Without it, expired-and-unactioned rows accumulate forever;
+ * see {@see WpdbApprovalStore::deleteExpired()} and
+ * {@see WpdbGrantStore::deleteExpired()} for exactly which rows qualify and
  * which are kept as audit anchors.
  *
  * {@see activate()}/{@see deactivate()} own only the wp-cron scheduling and are
@@ -34,9 +36,15 @@ final class ApprovalSweep
         wp_clear_scheduled_hook(self::HOOK);
     }
 
-    /** The cron callback: sweep with the current UTC time. */
-    public static function run(WpdbApprovalStore $store): void
+    /**
+     * The cron callback: sweep both tables with the SAME current UTC time, so a
+     * grant and the approval it minted can never disagree about whether their
+     * window has lapsed.
+     */
+    public static function run(WpdbApprovalStore $store, ?WpdbGrantStore $grants = null): void
     {
-        $store->deleteExpired(gmdate('Y-m-d H:i:s'));
+        $now = gmdate('Y-m-d H:i:s');
+        $store->deleteExpired($now);
+        $grants?->deleteExpired($now);
     }
 }

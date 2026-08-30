@@ -24,6 +24,13 @@ final class ApprovalSummary
         public readonly string $correlationId,
         public readonly ?string $createdAtUtc,
         public readonly ?string $pendingExpiresAtUtc,
+        /**
+         * The pre-approval grant that auto-approved this row (AS-12), or null
+         * for an ordinary human click. Its presence is what lets a consumer
+         * render "auto-approved under plan grant" rather than implying a human
+         * reviewed this exact action.
+         */
+        public readonly ?string $grantId = null,
     ) {
     }
 
@@ -50,6 +57,7 @@ final class ApprovalSummary
             correlationId: $str($row['correlation_id'] ?? null),
             createdAtUtc: isset($row['created_ts']) && is_string($row['created_ts']) ? $row['created_ts'] : null,
             pendingExpiresAtUtc: isset($row['pending_expires_ts']) && is_string($row['pending_expires_ts']) ? $row['pending_expires_ts'] : null,
+            grantId: isset($row['grant_id']) && is_string($row['grant_id']) && $row['grant_id'] !== '' ? $row['grant_id'] : null,
         );
     }
 }
