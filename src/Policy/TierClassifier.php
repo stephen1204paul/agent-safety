@@ -42,7 +42,14 @@ final class TierClassifier
 
         foreach ($this->rules as $rule) {
             $elevated = $rule->apply($verb, $args, $tier);
-            if ($elevated !== null) {
+            // A rule may only ever RAISE the tier. The interface has always said
+            // so, but until AS-12 nothing enforced it and a rule returning a
+            // LOWER tier silently won — which would let one buggy or hostile rule
+            // demote an irreversible verb out of the approval gate entirely.
+            // Enforcing it here rather than trusting each rule is what makes it
+            // safe to accept rules from outside the bundled integration modules
+            // (`agent_safety_elevation_rules`): the seam can narrow, never widen.
+            if ($elevated !== null && $elevated->value > $tier->value) {
                 $tier = $elevated;
             }
         }

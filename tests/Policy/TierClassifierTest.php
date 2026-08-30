@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Tests\Policy;
 
 use PHPUnit\Framework\TestCase;
+use Specflux\AgentSafety\Policy\ElevationRule;
 use Specflux\AgentSafety\Policy\Tier;
 use Specflux\AgentSafety\Policy\TierClassifier;
 use Specflux\AgentSafety\Policy\VerbCatalog;
@@ -77,5 +78,48 @@ final class TierClassifierTest extends TestCase
         $this->assertTrue($classifier->isReadonlyButWrites('woocommerce/products-update', true, ['id' => 1]));
         $this->assertFalse($classifier->isReadonlyButWrites('woocommerce/products-list', true, []));
         $this->assertFalse($classifier->isReadonlyButWrites('woocommerce/products-update', false, ['id' => 1]));
+    }
+
+    public function testARuleCanNeverLowerATier(): void
+    {
+        // The ElevationRule contract has always said rules only elevate; this is
+        // the enforcement. Without it one buggy or hostile rule could demote an
+        // irreversible verb straight out of the approval gate — and the
+        // `agent_safety_elevation_rules` seam lets rules come from outside the
+        // bundled integration modules.
+        $catalog = new VerbCatalog();
+        $catalog->register(['demo/delete-everything' => Tier::Irreversible]);
+        $lowering = new class implements ElevationRule {
+            public function apply(string $verb, array $args, Tier $currentTier): ?Tier
+            {
+                return Tier::Reversible;
+            }
+        };
+
+        $classifier = new TierClassifier($catalog, [$lowering]);
+
+        $this->assertSame(Tier::Irreversible, $classifier->classify('demo/delete-everything'));
+    }
+
+    public function testALaterRuleCannotUndoAnEarlierRulesElevation(): void
+    {
+        $catalog = new VerbCatalog();
+        $catalog->register(['demo/save' => Tier::Reversible]);
+        $raise = new class implements ElevationRule {
+            public function apply(string $verb, array $args, Tier $currentTier): ?Tier
+            {
+                return Tier::Irreversible;
+            }
+        };
+        $lower = new class implements ElevationRule {
+            public function apply(string $verb, array $args, Tier $currentTier): ?Tier
+            {
+                return Tier::SideEffecting;
+            }
+        };
+
+        $classifier = new TierClassifier($catalog, [$raise, $lower]);
+
+        $this->assertSame(Tier::Irreversible, $classifier->classify('demo/save'));
     }
 }
