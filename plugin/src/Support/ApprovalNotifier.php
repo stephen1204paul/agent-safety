@@ -65,7 +65,7 @@ final class ApprovalNotifier
                 "An agent action is awaiting human approval.\n\n"
                 . "Action: %s\nApproval id: %s\n\n"
                 . "Review, then approve or reject (requires login):\n%s\n",
-                $summary,
+                SummaryMarkup::unwrap($summary),
                 $approvalId,
                 $this->reviewUrl(),
             ),

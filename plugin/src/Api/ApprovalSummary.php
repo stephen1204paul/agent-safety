@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Specflux\AgentSafety\Plugin\Api;
 
+use Specflux\AgentSafety\Plugin\Support\SummaryMarkup;
+
 /**
  * A read-only view of one approval row, shaped for PROGRAMMATIC consumers
  * (the wp-admin page renders raw rows itself; this is the API surface).
@@ -41,7 +43,10 @@ final class ApprovalSummary
             id: $str($row['approval_id'] ?? null),
             verb: $str($row['verb'] ?? null),
             status: $str($row['status'] ?? null),
-            summary: $str($row['summary'] ?? null),
+            // The stored value may carry the host-authored provenance tag
+            // ({@see SummaryMarkup}); that tag is a rendering concern of the
+            // approval screen and never part of this API surface.
+            summary: SummaryMarkup::unwrap($str($row['summary'] ?? null)),
             correlationId: $str($row['correlation_id'] ?? null),
             createdAtUtc: isset($row['created_ts']) && is_string($row['created_ts']) ? $row['created_ts'] : null,
             pendingExpiresAtUtc: isset($row['pending_expires_ts']) && is_string($row['pending_expires_ts']) ? $row['pending_expires_ts'] : null,

@@ -118,12 +118,25 @@ final class DecisionRecorder
         // rich publish rows). The filter may narrow or reword — it can never
         // touch the verb, the binding hash or the principal, so it can never
         // loosen what the approval binds to.
-        $summary = apply_filters('agent_safety_approval_summary', $this->summarize($verb, $input), $verb, $input);
+        //
+        // The flat summary interpolates RAW AGENT ARGUMENTS, so it is never
+        // markup. Only a value the filter actually changed is host-authored,
+        // and only that one is tagged for markup rendering on the approval
+        // screen ({@see SummaryMarkup}); anything else — including a filter
+        // that returned its input unchanged, or a non-string — stays plain
+        // text and is escaped there. A filter that splices agent argument
+        // values into its own markup therefore owns escaping them: it has
+        // opted that row into markup rendering.
+        $flat = $this->summarize($verb, $input);
+        $filtered = apply_filters('agent_safety_approval_summary', $flat, $verb, $input);
+        $summary = is_string($filtered) && $filtered !== $flat
+            ? SummaryMarkup::wrap($filtered)
+            : $flat;
 
         return $this->approvals->request(
             $verb,
             ApprovalBinding::hash($verb, $input),
-            is_string($summary) ? $summary : $this->summarize($verb, $input),
+            $summary,
             RequestContext::correlation(),
             $auditEventId,
             RequestContext::tokenId(),
