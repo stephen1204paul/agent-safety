@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Tests\Fakes;
 
 use Specflux\AgentSafety\Approval\ApprovalStore;
+use Specflux\AgentSafety\Plugin\Approval\ApprovalMinter;
 
 /**
  * Hand-rolled in-memory fake (house style: no mocking framework, see
@@ -15,13 +16,19 @@ use Specflux\AgentSafety\Approval\ApprovalStore;
  * two call sites (request(), peekApproved()) observable and controllable
  * from a test.
  */
-final class FakeApprovalStore implements ApprovalStore
+final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
 {
     /** @var array<string, array{verb: string, args_hash: string, summary: string, correlation_id: string, audit_event_id: string, subject: ?string, status: string}> */
     public array $rows = [];
 
     /** @var list<array{verb: string, args_hash: string, summary: string, correlation_id: string, audit_event_id: string, subject: ?string}> */
     public array $requestCalls = [];
+
+    /** @var list<array{verb: string, args_hash: string, summary: string, subject: ?string, approver: ?int, grant_id: ?string}> */
+    public array $mintCalls = [];
+
+    /** Test control knob: make mintApproved() report a failed write. */
+    public bool $mintFails = false;
 
     /** Test control knob: the id request() returns next; auto-generated when null. */
     public ?string $nextId = null;
@@ -71,6 +78,48 @@ final class FakeApprovalStore implements ApprovalStore
             'audit_event_id' => $auditEventId,
             'subject' => $subject,
             'status' => 'pending',
+        ];
+
+        return $id;
+    }
+
+    /**
+     * {@see ApprovalMinter::mintApproved()} -- an ALREADY-approved row, as a
+     * pre-approval grant writes it. Deliberately no token: a minted record is
+     * claimable by-reference only.
+     */
+    public function mintApproved(
+        string $verb,
+        string $argsHash,
+        string $summary,
+        string $correlationId,
+        string $auditEventId,
+        ?string $subject,
+        ?int $approver,
+        ?string $grantId,
+    ): ?string {
+        $this->mintCalls[] = [
+            'verb' => $verb,
+            'args_hash' => $argsHash,
+            'summary' => $summary,
+            'subject' => $subject,
+            'approver' => $approver,
+            'grant_id' => $grantId,
+        ];
+
+        if ($this->mintFails) {
+            return null;
+        }
+
+        $id = $this->mintId();
+        $this->rows[$id] = [
+            'verb' => $verb,
+            'args_hash' => $argsHash,
+            'summary' => $summary,
+            'correlation_id' => $correlationId,
+            'audit_event_id' => $auditEventId,
+            'subject' => $subject,
+            'status' => 'approved',
         ];
 
         return $id;

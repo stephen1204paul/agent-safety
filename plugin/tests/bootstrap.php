@@ -49,6 +49,7 @@ require_once __DIR__ . '/stubs/wpas-clock.php';
 // Hand-rolled fakes used across the suite.
 require_once __DIR__ . '/Fakes/InMemoryAuditSink.php';
 require_once __DIR__ . '/Fakes/FakeApprovalStore.php';
+require_once __DIR__ . '/Fakes/FakeGrantStore.php';
 require_once __DIR__ . '/Fakes/FakeIdentityProvider.php';
 require_once __DIR__ . '/Fakes/FakeToolAnnotations.php';
 require_once __DIR__ . '/Fakes/FakeMcpTool.php';
