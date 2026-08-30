@@ -29,6 +29,11 @@ final class Verdict
      * @param ?string $eventId            Audit event id the verdict was recorded under (non-executing
      *                                    and shadowed verdicts only; allowed calls are audited at
      *                                    execution time).
+     * @param ?string $grantId            Pre-approval grant (AS-12) whose reservation THIS call spent.
+     *                                    The adapter must release it whenever it rolls the approval
+     *                                    back, so a human's budget is only charged for an action that
+     *                                    actually ran. Null when no grant was involved, including a
+     *                                    re-entrant claim that reused this request's earlier one.
      */
     public function __construct(
         public readonly string $verb,
@@ -39,6 +44,7 @@ final class Verdict
         public readonly bool $claimed = false,
         public readonly bool $shadowed = false,
         public readonly ?string $eventId = null,
+        public readonly ?string $grantId = null,
     ) {
     }
 

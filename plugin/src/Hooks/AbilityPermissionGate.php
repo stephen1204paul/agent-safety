@@ -6,6 +6,7 @@ namespace Specflux\AgentSafety\Plugin\Hooks;
 
 use Specflux\AgentSafety\Approval\ApprovalStore;
 use Specflux\AgentSafety\Plugin\Support\ExecutionResult;
+use Specflux\AgentSafety\Plugin\Verdict\GrantGate;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Verdict\Hints;
 use Specflux\AgentSafety\Plugin\Verdict\VerdictMode;
@@ -45,6 +46,21 @@ final class AbilityPermissionGate
     private array $reserved = [];
 
     /**
+     * approval id => the pre-approval grant (AS-12) whose reservation minted it.
+     *
+     * A grant's count is decremented when the reservation is spent and must be
+     * given back on EVERY path where the approval is rolled back, or a human's
+     * budget is charged for an action that never ran. In-memory and
+     * request-scoped, exactly like $reserved: the mint, the reserve and the
+     * finalize/rollback all happen inside one request. A process that dies
+     * between them leaks the count until the grant's TTL — which fails closed
+     * (fewer calls authorised), the safe direction.
+     *
+     * @var array<string, string>
+     */
+    private array $grantByApproval = [];
+
+    /**
      * @param list<string> $governedNamespaces Ability-id prefixes this gate governs
      *                                          (contributed by integrations + the
      *                                          `agent_safety_governed_namespaces`
@@ -56,6 +72,7 @@ final class AbilityPermissionGate
         private readonly PackResolver $packs,
         private readonly ?ApprovalStore $approvals = null,
         private readonly array $governedNamespaces = [],
+        private readonly ?GrantGate $grants = null,
     ) {
     }
 
@@ -115,7 +132,7 @@ final class AbilityPermissionGate
 
             $verdict = $pipeline->judge($name, is_array($input) ? $input : [], $pack, $hints, VerdictMode::Claim);
             if ($verdict->reservedApprovalId !== null) {
-                $self->remember($name, $verdict->reservedApprovalId);
+                $self->remember($name, $verdict->reservedApprovalId, $verdict->grantId);
             }
 
             return $verdict->error() ?? true;
@@ -136,10 +153,35 @@ final class AbilityPermissionGate
         return false;
     }
 
-    /** Record a reservation so {@see onExecuted} can finalize it after the action runs. */
-    private function remember(string $verb, string $approvalId): void
+    /**
+     * Record a reservation so {@see onExecuted} can finalize it after the action
+     * runs — and, when a pre-approval grant paid for it, which grant to give the
+     * count back to if it does not.
+     */
+    private function remember(string $verb, string $approvalId, ?string $grantId = null): void
     {
         $this->reserved[$verb][] = $approvalId;
+
+        if ($grantId !== null && $grantId !== '') {
+            $this->grantByApproval[$approvalId] = $grantId;
+        }
+    }
+
+    /**
+     * Release the approval AND, when a grant paid for it, that grant's
+     * reservation. "Consume on execution success" applies to both: a grant's
+     * count is sealed by finalize and restored by rollback, never spent on an
+     * action that did not happen.
+     */
+    private function rollback(string $approvalId): void
+    {
+        $this->approvals?->rollback($approvalId);
+
+        $grantId = $this->grantByApproval[$approvalId] ?? null;
+        if ($grantId !== null) {
+            unset($this->grantByApproval[$approvalId]);
+            $this->grants?->release($grantId);
+        }
     }
 
     /**
@@ -163,9 +205,12 @@ final class AbilityPermissionGate
         }
 
         if (ExecutionResult::isSuccess($result)) {
+            // Sealed: the irreversible action truly ran, so the grant's
+            // decremented count stands.
             $this->approvals->finalize($approvalId);
+            unset($this->grantByApproval[$approvalId]);
         } else {
-            $this->approvals->rollback($approvalId);
+            $this->rollback($approvalId);
         }
     }
 
@@ -182,9 +227,10 @@ final class AbilityPermissionGate
 
         foreach ($this->reserved as $ids) {
             foreach ($ids as $approvalId) {
-                $this->approvals->rollback($approvalId);
+                $this->rollback($approvalId);
             }
         }
         $this->reserved = [];
+        $this->grantByApproval = [];
     }
 }

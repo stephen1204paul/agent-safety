@@ -12,11 +12,14 @@ use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Plugin\Hooks\AbilityPermissionGate;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
+use Specflux\AgentSafety\Plugin\Support\GrantRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeApprovalStore;
+use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeGrantStore;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeIdentityProvider;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\InMemoryAuditSink;
+use Specflux\AgentSafety\Plugin\Verdict\GrantGate;
 use Specflux\AgentSafety\Plugin\Verdict\VerdictPipeline;
 use Specflux\AgentSafety\Policy\Tier;
 use Specflux\AgentSafety\Policy\TierClassifier;
@@ -48,6 +51,9 @@ final class AbilityPermissionGateTest extends TestCase
 {
     protected function setUp(): void
     {
+        RequestContext::reset();
+        remove_all_filters('agent_safety_enable_grants');
+        remove_all_filters('agent_safety_grant_eligible');
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_transients'] = [];
     }
@@ -55,6 +61,8 @@ final class AbilityPermissionGateTest extends TestCase
     protected function tearDown(): void
     {
         RequestContext::reset();
+        remove_all_filters('agent_safety_enable_grants');
+        remove_all_filters('agent_safety_grant_eligible');
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_transients'] = [];
     }
@@ -275,5 +283,97 @@ final class AbilityPermissionGateTest extends TestCase
         $gate->onExecuted('woocommerce/orders-list', $args, ['code' => 'rest_invalid', 'message' => 'bad', 'data' => ['status' => 400]]);
 
         $this->assertSame('approved', $approvals->rows[$id]['status']);
+    }
+
+    // --- AS-12: a pre-approval grant's count follows the same rule -----------
+
+    /**
+     * The same drive-to-a-reservation as {@see reservedGrant()}, except the
+     * approval was minted by a pre-approval GRANT rather than seeded as a human
+     * click. The grant's count is now decremented, so what happens to it on
+     * execution success/failure is the property under test.
+     *
+     * @return array{AbilityPermissionGate, FakeGrantStore, string, array<string, mixed>}
+     */
+    private function reservedUnderGrant(): array
+    {
+        add_filter('agent_safety_enable_grants', static fn (): bool => true);
+        add_filter('agent_safety_grant_eligible', static fn (): bool => true);
+
+        $verb = 'woocommerce/orders-list';
+        $pack = new Pack(name: 'grant-pack', allow: ['woocommerce/*'], approvalByClass: ['tier2' => true]);
+        $approvals = new FakeApprovalStore();
+        $grants = new FakeGrantStore();
+
+        $catalog = new VerbCatalog();
+        $catalog->register([$verb => Tier::Irreversible]);
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: ['test:token']),
+        ]));
+        $GLOBALS['wpas_test_options'][PackResolver::BINDINGS_OPTION] = ['test:token' => $pack->name];
+
+        $recorder = new DecisionRecorder(new InMemoryAuditSink(), $approvals);
+        $grantGate = new GrantGate($grants, $approvals, $recorder, new GrantRecorder());
+        $gate = new AbilityPermissionGate(
+            new VerdictPipeline(new Gate(new TierClassifier($catalog)), $recorder, $approvals, grants: $grantGate),
+            new PackResolver([$pack]),
+            $approvals,
+            ['woocommerce/'],
+            $grantGate,
+        );
+
+        $grantId = $grants->issue($verb, 2, 'test:token', 'senroflux:run:7', 5, 'step_1');
+        $callback = $gate->wrap(['permission_callback' => static fn () => true], $verb)['permission_callback'];
+        $callArgs = ['order_id' => 1042];
+
+        $this->assertTrue(RequestContext::withCorrelation(
+            'senroflux:run:7',
+            static fn () => $callback($callArgs)
+        ));
+        $this->assertSame(1, $grants->get($grantId)?->remainingCount, 'the reservation was spent up front');
+
+        return [$gate, $grants, $grantId, $callArgs];
+    }
+
+    public function testASuccessfulExecutionSealsTheGrantsSpentCount(): void
+    {
+        [$gate, $grants, $grantId, $args] = $this->reservedUnderGrant();
+
+        $gate->onExecuted('woocommerce/orders-list', $args, ['id' => 1042, 'status' => 'completed']);
+
+        $this->assertSame(1, $grants->get($grantId)?->remainingCount);
+    }
+
+    public function testAFailedExecutionRestoresTheGrantsCount(): void
+    {
+        // The action did not run, so the human's budget must not be charged.
+        [$gate, $grants, $grantId, $args] = $this->reservedUnderGrant();
+
+        $gate->onExecuted('woocommerce/orders-list', $args, ['code' => 'rest_invalid', 'message' => 'bad', 'data' => ['status' => 400]]);
+
+        $this->assertSame(2, $grants->get($grantId)?->remainingCount);
+    }
+
+    public function testAnAbortBeforeExecutionRestoresTheGrantsCountAtShutdown(): void
+    {
+        // A fatal or an abort between the permission check and the action:
+        // shutdown releases the approval AND the grant behind it.
+        [$gate, $grants, $grantId] = $this->reservedUnderGrant();
+
+        $gate->onShutdown();
+
+        $this->assertSame(2, $grants->get($grantId)?->remainingCount);
+    }
+
+    public function testTheGrantIsReleasedExactlyOnce(): void
+    {
+        // onExecuted already rolled it back; the shutdown sweep must not credit
+        // the same reservation a second time.
+        [$gate, $grants, $grantId, $args] = $this->reservedUnderGrant();
+
+        $gate->onExecuted('woocommerce/orders-list', $args, ['code' => 'rest_invalid', 'message' => 'bad', 'data' => ['status' => 400]]);
+        $gate->onShutdown();
+
+        $this->assertSame(2, $grants->get($grantId)?->remainingCount);
     }
 }
