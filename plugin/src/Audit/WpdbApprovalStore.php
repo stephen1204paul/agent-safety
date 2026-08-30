@@ -6,6 +6,7 @@ namespace Specflux\AgentSafety\Plugin\Audit;
 
 use Specflux\AgentSafety\Approval\ApprovalStore;
 use Specflux\AgentSafety\Plugin\Support\Schema;
+use Specflux\AgentSafety\Plugin\Support\SummaryMarkup;
 use wpdb;
 
 /**
@@ -96,8 +97,11 @@ final class WpdbApprovalStore implements ApprovalStore
         // reuse path above returns early, so a retrying agent hammering the
         // same blocked call never re-notifies the humans who must clear it.
         // Consumed by Support\ApprovalNotifier (email + webhook) and open to
-        // any site code that wants its own routing.
-        do_action('agent_safety_approval_requested', $approvalId, $verb, $summary);
+        // any site code that wants its own routing. Subscribers get the summary
+        // as authored, without the host-authored provenance tag the approval
+        // SCREEN uses to decide escaping ({@see SummaryMarkup}) — that tag is a
+        // rendering concern and never part of this hook's contract.
+        do_action('agent_safety_approval_requested', $approvalId, $verb, SummaryMarkup::unwrap($summary));
 
         return $approvalId;
     }

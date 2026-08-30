@@ -378,13 +378,62 @@ if (!function_exists('admin_url')) {
     }
 }
 
+if (!function_exists('wpas_test_kses_protocol_ok')) {
+    /**
+     * The shim's stand-in for core's wp_kses_bad_protocol(): is this URL-bearing
+     * attribute value safe to keep?
+     *
+     * Core normalises before it compares a scheme, and so must this shim — a
+     * shim that waves `javascript:` through would let the summary-cell tests
+     * pass while the real screen is still injectable, which is exactly the
+     * failure this harness exists to catch. Normalisation covers the tricks a
+     * browser itself tolerates: entity-encoded colons (`&#58;`, `&#x3a;`,
+     * `&colon;`), leading/embedded whitespace and control characters
+     * (`java\tscript:`), and scheme case (`JaVaScRiPt:`).
+     *
+     * Relative, root-relative, query-only and anchor-only URLs have no scheme
+     * and are kept. Anything with a scheme outside the allow-list is REJECTED —
+     * the shim drops the whole attribute where core strips just the scheme;
+     * stricter than core, and never the other way round.
+     */
+    function wpas_test_kses_protocol_ok(string $value): bool
+    {
+        $safe_protocols = ['http', 'https', 'mailto'];
+
+        // Decode the colon tricks first (with or without the closing semicolon,
+        // which browsers tolerate), then html_entity_decode for the rest.
+        $normalised = preg_replace(['/&#0*58;?/i', '/&#x0*3a;?/i'], ':', $value);
+        if (!is_string($normalised)) {
+            return false; // Fail closed: could not normalise, so cannot vouch for it.
+        }
+        $normalised = str_ireplace('&colon;', ':', $normalised);
+        $normalised = html_entity_decode($normalised, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        // Whitespace and control characters are ignored by browsers inside a scheme.
+        $normalised = preg_replace('/[\x00-\x20\x7F]+/', '', $normalised);
+        if (!is_string($normalised)) {
+            return false; // Fail closed.
+        }
+
+        if ($normalised === '') {
+            return true; // An empty href is inert.
+        }
+        if (!preg_match('#^([a-zA-Z][a-zA-Z0-9+.\-]*):#', $normalised, $scheme)) {
+            return true; // No scheme at all: relative / root-relative / `?` / `#`.
+        }
+
+        return in_array(strtolower($scheme[1]), $safe_protocols, true);
+    }
+}
+
 if (!function_exists('wp_kses')) {
     /**
      * SHIM for the summary-cell contract (AS-11): strips every tag not in the
-     * allow-list and every attribute not allowed for its tag. Minimal stand-in
-     * - the REAL sanitisation check is a wp-env smoke against core's wp_kses;
-     * this shim only locks the call shape so the unit suite can exercise the
-     * render path.
+     * allow-list, every attribute not allowed for its tag, and every URL-bearing
+     * attribute whose protocol is not in the safe allow-list (see
+     * {@see wpas_test_kses_protocol_ok()}). Minimal stand-in - the REAL
+     * sanitisation check is a wp-env smoke against core's wp_kses; this shim
+     * only locks the call shape and the protocol contract so the unit suite can
+     * exercise the render path.
      *
      * @param string               $string       Content to sanitise.
      * @param array<string, mixed> $allowed_html Allowed tags => allowed attributes.
@@ -392,10 +441,11 @@ if (!function_exists('wp_kses')) {
     function wp_kses(string $string, array $allowed_html = []): string
     {
         $allowed_tags = array_keys($allowed_html);
+        $url_attributes = ['href', 'src', 'action', 'formaction', 'xlink:href', 'background', 'cite', 'longdesc'];
 
         $result = preg_replace_callback(
             '/<\s*\/?\s*([a-zA-Z0-9]+)((?:[^>"\']|"[^"]*"|\'[^\']*\')*)>/',
-            static function (array $m) use ($allowed_tags, $allowed_html): string {
+            static function (array $m) use ($allowed_tags, $allowed_html, $url_attributes): string {
                 $closing = str_starts_with(ltrim($m[0]), '</');
                 $tag = strtolower($m[1]);
                 if (!in_array($tag, $allowed_tags, true)) {
@@ -411,9 +461,22 @@ if (!function_exists('wp_kses')) {
                         continue;
                     }
                     $attr_name = (string) $attr;
-                    if (preg_match('/\b' . preg_quote($attr_name, '/') . '\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', $m[2], $am)) {
-                        $kept .= ' ' . strtolower($attr_name) . '=' . $am[1];
+                    if (!preg_match('/\b' . preg_quote($attr_name, '/') . '\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', $m[2], $am)) {
+                        continue;
                     }
+                    $raw = $am[1];
+                    $quote = '"';
+                    if (strlen($raw) >= 2 && ($raw[0] === '"' || $raw[0] === "'") && $raw[-1] === $raw[0]) {
+                        $quote = $raw[0];
+                        $raw = substr($raw, 1, -1);
+                    }
+                    if (
+                        in_array(strtolower($attr_name), $url_attributes, true)
+                        && !wpas_test_kses_protocol_ok($raw)
+                    ) {
+                        continue; // Bad protocol: drop the attribute entirely.
+                    }
+                    $kept .= ' ' . strtolower($attr_name) . '=' . $quote . $raw . $quote;
                 }
 
                 return '<' . $tag . $kept . '>';
@@ -424,6 +487,61 @@ if (!function_exists('wp_kses')) {
         return is_string($result) ? $result : $string;
     }
 }
+
+if (!function_exists('esc_html')) {
+    function esc_html(string $text): string
+    {
+        return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+
+if (!function_exists('esc_attr')) {
+    function esc_attr(string $text): string
+    {
+        return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+
+if (!function_exists('esc_url')) {
+    function esc_url(string $url): string
+    {
+        return htmlspecialchars($url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+
+if (!function_exists('esc_html__')) {
+    function esc_html__(string $text, string $domain = 'default'): string
+    {
+        return esc_html(__($text, $domain));
+    }
+}
+
+if (!function_exists('esc_attr__')) {
+    function esc_attr__(string $text, string $domain = 'default'): string
+    {
+        return esc_attr(__($text, $domain));
+    }
+}
+
+if (!function_exists('wp_nonce_field')) {
+    /** @return string|null Echoes when $echo, mirroring core's signature. */
+    function wp_nonce_field(
+        string $action = '-1',
+        string $name = '_wpnonce',
+        bool $referer = true,
+        bool $echo = true
+    ): ?string {
+        $field = '<input type="hidden" name="' . esc_attr($name) . '" value="test-nonce">';
+        if ($echo) {
+            echo $field; // phpcs:ignore WordPress.Security.EscapeOutput -- test shim.
+
+            return null;
+        }
+
+        return $field;
+    }
+}
+
 if (!function_exists('wp_json_encode')) {
     /**
      * @param mixed $data

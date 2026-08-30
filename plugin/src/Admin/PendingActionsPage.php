@@ -7,6 +7,7 @@ namespace Specflux\AgentSafety\Plugin\Admin;
 use Specflux\AgentSafety\Plugin\Api\Approvals;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 use Specflux\AgentSafety\Plugin\Support\ApprovalNotifier;
+use Specflux\AgentSafety\Plugin\Support\SummaryMarkup;
 
 /**
  * Tools → "Pending Agent Actions": the human side of the approval flow.
@@ -87,6 +88,7 @@ final class PendingActionsPage
             echo '<td>' . esc_html((string) ($r['pending_expires_ts'] ?? '')) . '</td>';
             echo '<td><code>' . esc_html((string) ($r['correlation_id'] ?? '')) . '</code></td>';
             echo '<td><code>' . esc_html((string) ($r['verb'] ?? '')) . '</code></td>';
+            // phpcs:ignore WordPress.Security.EscapeOutput -- summaryHtml() escapes or wp_kses-es by provenance.
             echo '<td>' . self::summaryHtml((string) ($r['summary'] ?? '')) . '</td>';
             echo '<td><code style="font-size:11px;">' . esc_html($approvalId) . '</code></td>';
             echo '<td>' . $this->actionButtons($approvalId) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- built from esc_* helpers below.
@@ -190,17 +192,30 @@ final class PendingActionsPage
         );
     }
 
-        /**
-     * AS-11: a host may enrich an approval summary with a preview/edit link.
-     * The summary cell is therefore rendered through wp_kses with an allow-list
-     * of exactly one element (`<a href="...">`) — every other tag and attribute
-     * is stripped, so a filter can add a link but never script or markup.
+    /**
+     * The Summary cell, escaped by provenance.
      *
-     * @param string $summary The persisted summary (filtered at requestApproval).
+     * A summary is built from RAW AGENT ARGUMENTS, so by default it is text and
+     * nothing but text: `esc_html()`, meaning an agent that plants
+     * `<a href="javascript:...">` or `<script>` in an argument value gets it shown
+     * back as literal characters rather than as live markup in the queue an
+     * administrator is about to act on.
+     *
+     * Only a summary a site integration actually rewrote through the
+     * `agent_safety_approval_summary` filter is host-authored — the recorder tags
+     * exactly those ({@see SummaryMarkup}) — and only those are rendered as markup,
+     * through wp_kses with an allow-list of exactly one element (`<a href="...">`).
+     * Fail-closed: an untagged, legacy or unrecognised value is escaped.
+     *
+     * @param string $summary The persisted summary (as stored by DecisionRecorder::requestApproval()).
      */
     public static function summaryHtml(string $summary): string
     {
-        return wp_kses($summary, ['a' => ['href' => true]]);
+        if (!SummaryMarkup::isHostAuthored($summary)) {
+            return esc_html($summary);
+        }
+
+        return wp_kses(SummaryMarkup::unwrap($summary), ['a' => ['href' => true]]);
     }
 
     private function actionButtons(string $approvalId): string
