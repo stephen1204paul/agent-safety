@@ -100,48 +100,55 @@ final class GrantGate
             return null;
         }
 
-        // Read back the POST-decrement grant: the eligibility filter sees the
-        // budget as it now stands, and exhaustion is observable without a second
-        // rule about what reserve() returned.
-        $grant = $this->grants?->get($grantId);
-        if ($grant === null) {
-            $this->release($grantId);
+        // From here the reservation is SPENT, so every exit other than a
+        // successful mint must give it back — including one through a Throwable.
+        // The eligibility filter is host code: a fatal-adjacent exception in it
+        // must not quietly charge a human's budget for a call that never ran.
+        $spent = true;
+        try {
+            // Read back the POST-decrement grant: the eligibility filter sees the
+            // budget as it now stands, and exhaustion is observable without a
+            // second rule about what reserve() returned.
+            $grant = $this->grants?->get($grantId);
+            if ($grant === null) {
+                return null;
+            }
 
-            return null;
-        }
+            /** @var mixed $eligible */
+            $eligible = apply_filters('agent_safety_grant_eligible', false, $grant, $verb, $args);
+            if (true !== $eligible) {
+                return null;
+            }
 
-        /** @var mixed $eligible */
-        $eligible = apply_filters('agent_safety_grant_eligible', false, $grant, $verb, $args);
-        if (true !== $eligible) {
-            $this->release($grantId);
+            $approvalId = $this->minter?->mintApproved(
+                $verb,
+                ApprovalBinding::hash($verb, $args),
+                (string) $this->recorder?->summaryFor($verb, $args),
+                $correlationId,
+                RequestContext::event(),
+                $subject,
+                $grant->grantedBy,
+                $grantId,
+            );
 
-            return null;
-        }
-
-        $approvalId = $this->minter?->mintApproved(
-            $verb,
-            ApprovalBinding::hash($verb, $args),
-            (string) $this->recorder?->summaryFor($verb, $args),
-            $correlationId,
-            RequestContext::event(),
-            $subject,
-            $grant->grantedBy,
-            $grantId,
-        );
-
-        if ($approvalId === null) {
             // The write failed: give the reservation back rather than charging a
             // human's budget for an authorisation that does not exist.
-            $this->release($grantId);
+            if ($approvalId === null) {
+                return null;
+            }
 
-            return null;
+            $spent = false;
+
+            if ($grant->isExhausted()) {
+                $this->audit->exhausted($grant);
+            }
+
+            return $grantId;
+        } finally {
+            if ($spent) {
+                $this->release($grantId);
+            }
         }
-
-        if ($grant->isExhausted()) {
-            $this->audit->exhausted($grant);
-        }
-
-        return $grantId;
     }
 
     /**

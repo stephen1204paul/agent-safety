@@ -421,4 +421,28 @@ final class GrantGateTest extends TestCase
         $this->assertTrue(SummaryMarkup::isHostAuthored($stored));
         $this->assertSame('<a href="/preview">Publish demo/publish</a>', SummaryMarkup::unwrap($stored));
     }
+
+    public function testAThrowingEligibilityFilterStillGivesTheReservationBack(): void
+    {
+        // The filter is HOST code. An exception in it must not quietly charge a
+        // human's budget for a call that never ran.
+        $this->enableGrants();
+        $grants = new FakeGrantStore();
+        $grantId = $grants->issue(self::VERB, 2, self::SUBJECT, self::CORRELATION, 5, null);
+        add_filter('agent_safety_grant_eligible', static function (): bool {
+            throw new \RuntimeException('the host blew up');
+        });
+
+        try {
+            RequestContext::withCorrelation(
+                self::CORRELATION,
+                fn (): ?string => $this->gate(['grants' => $grants])->mint(self::VERB, ['a' => 1])
+            );
+            $this->fail('The host exception should propagate.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('the host blew up', $e->getMessage());
+        }
+
+        $this->assertSame(2, $grants->get($grantId)?->remainingCount);
+    }
 }
