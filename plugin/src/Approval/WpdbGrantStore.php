@@ -31,8 +31,9 @@ use wpdb;
  *    {@see \Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore::reserve()}. That
  *    check happens before any query is built.
  *  - The hard TTL is a wall independent of the count
- *    (filter `agent_safety_grant_ttl`, default 24 h) and every comparison is in
- *    UTC (UTC_TIMESTAMP()), so no server-timezone drift can extend a grant.
+ *    (filter `agent_safety_grant_ttl`, default and ceiling 24 h) and every
+ *    comparison is in UTC (UTC_TIMESTAMP()), so no server-timezone drift can
+ *    extend a grant.
  *  - {@see release()} can restore an `exhausted` grant to `active` but can never
  *    resurrect a revoked or expired one.
  */
@@ -40,12 +41,16 @@ final class WpdbGrantStore implements GrantStore
 {
     /**
      * Hard grant lifetime. After this a grant is dead however much count it has
-     * left. Filterable via `agent_safety_grant_ttl` (seconds); a filtered value
+     * left. Filterable via `agent_safety_grant_ttl` (seconds), downward only: a
+     * filtered value above {@see self::TTL_MAX_SECONDS} is clamped to it, one
      * that is not a positive int is ignored, and the filter can only ever be
      * applied at ISSUE time, so shortening it later cannot retro-extend a grant
      * already written.
      */
     public const TTL_SECONDS = 86400; // 24 hours
+
+    /** The longest any grant may live, whatever the filter says; the default sits on it. */
+    public const TTL_MAX_SECONDS = 86400;
 
     private bool $ensured = false;
 
@@ -306,7 +311,10 @@ final class WpdbGrantStore implements GrantStore
         );
     }
 
-    /** The hard TTL in seconds; a filtered value that is not a positive int is ignored. */
+    /**
+     * The hard TTL in seconds; a filtered value that is not a positive int is
+     * ignored, and one above the ceiling is cut down to it.
+     */
     private function ttlSeconds(): int
     {
         if (!function_exists('apply_filters')) {
@@ -316,7 +324,7 @@ final class WpdbGrantStore implements GrantStore
         /** @var mixed $filtered */
         $filtered = apply_filters('agent_safety_grant_ttl', self::TTL_SECONDS);
 
-        return is_int($filtered) && $filtered > 0 ? $filtered : self::TTL_SECONDS;
+        return is_int($filtered) && $filtered > 0 ? min($filtered, self::TTL_MAX_SECONDS) : self::TTL_SECONDS;
     }
 
     private function uuid(): string

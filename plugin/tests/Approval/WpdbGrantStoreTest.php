@@ -127,6 +127,22 @@ final class WpdbGrantStoreTest extends TestCase
         $this->assertGreaterThanOrEqual($before + WpdbGrantStore::TTL_SECONDS, $expires);
     }
 
+    public function testATtlFilterAboveTheCeilingIsClampedToIt(): void
+    {
+        // The filter only ever shortens a grant's life: a host asking for a
+        // week gets the 24 h ceiling, never a longer wall.
+        add_filter('agent_safety_grant_ttl', static fn (): int => 7 * 86400);
+        $db = new wpdb();
+        $before = time();
+
+        (new WpdbGrantStore($db))->issue('core/post-publish', 1, 'app:key-1', 'senroflux:run:7', 5, null);
+
+        $expires = strtotime($db->lastInsert['data']['expires_ts'] . ' UTC');
+        $this->assertSame(86400, WpdbGrantStore::TTL_MAX_SECONDS);
+        $this->assertGreaterThanOrEqual($before + WpdbGrantStore::TTL_MAX_SECONDS, $expires);
+        $this->assertLessThanOrEqual(time() + WpdbGrantStore::TTL_MAX_SECONDS, $expires);
+    }
+
     // --- reserve -------------------------------------------------------------
 
     public function testReserveClaimsTheCandidateRow(): void

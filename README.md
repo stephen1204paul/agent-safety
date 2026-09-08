@@ -93,7 +93,7 @@ Agent Safety is configured mostly through wp-admin (**Tools → Agent Capability
 | `agent_safety_approval_summary` | Rewrite the human-facing summary of a pending action before it is stored (receives the flat summary, the verb, the input). A rewritten summary is rendered on the review screen through `wp_kses` allowing only `<a href>`; the binding (verb + args hash + principal) is outside the filter's reach. |
 | `agent_safety_enable_grants` | **Default `false`.** Turn on pre-approval grants: a human authorises up to N future calls of one verb inside one scope, instead of clicking once per action. Nothing about grants happens while this is off. |
 | `agent_safety_grant_eligible` | **Default `false`.** Decide whether an active grant covers THESE call arguments (receives the `Grant`, the verb and the args). Grants are per-verb, so this is where a host that knows which objects the human accepted says yes. A missing hook means no grant applies - never that every grant applies to any object. |
-| `agent_safety_grant_ttl` | Hard grant lifetime in seconds, applied when a grant is issued (default 24 hours). |
+| `agent_safety_grant_ttl` | Hard grant lifetime in seconds, applied when a grant is issued (default 24 hours, which is also the ceiling - a longer filtered value is clamped to 24 hours). |
 
 Identity bindings (which pack applies to which application password, user, role, or WooCommerce API key) are managed under **Tools → Agent Capability Packs**; there is no code-level API for bindings beyond that screen and the registry filter above.
 
