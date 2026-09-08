@@ -571,3 +571,57 @@ if (!function_exists('wp_json_encode')) {
         return json_encode($data);
     }
 }
+
+if (!function_exists('sanitize_text_field')) {
+    /** Enough of core's behaviour for form-value tests: tags and surrounding whitespace go. */
+    function sanitize_text_field(string $str): string
+    {
+        return trim(strip_tags($str));
+    }
+}
+
+if (!function_exists('checked')) {
+    /** @param mixed $checked @param mixed $current */
+    function checked($checked, $current = true, bool $display = true): string
+    {
+        $out = (string) $checked === (string) $current ? ' checked=\'checked\'' : '';
+        if ($display) {
+            echo $out; // phpcs:ignore WordPress.Security.EscapeOutput -- test shim.
+        }
+
+        return $out;
+    }
+}
+
+if (!function_exists('selected')) {
+    /** @param mixed $selected @param mixed $current */
+    function selected($selected, $current = true, bool $display = true): string
+    {
+        $out = (string) $selected === (string) $current ? ' selected=\'selected\'' : '';
+        if ($display) {
+            echo $out; // phpcs:ignore WordPress.Security.EscapeOutput -- test shim.
+        }
+
+        return $out;
+    }
+}
+
+if (!function_exists('_n')) {
+    function _n(string $single, string $plural, int $number, string $domain = 'default'): string
+    {
+        return $number === 1 ? $single : $plural;
+    }
+}
+
+if (!function_exists('submit_button')) {
+    /** @param mixed $type @param mixed $otherAttributes */
+    function submit_button(
+        ?string $text = null,
+        $type = 'primary',
+        string $name = 'submit',
+        bool $wrap = true,
+        $otherAttributes = null
+    ): void {
+        echo '<button type="submit" name="' . esc_attr($name) . '">' . esc_html((string) $text) . '</button>';
+    }
+}

@@ -161,6 +161,9 @@ final class AuditLogPage
             // A grant-lifecycle row (AS-12): issued/revoked/exhausted, told
             // apart by the reason column beside it.
             'grant'    => '#2271b1',
+            // A human changed the plugin's configuration: shadow toggles and
+            // binding changes, again told apart by the reason column.
+            'admin'    => '#50575e',
         ];
         $color = $colors[$decision] ?? '#888';
 

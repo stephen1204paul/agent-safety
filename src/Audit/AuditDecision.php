@@ -16,7 +16,10 @@ use Specflux\AgentSafety\Gate\Outcome;
  * (`grant.issued`, `grant.revoked`, `grant.exhausted`) rather than as their own
  * decision values: the grant lifecycle is one auditable subsystem, and keeping it
  * to a single decision value means a reader can select every grant event with one
- * predicate while still telling the three apart.
+ * predicate while still telling the three apart. `Admin` rows follow the same
+ * scheme for configuration changes made by a human (`shadow.enabled`,
+ * `binding.changed`, ...): the things that decide how every later call is judged
+ * belong in the same tamper-evident chain as the calls themselves.
  */
 enum AuditDecision: string
 {
@@ -26,6 +29,7 @@ enum AuditDecision: string
     case Approved = 'approved'; // a human granted a pending request
     case Rejected = 'rejected'; // a human refused a pending request
     case Grant = 'grant';       // a pre-approval grant's own lifecycle (AS-12)
+    case Admin = 'admin';       // a change to the plugin's own configuration
 
     /** Map a synchronous gate verdict to its audit decision. */
     public static function fromOutcome(Outcome $outcome): self
