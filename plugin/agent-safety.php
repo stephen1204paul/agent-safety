@@ -48,6 +48,7 @@ use Specflux\AgentSafety\Plugin\Integrations\Core\CoreIntegration;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\VerbMapper;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\WooIntegration;
 use Specflux\AgentSafety\Plugin\Support\ApprovalNotifier;
+use Specflux\AgentSafety\Plugin\Support\AdminChangeRecorder;
 use Specflux\AgentSafety\Plugin\Support\ApprovalSweep;
 use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
@@ -235,6 +236,11 @@ add_action('plugins_loaded', static function (): void {
     // both seams and the admin toggle agree on which packs are shadowed.
     $agsafe_shadow = new ShadowMode();
 
+    // Configuration changes (shadow toggles and expiries, binding changes) go
+    // into the same audit chain as the calls they govern. Shared by the admin
+    // page and the hourly sweep so both write identical rows.
+    $agsafe_changes = new AdminChangeRecorder($agsafe_sink);
+
     // Pre-approval grants (AS-12), behind the default-false
     // `agent_safety_enable_grants` filter. Constructed whenever there is a
     // database — the objects are inert while the feature switch is off — so a
@@ -315,9 +321,16 @@ add_action('plugins_loaded', static function (): void {
 
         // Backlog control for the table above: hourly sweep of expired/orphaned
         // approval rows (see WpdbApprovalStore::deleteExpired()). The schedule
-        // itself is set up on activation; this just wires the callback.
-        add_action(ApprovalSweep::HOOK, static function () use ($agsafe_approvals, $agsafe_grant_store): void {
+        // itself is set up on activation; this just wires the callback. The
+        // same tick retires lapsed shadow-mode entries, each one audited.
+        add_action(ApprovalSweep::HOOK, static function () use (
+            $agsafe_approvals,
+            $agsafe_grant_store,
+            $agsafe_shadow,
+            $agsafe_changes
+        ): void {
             ApprovalSweep::run($agsafe_approvals, $agsafe_grant_store);
+            $agsafe_shadow->sweep($agsafe_changes);
         });
 
         // Route each NEW pending approval to the humans who must clear it:
@@ -340,5 +353,5 @@ add_action('plugins_loaded', static function (): void {
 
     // Capability-pack admin (Tools → Agent Capability Packs): bind each identity
     // the configured providers expose to a pack from the catalog.
-    (new CapabilityPacksPage($agsafe_packs, $agsafe_identity, $agsafe_shadow))->register();
+    (new CapabilityPacksPage($agsafe_packs, $agsafe_identity, $agsafe_shadow, $agsafe_changes))->register();
 }, 0);

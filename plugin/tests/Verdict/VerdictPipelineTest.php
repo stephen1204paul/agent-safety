@@ -280,7 +280,7 @@ final class VerdictPipelineTest extends TestCase
         $pack = new Pack(name: 'observed', allow: []); // every verb would be not_in_pack
         $sink = new InMemoryAuditSink();
         $approvals = new FakeApprovalStore();
-        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['observed'];
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['observed' => (int) $GLOBALS['wpas_test_time'] + 3600];
         $pipeline = $this->pipeline(['demo/refund' => Tier::Reversible], new DecisionRecorder($sink, $approvals), $approvals);
 
         $verdict = $pipeline->judge('demo/refund', ['amount' => 5], $pack, Hints::none(), VerdictMode::Claim);
@@ -300,7 +300,7 @@ final class VerdictPipelineTest extends TestCase
         $pack = new Pack(name: 'observed', allow: ['demo/*'], approvalByClass: ['tier2' => true]);
         $sink = new InMemoryAuditSink();
         $approvals = new FakeApprovalStore();
-        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['observed'];
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['observed' => (int) $GLOBALS['wpas_test_time'] + 3600];
         $pipeline = $this->pipeline(['demo/refund' => Tier::Irreversible], new DecisionRecorder($sink, $approvals), $approvals);
 
         $verdict = $pipeline->judge('demo/refund', ['amount' => 5], $pack, Hints::none(), VerdictMode::Claim);
@@ -319,7 +319,7 @@ final class VerdictPipelineTest extends TestCase
     {
         $pack = new Pack(name: 'enforced', allow: []);
         $sink = new InMemoryAuditSink();
-        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['some-other-pack'];
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['some-other-pack' => (int) $GLOBALS['wpas_test_time'] + 3600];
         $pipeline = $this->pipeline(['demo/refund' => Tier::Reversible], new DecisionRecorder($sink));
 
         $verdict = $pipeline->judge('demo/refund', ['amount' => 5], $pack, Hints::none(), VerdictMode::Claim);

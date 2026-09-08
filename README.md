@@ -53,7 +53,9 @@ Every governed call goes through the same pipeline, regardless of whether it arr
 
 **Human approval.** A call classified as `Irreversible` (and not hard-denied outright by its pack) doesn't execute - it's queued under **Tools → Pending Agent Actions**. A human approves or rejects it. Approval mints a time-limited, single-claim grant: the same caller can simply retry the action, or a delegate can present the grant's token explicitly. An hourly sweep expires anything left pending too long.
 
-**Hash-chained audit log.** Every gate decision and every executed action is appended to a tamper-evident, hash-chained log (`agsafe_` prefixed tables), viewable and CSV-exportable under **Tools → Agent Audit Log**. The chain is re-verified on load, so a modified or deleted row shows up the next time anyone opens the log.
+**Shadow mode.** A pack can be switched to "log only" under **Tools → Agent Capability Packs**: every verdict is still evaluated and audited (marked `dry_run`), nothing is enforced, and no pending approvals are minted for calls that already ran. Observation is time-boxed - the toggle offers 1, 3 or 7 days and a pack is never shadowed for more than 7 days from one toggle; when the window lapses, enforcement resumes on its own and the hourly sweep records a `shadow.expired` event. Anything that would keep a pack shadowed without a valid expiry (a hand-edited option, a filter returning a bare list) is treated as not shadowed.
+
+**Hash-chained audit log.** Every gate decision and every executed action is appended to a tamper-evident, hash-chained log (`agsafe_` prefixed tables), viewable and CSV-exportable under **Tools → Agent Audit Log**. The chain is re-verified on load, so a modified or deleted row shows up the next time anyone opens the log. Configuration changes made in wp-admin are in the same chain: switching shadow mode on or off (`shadow.enabled` / `shadow.disabled`) and rebinding a credential to a different pack (`binding.changed`, with the old and new pack) each write a row naming the administrator who did it.
 
 **Read-path PII redaction.** Packs that request it get known PII fields (email, phone, name, address, etc.) masked both in what's written to the audit log and in the data returned to the agent.
 
@@ -96,8 +98,9 @@ Agent Safety is configured mostly through wp-admin (**Tools → Agent Capability
 | `agent_safety_can_grant` | Decide whether a grantor may issue a pre-approval grant (receives the default - whether the grantor holds `manage_options` - then the grantor's user id, the verb, the count and the scope). Only a literal `true` issues; anything else refuses and writes a `grant.refused` audit event. A grant with no grantor is refused before this filter runs. |
 | `agent_safety_grant_max_count` | The most calls one grant may carry (default 50). A request above it is refused and audited as `count_above_max`, not clamped; a filtered value that is not a positive int falls back to the default. |
 | `agent_safety_grant_ttl` | Hard grant lifetime in seconds, applied when a grant is issued (default 24 hours, which is also the ceiling - a longer filtered value is clamped to 24 hours). |
+| `agent_safety_shadow_packs` | Adjust which packs are in shadow (log-only) mode. Receives and must return `pack name => unix expiry timestamp`; an entry counts only while its expiry is an int in the future and no more than 7 days ahead. A bare list of names, a non-int, a lapsed or far-future stamp all mean "not shadowed" - the filter can shorten or end an observation, never make one permanent. |
 
-Identity bindings (which pack applies to which application password, user, role, or WooCommerce API key) are managed under **Tools → Agent Capability Packs**; there is no code-level API for bindings beyond that screen and the registry filter above.
+Identity bindings (which pack applies to which application password, user, role, or WooCommerce API key) are managed under **Tools → Agent Capability Packs**; there is no code-level API for bindings beyond that screen and the registry filter above. Every binding change and shadow-mode toggle made on that screen is written to the audit log.
 
 ## Development
 

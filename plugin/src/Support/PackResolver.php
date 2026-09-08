@@ -66,7 +66,7 @@ final class PackResolver
             return $this->registry;
         }
 
-        $registry = PackRegistry::withBuiltins($this->loadBindings());
+        $registry = PackRegistry::withBuiltins($this->storedBindings());
         foreach ($this->extraPacks as $pack) {
             $registry->register($pack);
         }
@@ -88,10 +88,13 @@ final class PackResolver
     /**
      * Read + sanitise the bindings option to a clean array<string,string>
      * (subject token id => pack name). Anything malformed is dropped, never trusted.
+     * Public because the admin page diffs a save against the STORED bindings —
+     * {@see registry()} may have been replaced by the `agent_safety_pack_registry`
+     * filter, so its bindings are not necessarily what the option holds.
      *
      * @return array<string, string>
      */
-    private function loadBindings(): array
+    public function storedBindings(): array
     {
         $raw = function_exists('get_option') ? get_option(self::BINDINGS_OPTION, []) : [];
         if (!is_array($raw)) {

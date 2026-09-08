@@ -30,10 +30,13 @@ use wpdb;
 final class Schema
 {
     /**
-     * Bump whenever the column defintions below change; {@see maybeUpgrade()}
-     * reinstalls (dbDelta-diffs) once the stored option falls behind this.
+     * Bump whenever the column defintions below change, or a stored option
+     * changes shape; {@see maybeUpgrade()} reinstalls (dbDelta-diffs) and
+     * reruns the option migrations once the stored option falls behind this.
+     *
+     * 3: `agsafe_shadow_packs` became pack name => expiry ({@see ShadowMode}).
      */
-    public const VERSION = '2';
+    public const VERSION = '3';
 
     public const VERSION_OPTION = 'agsafe_schema_version';
 
@@ -152,6 +155,10 @@ final class Schema
             'CREATE TABLE ' . self::approvalsTable($db) . " (\n" . self::approvalsColumns() . "\n) {$charset};",
             'CREATE TABLE ' . self::grantsTable($db) . " (\n" . self::grantsColumns() . "\n) {$charset};",
         ]);
+
+        // Option migrations ride the same version gate as the tables. Each is
+        // a no-op once its shape is current, so rerunning on activation is safe.
+        (new ShadowMode())->migrateLegacy();
 
         update_option(self::VERSION_OPTION, self::VERSION, false);
     }
