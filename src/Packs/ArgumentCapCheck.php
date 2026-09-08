@@ -10,7 +10,8 @@ namespace Specflux\AgentSafety\Packs;
  *   - allow():           every matching cap is satisfied.
  *   - deny(...):         a hard constraint tripped ($trippedCap names the
  *                        {@see ArgumentCap::$id}, $constraint names WHICH of
- *                        its fields: "max_per_call" | "max_total_per_day" |
+ *                        its fields: "forbidden_argument" | "not_allowed_value" |
+ *                        "max_per_call" | "max_total_per_day" |
  *                        "max_items_per_call" | "unreadable_argument"), so a
  *                        gate seam can name both in the denial reason and the
  *                        audit trail, exactly like {@see LimitCheck} does for

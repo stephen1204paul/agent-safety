@@ -17,6 +17,9 @@ namespace Specflux\AgentSafety\Packs;
  *
  * Ordering rules, all fail-closed:
  *   - Caps are scanned in declaration order; the FIRST hard denial wins.
+ *     Within one cap the shape constraints ($forbidden, then $allowedValues)
+ *     are checked before any numeric one, so a call that presents a value
+ *     it may not present at all is refused for that, not for its size.
  *   - A hard denial anywhere beats an approval-threshold trip anywhere: the
  *     scan continues past a tripped $approvalAbove looking for denials, and
  *     only reports require-approval when none is found. (Routing a call that
@@ -57,6 +60,15 @@ final class ArgumentCapPolicy
             }
 
             $value = self::resolve($args, $cap->argPath);
+            $present = self::present($args, $cap->argPath);
+
+            if ($cap->forbidden && $present) {
+                return ArgumentCapCheck::deny($cap->id, 'forbidden_argument');
+            }
+
+            if ($cap->allowedValues !== null && $present && !self::isAllowedValue($value, $cap->allowedValues)) {
+                return ArgumentCapCheck::deny($cap->id, 'not_allowed_value');
+            }
 
             if ($cap->maxItemsPerCall !== null) {
                 if (!is_array($value)) {
@@ -146,5 +158,47 @@ final class ArgumentCapPolicy
         }
 
         return $current;
+    }
+
+    /**
+     * Whether the path exists in the call args at all, whatever it holds —
+     * the distinction $forbidden and $allowedValues draw between "not setting
+     * this field" (passes) and "setting it, to null" (denies), which
+     * {@see resolve()} folds into one null.
+     *
+     * @param array<string, mixed> $args
+     */
+    private static function present(array $args, string $path): bool
+    {
+        $current = $args;
+        foreach (explode('.', $path) as $segment) {
+            if (!is_array($current) || !array_key_exists($segment, $current)) {
+                return false;
+            }
+            $current = $current[$segment];
+        }
+
+        return true;
+    }
+
+    /**
+     * String-form equality: (string) casts on both sides, so 1, '1' and true
+     * are one value and false is ''. A non-scalar can never match — an array
+     * or object handed to a pinned field is a refusal to present it legibly.
+     *
+     * @param list<string|int|float|bool> $allowed
+     */
+    private static function isAllowedValue(mixed $value, array $allowed): bool
+    {
+        if (!is_scalar($value)) {
+            return false;
+        }
+        foreach ($allowed as $candidate) {
+            if ((string) $value === (string) $candidate) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

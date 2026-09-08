@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Specflux\AgentSafety\Packs;
 
+use InvalidArgumentException;
+
 /**
  * One argument-aware cap in a Pack's policy envelope (roadmap 0.2 "spend
  * limits"): a constraint that reads a value out of the CALL'S ARGUMENTS
  * rather than merely counting calls. Declared per pack, scoped to a verb
  * glob, and evaluated by the pure {@see ArgumentCapPolicy}.
  *
- * Four constraints, each independent and nullable (null = not enforced):
+ * Six constraints, each independent and nullable/off by default (= not
+ * enforced), and freely combinable on one cap:
  *
  *   - $approvalAbove:   a per-call value above this requires human approval
  *                       (the existing approval flow — pending row, wp-admin
@@ -25,8 +28,19 @@ namespace Specflux\AgentSafety\Packs;
  *                       a denial never consumes budget, mirroring D26.
  *   - $maxItemsPerCall: a ceiling on count($value) when the argument is a
  *                       list, e.g. "bulk updates touch at most 25 items".
+ *   - $allowedValues:   the only values the argument may take, e.g. "an
+ *                       order status may only move to one of these". An
+ *                       ABSENT argument passes (the call is not setting the
+ *                       field); a present one must be a scalar whose string
+ *                       form equals one entry's (bools as '1'/'' — so 1, '1'
+ *                       and true are one value). Anything else denies: a
+ *                       value outside the list, a non-scalar (null
+ *                       included), or ANY value against an empty list.
+ *   - $forbidden:       the argument must not be present at all, null
+ *                       included, e.g. "a fulfillment bot never rewrites
+ *                       billing".
  *
- * Values are compared by MAGNITUDE (absolute value): a refund of -500 moves
+ * Numeric values are compared by MAGNITUDE (absolute value): a refund of -500 moves
  * as much money as +500, and signed values would let an agent drive the daily
  * total DOWN and reopen a spent budget. Value constraints require a numeric
  * argument (numeric strings included — WooCommerce amounts arrive as
@@ -44,6 +58,12 @@ final class ArgumentCap
      *                        {@see Pack::$allow} (e.g. "woocommerce/orders-*").
      * @param string $argPath Dot-notation path into the call args to the
      *                        governed value, e.g. "amount" or "refund.total".
+     * @param list<string|int|float|bool>|null $allowedValues
+     *                        Scalars only. A non-scalar entry is a declaration
+     *                        error, so it throws here rather than silently
+     *                        admitting or refusing every call at runtime.
+     *
+     * @throws InvalidArgumentException
      */
     public function __construct(
         public readonly string $id,
@@ -53,7 +73,16 @@ final class ArgumentCap
         public readonly ?float $maxPerCall = null,
         public readonly ?float $maxTotalPerDay = null,
         public readonly ?int $maxItemsPerCall = null,
+        public readonly ?array $allowedValues = null,
+        public readonly bool $forbidden = false,
     ) {
+        foreach ($allowedValues ?? [] as $value) {
+            if (!is_scalar($value)) {
+                throw new InvalidArgumentException(
+                    sprintf('ArgumentCap "%s": allowedValues must hold only scalars.', $id),
+                );
+            }
+        }
     }
 
     public function appliesTo(string $verb): bool

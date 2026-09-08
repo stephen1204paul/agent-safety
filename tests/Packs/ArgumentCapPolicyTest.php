@@ -327,4 +327,169 @@ final class ArgumentCapPolicyTest extends TestCase
 
         $this->assertSame(['refund_total' => 250.0], $amounts);
     }
+
+    // --- allowedValues ---------------------------------------------------------
+
+    public function testAllowedValuesPassesAPresentValueInTheList(): void
+    {
+        $cap = new ArgumentCap('order_status', 'orders/*', 'status', allowedValues: ['processing', 'completed']);
+
+        $check = $this->policy->evaluate([$cap], 'orders/update', ['status' => 'completed'], []);
+
+        $this->assertTrue($check->allowed);
+    }
+
+    public function testAllowedValuesDeniesAPresentValueOutsideTheList(): void
+    {
+        $cap = new ArgumentCap('order_status', 'orders/*', 'status', allowedValues: ['processing', 'completed']);
+
+        $check = $this->policy->evaluate([$cap], 'orders/update', ['status' => 'refunded'], []);
+
+        $this->assertFalse($check->allowed);
+        $this->assertFalse($check->requiresApproval);
+        $this->assertSame('order_status', $check->trippedCap);
+        $this->assertSame('not_allowed_value', $check->constraint);
+    }
+
+    public function testAllowedValuesPassesWhenTheArgumentIsAbsent(): void
+    {
+        // The call is not setting the pinned field at all.
+        $cap = new ArgumentCap('order_status', 'orders/*', 'status', allowedValues: ['processing']);
+
+        $check = $this->policy->evaluate([$cap], 'orders/update', ['note' => 'left at door'], []);
+
+        $this->assertTrue($check->allowed);
+    }
+
+    public function testAllowedValuesDeniesAnArrayValue(): void
+    {
+        $cap = new ArgumentCap('order_status', 'orders/*', 'status', allowedValues: ['processing']);
+
+        $check = $this->policy->evaluate([$cap], 'orders/update', ['status' => ['processing']], []);
+
+        $this->assertFalse($check->allowed);
+        $this->assertSame('not_allowed_value', $check->constraint);
+    }
+
+    public function testAllowedValuesDeniesAPresentNullAsSettingTheFieldToNothing(): void
+    {
+        $cap = new ArgumentCap('order_status', 'orders/*', 'status', allowedValues: ['processing']);
+
+        $check = $this->policy->evaluate([$cap], 'orders/update', ['status' => null], []);
+
+        $this->assertFalse($check->allowed);
+        $this->assertSame('not_allowed_value', $check->constraint);
+    }
+
+    public function testAllowedValuesCompareBoolsAndIntsByStringForm(): void
+    {
+        $onlyTrue = new ArgumentCap('flag', 'orders/*', 'force', allowedValues: [true]);
+        foreach ([true, 1, '1'] as $sameAsTrue) {
+            $this->assertTrue($this->policy->evaluate([$onlyTrue], 'orders/update', ['force' => $sameAsTrue], [])->allowed);
+        }
+        foreach ([false, 0, '0', 'true', 'yes'] as $notTrue) {
+            $this->assertFalse($this->policy->evaluate([$onlyTrue], 'orders/update', ['force' => $notTrue], [])->allowed);
+        }
+
+        $onlyFalse = new ArgumentCap('flag', 'orders/*', 'force', allowedValues: [false]);
+        $this->assertTrue($this->policy->evaluate([$onlyFalse], 'orders/update', ['force' => false], [])->allowed);
+        $this->assertTrue($this->policy->evaluate([$onlyFalse], 'orders/update', ['force' => ''], [])->allowed);
+        // (string) 0 is '0', not '' -- an integer zero is NOT the bool false here.
+        $this->assertFalse($this->policy->evaluate([$onlyFalse], 'orders/update', ['force' => 0], [])->allowed);
+
+        $onlyFive = new ArgumentCap('qty', 'orders/*', 'quantity', allowedValues: [5]);
+        $this->assertTrue($this->policy->evaluate([$onlyFive], 'orders/update', ['quantity' => '5'], [])->allowed);
+        $this->assertTrue($this->policy->evaluate([$onlyFive], 'orders/update', ['quantity' => 5.0], [])->allowed);
+        $this->assertFalse($this->policy->evaluate([$onlyFive], 'orders/update', ['quantity' => '5.0'], [])->allowed);
+    }
+
+    public function testEmptyAllowedValuesDeniesAnyPresentValue(): void
+    {
+        $cap = new ArgumentCap('order_status', 'orders/*', 'status', allowedValues: []);
+
+        $this->assertTrue($this->policy->evaluate([$cap], 'orders/update', [], [])->allowed);
+
+        $check = $this->policy->evaluate([$cap], 'orders/update', ['status' => 'processing'], []);
+
+        $this->assertFalse($check->allowed);
+        $this->assertSame('not_allowed_value', $check->constraint);
+    }
+
+    public function testConstructorRejectsANonScalarAllowedValue(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new ArgumentCap('order_status', 'orders/*', 'status', allowedValues: ['processing', ['completed']]);
+    }
+
+    // --- forbidden -----------------------------------------------------------
+
+    public function testForbiddenDeniesAPresentArgument(): void
+    {
+        $cap = new ArgumentCap('billing', 'orders/*', 'billing', forbidden: true);
+
+        $check = $this->policy->evaluate([$cap], 'orders/update', ['billing' => ['email' => 'x@example.com']], []);
+
+        $this->assertFalse($check->allowed);
+        $this->assertFalse($check->requiresApproval);
+        $this->assertSame('billing', $check->trippedCap);
+        $this->assertSame('forbidden_argument', $check->constraint);
+    }
+
+    public function testForbiddenDeniesANullValueAsStillPresent(): void
+    {
+        $cap = new ArgumentCap('customer_id', 'orders/*', 'customer_id', forbidden: true);
+
+        $check = $this->policy->evaluate([$cap], 'orders/update', ['customer_id' => null], []);
+
+        $this->assertFalse($check->allowed);
+        $this->assertSame('forbidden_argument', $check->constraint);
+    }
+
+    public function testForbiddenPassesWhenTheArgumentIsAbsent(): void
+    {
+        $cap = new ArgumentCap('billing', 'orders/*', 'billing', forbidden: true);
+
+        $check = $this->policy->evaluate([$cap], 'orders/update', ['status' => 'processing'], []);
+
+        $this->assertTrue($check->allowed);
+    }
+
+    public function testForbiddenFollowsADotPathIntoANestedArgument(): void
+    {
+        $cap = new ArgumentCap('billing_email', 'orders/*', 'billing.email', forbidden: true);
+
+        $this->assertTrue($this->policy->evaluate([$cap], 'orders/update', ['billing' => ['city' => 'KL']], [])->allowed);
+        $this->assertFalse($this->policy->evaluate([$cap], 'orders/update', ['billing' => ['email' => null]], [])->allowed);
+    }
+
+    // --- interplay with the numeric constraints ------------------------------
+
+    public function testShapeConstraintsAreCheckedBeforeNumericOnesOnTheSameCap(): void
+    {
+        $cap = new ArgumentCap('qty', 'orders/*', 'quantity', maxPerCall: 5.0, allowedValues: [1, 10]);
+
+        // 7 is under the numeric cap but not in the list: the shape check names the denial.
+        $outsideList = $this->policy->evaluate([$cap], 'orders/update', ['quantity' => 7], []);
+        $this->assertSame('not_allowed_value', $outsideList->constraint);
+
+        // 10 is in the list, so the numeric cap is what refuses it.
+        $tooLarge = $this->policy->evaluate([$cap], 'orders/update', ['quantity' => 10], []);
+        $this->assertSame('max_per_call', $tooLarge->constraint);
+
+        $this->assertTrue($this->policy->evaluate([$cap], 'orders/update', ['quantity' => 1], [])->allowed);
+    }
+
+    public function testAnExistingNumericCapIsUnaffectedByTheNewDefaults(): void
+    {
+        $cap = new ArgumentCap('refund_total', 'orders/*', 'amount', maxPerCall: 500.0, maxTotalPerDay: 1000.0);
+
+        $this->assertNull($cap->allowedValues);
+        $this->assertFalse($cap->forbidden);
+        // A missing governed value still fails closed as unreadable, not as forbidden/not-allowed.
+        $missing = $this->policy->evaluate([$cap], 'orders/refund', [], []);
+        $this->assertSame('unreadable_argument', $missing->constraint);
+        $this->assertTrue($this->policy->evaluate([$cap], 'orders/refund', ['amount' => 500], ['refund_total' => 500.0])->allowed);
+        $this->assertSame(['refund_total' => 500.0], $this->policy->accumulableAmounts([$cap], 'orders/refund', ['amount' => -500]));
+    }
 }
