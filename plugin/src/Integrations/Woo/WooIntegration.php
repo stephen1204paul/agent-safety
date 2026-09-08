@@ -49,6 +49,7 @@ final class WooIntegration
             'elevationRules' => [
                 new OrderFulfillmentElevationRule(),
                 new BulkProductDeleteElevationRule(),
+                new ForceDeleteElevationRule(),
             ],
             'packs' => WooPacks::all(),
             'governedNamespaces' => ['woocommerce/'],

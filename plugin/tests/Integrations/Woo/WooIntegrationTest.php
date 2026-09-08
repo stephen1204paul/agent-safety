@@ -8,6 +8,9 @@ use PHPUnit\Framework\TestCase;
 use Specflux\AgentSafety\Policy\Tier;
 use Specflux\AgentSafety\Policy\VerbCatalog;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
+use Specflux\AgentSafety\Plugin\Integrations\Woo\BulkProductDeleteElevationRule;
+use Specflux\AgentSafety\Plugin\Integrations\Woo\ForceDeleteElevationRule;
+use Specflux\AgentSafety\Plugin\Integrations\Woo\OrderFulfillmentElevationRule;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\WooIntegration;
 
 /**
@@ -45,7 +48,10 @@ final class WooIntegrationTest extends TestCase
         // No $wpdb passed in -> the WC API key identity provider is NOT added.
         $this->assertSame([], $identity->providers());
 
-        $this->assertNotEmpty($contributions['elevationRules']);
+        $this->assertSame(
+            [OrderFulfillmentElevationRule::class, BulkProductDeleteElevationRule::class, ForceDeleteElevationRule::class],
+            array_map(static fn (object $rule): string => $rule::class, $contributions['elevationRules']),
+        );
         $this->assertSame(['woocommerce/'], $contributions['governedNamespaces']);
 
         $packNames = array_map(static fn ($pack) => $pack->name, $contributions['packs']);

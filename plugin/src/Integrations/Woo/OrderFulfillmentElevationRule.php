@@ -8,14 +8,15 @@ use Specflux\AgentSafety\Policy\ElevationRule;
 use Specflux\AgentSafety\Policy\Tier;
 
 /**
- * An order status update flipping to a fulfillment status fires fulfillment +
- * customer emails, which is irreversible regardless of the verb's
- * base tier.
+ * An order status update flipping to a status with customer-facing side
+ * effects is irreversible regardless of the verb's base tier: fulfillment
+ * statuses fire fulfillment + customer emails, `cancelled` restocks and
+ * emails the customer, `refunded` marks the money as returned.
  */
 final class OrderFulfillmentElevationRule implements ElevationRule
 {
-    /** Order statuses that fire fulfillment + customer emails => irreversible. */
-    private const FULFILLMENT_STATUSES = ['processing', 'completed', 'shipped'];
+    /** Order statuses whose transition cannot be quietly undone => irreversible. */
+    private const IRREVERSIBLE_STATUSES = ['processing', 'completed', 'shipped', 'cancelled', 'refunded'];
 
     /** @param array<string, mixed> $args */
     public function apply(string $verb, array $args, Tier $currentTier): ?Tier
@@ -26,7 +27,7 @@ final class OrderFulfillmentElevationRule implements ElevationRule
 
         $status = is_string($args['status'] ?? null) ? strtolower($args['status']) : null;
 
-        return $status !== null && in_array($status, self::FULFILLMENT_STATUSES, true)
+        return $status !== null && in_array($status, self::IRREVERSIBLE_STATUSES, true)
             ? Tier::Irreversible
             : null;
     }

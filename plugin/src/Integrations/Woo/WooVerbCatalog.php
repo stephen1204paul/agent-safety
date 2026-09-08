@@ -29,9 +29,9 @@ final class WooVerbCatalog
         'woocommerce/orders-get'      => Tier::Reversible,
         'woocommerce/products-create' => Tier::SideEffecting,
         'woocommerce/products-update' => Tier::SideEffecting,
-        'woocommerce/products-delete' => Tier::SideEffecting, // bulk elevates to Tier 2 (BulkProductDeleteElevationRule)
+        'woocommerce/products-delete' => Tier::SideEffecting, // bulk or force=true elevates to Tier 2 (BulkProductDelete/ForceDeleteElevationRule)
         'woocommerce/orders-create'   => Tier::SideEffecting,
-        'woocommerce/orders-update'   => Tier::SideEffecting, // status->fulfillment elevates to Tier 2 (OrderFulfillmentElevationRule)
+        'woocommerce/orders-update'   => Tier::SideEffecting, // status->fulfillment/cancelled/refunded elevates to Tier 2 (OrderFulfillmentElevationRule)
 
         // NOT exposed by Woo core 10.8.1 — mapped for forward-compat (extensions / future core
         // abilities). Kept so the gate fails CLOSED-with-intent rather than "unknown" if they appear.

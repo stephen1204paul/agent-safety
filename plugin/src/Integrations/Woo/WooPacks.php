@@ -30,8 +30,18 @@ use Specflux\AgentSafety\Packs\Pack;
  *                         status transitions OrderFulfillmentElevationRule
  *                         elevates to Tier-2 — fulfilling is this bot's job,
  *                         so that elevation is allowed without approval).
- *                         Refunds and customer email are unreachable BY
- *                         CONSTRUCTION: they are simply not in the allow list.
+ *                         Because nothing in this pack ever asks a human,
+ *                         argument caps pin the update to what fulfilling
+ *                         IS: `status` may only move between the
+ *                         pending/on-hold/processing/completed/shipped
+ *                         states (cancelling or marking refunded belongs to
+ *                         a pack that gates Tier-2 on approval), and the
+ *                         order's money and identity fields — set_paid,
+ *                         customer_id, billing, shipping, the line/shipping/
+ *                         fee/coupon lines, transaction_id — may not appear
+ *                         in the call at all. Refunds and customer email are
+ *                         unreachable BY CONSTRUCTION: they are simply not in
+ *                         the allow list.
  *   - refund-desk       — reads plus orders-refund. Every refund is
  *                         approval-gated (Tier-2), and the roadmap-0.2 spend
  *                         limits bound the blast radius even of approved
@@ -42,6 +52,25 @@ use Specflux\AgentSafety\Packs\Pack;
  */
 final class WooPacks
 {
+    /** The only `status` values a fulfillment bot may move an order to. */
+    private const FULFILLMENT_STATUSES = ['pending', 'on-hold', 'processing', 'completed', 'shipped'];
+
+    /**
+     * Order fields a fulfillment bot never has business writing: each one
+     * either moves money or rewrites who the order belongs to.
+     */
+    private const FULFILLMENT_FORBIDDEN_KEYS = [
+        'set_paid',
+        'customer_id',
+        'billing',
+        'shipping',
+        'line_items',
+        'shipping_lines',
+        'fee_lines',
+        'coupon_lines',
+        'transaction_id',
+    ];
+
     /** @return list<Pack> */
     public static function all(): array
     {
@@ -74,6 +103,15 @@ final class WooPacks
                     'woocommerce/orders-get',
                     'woocommerce/orders-update',
                 ],
+                argumentCaps: [
+                    new ArgumentCap(
+                        id: 'order_status',
+                        verbs: 'woocommerce/orders-update',
+                        argPath: 'status',
+                        allowedValues: self::FULFILLMENT_STATUSES,
+                    ),
+                    ...self::forbiddenOn('woocommerce/orders-update', self::FULFILLMENT_FORBIDDEN_KEYS),
+                ],
             ),
             new Pack(
                 name: 'refund-desk',
@@ -96,5 +134,20 @@ final class WooPacks
                 ],
             ),
         ];
+    }
+
+    /**
+     * One forbidden-key cap per field, each named after the field so a denial
+     * reads "argument_cap_billing_forbidden_argument" in the audit trail.
+     *
+     * @param list<string> $keys
+     * @return list<ArgumentCap>
+     */
+    private static function forbiddenOn(string $verb, array $keys): array
+    {
+        return array_map(
+            static fn (string $key): ArgumentCap => new ArgumentCap(id: $key, verbs: $verb, argPath: $key, forbidden: true),
+            $keys,
+        );
     }
 }
