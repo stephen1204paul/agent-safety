@@ -21,15 +21,28 @@ use Specflux\AgentSafety\Plugin\Verdict\GrantGate;
  *
  * No REST route, deliberately. A grant is more powerful than an approval (it
  * authorises actions that have not happened yet), so it is reachable only from
- * server-side code that already has a human's decision in hand. That also means
- * this service does NOT run its own capability check: unlike an approve click,
- * a grant is issued from a host's own workflow — which may legitimately be a
- * cron tick or a WP-CLI run with no current user — so the CALLER owns proving a
- * human authorised it, and issuing without that proof is the caller's bug. The
- * feature switch below is the site-level consent that any of this happens at all.
+ * server-side code that already has a human's decision in hand — and that
+ * decision is checked here, not taken on trust. Every grant names its grantor,
+ * who must hold `manage_options` (or be vouched for by the
+ * `agent_safety_can_grant` filter, honoured only when it returns literal
+ * `true`), and asks for no more than `agent_safety_grant_max_count` calls. A
+ * cron tick or WP-CLI run with no human behind it therefore cannot issue one;
+ * a host carries the accepting user's id from the request that captured the
+ * decision. Every refusal past the feature switch is audited
+ * (`grant.refused`), so a host asking for more than the site allows shows up
+ * in the trail instead of quietly getting nothing. The feature switch itself
+ * is the site-level consent that any of this happens at all.
  */
 final class Grants
 {
+    /** The most calls one grant may carry unless `agent_safety_grant_max_count` says otherwise. */
+    public const MAX_COUNT = 50;
+
+    public const REFUSED_INVALID_REQUEST = 'invalid_request';
+    public const REFUSED_NO_GRANTOR = 'no_grantor';
+    public const REFUSED_NOT_AUTHORIZED = 'not_authorized';
+    public const REFUSED_COUNT_ABOVE_MAX = 'count_above_max';
+
     public function __construct(
         private readonly WpdbGrantStore $store,
         private readonly GrantRecorder $recorder = new GrantRecorder(),
@@ -47,11 +60,13 @@ final class Grants
      * principal $subject, inside the scope $correlationId. Returns the grant id,
      * or null when nothing was issued.
      *
-     * Refuses (null, nothing written, nothing audited) when the feature is off,
-     * the count is not positive, the subject is empty — a grant with no
-     * principal is a grant to anyone — or the scope is empty. The caller is
-     * expected to treat null as "the human's decision did not take effect", not
-     * as "it probably worked".
+     * Refuses (null, nothing written) when the feature is off, the count is not
+     * positive, the subject is empty — a grant with no principal is a grant to
+     * anyone — the scope is empty, no grantor is named, the grantor is not
+     * authorised, or the count is above the site's ceiling. Every refusal but
+     * the feature switch writes a `grant.refused` audit event carrying why. The
+     * caller is expected to treat null as "the human's decision did not take
+     * effect", not as "it probably worked".
      *
      * $correlationId MUST be derived from server-side state the host owns (a run
      * row's id, e.g. "senroflux:run:42") and never from agent-authored arguments
@@ -70,6 +85,26 @@ final class Grants
         }
 
         if ($verb === '' || $count < 1 || $correlationId === '' || $subject === null || $subject === '') {
+            $this->refuse(self::REFUSED_INVALID_REQUEST, $verb, $count, $correlationId, $grantedBy);
+
+            return null;
+        }
+
+        if ($grantedBy === null || $grantedBy < 1) {
+            $this->refuse(self::REFUSED_NO_GRANTOR, $verb, $count, $correlationId, $grantedBy);
+
+            return null;
+        }
+
+        if (!$this->authorized($grantedBy, $verb, $count, $correlationId)) {
+            $this->refuse(self::REFUSED_NOT_AUTHORIZED, $verb, $count, $correlationId, $grantedBy);
+
+            return null;
+        }
+
+        if ($count > $this->maxCount()) {
+            $this->refuse(self::REFUSED_COUNT_ABOVE_MAX, $verb, $count, $correlationId, $grantedBy);
+
             return null;
         }
 
@@ -123,5 +158,48 @@ final class Grants
     public function forCorrelation(string $correlationId): array
     {
         return $this->store->forCorrelation($correlationId);
+    }
+
+    /**
+     * The grantor gate, the same shape as {@see Approvals::authorized()}. The
+     * default asks whether the GRANTOR holds `manage_options` — the named user,
+     * not the current one, since the human who accepted need not be on the
+     * request that issues — and `agent_safety_can_grant` may override it either
+     * way. Only a literal `true` issues: a filtered false denies, and so does any
+     * other value (fail closed), so a host vouching for a grantor has to say so
+     * exactly.
+     */
+    private function authorized(int $grantedBy, string $verb, int $count, string $correlationId): bool
+    {
+        /** @var mixed $filtered */
+        $filtered = apply_filters(
+            'agent_safety_can_grant',
+            user_can($grantedBy, 'manage_options'),
+            $grantedBy,
+            $verb,
+            $count,
+            $correlationId,
+        );
+
+        return $filtered === true;
+    }
+
+    /**
+     * The most calls one grant may carry (`agent_safety_grant_max_count`). A
+     * filtered value that is not a positive int is ignored. A request above the
+     * ceiling is refused rather than clamped: a host asking for more than the
+     * site allows is a configuration error, and issuing less would hide it.
+     */
+    private function maxCount(): int
+    {
+        /** @var mixed $filtered */
+        $filtered = apply_filters('agent_safety_grant_max_count', self::MAX_COUNT);
+
+        return is_int($filtered) && $filtered > 0 ? $filtered : self::MAX_COUNT;
+    }
+
+    private function refuse(string $reason, string $verb, int $count, string $correlationId, ?int $grantedBy): void
+    {
+        $this->recorder->refused($verb, $count, $correlationId, $grantedBy, $reason);
     }
 }

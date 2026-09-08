@@ -81,6 +81,24 @@ if (!function_exists('current_user_can')) {
     }
 }
 
+if (!function_exists('user_can')) {
+    $GLOBALS['wpas_test_user_caps_by_id'] = [];
+
+    /**
+     * Test control knob: set $GLOBALS['wpas_test_user_caps_by_id'][$userId][$capability]
+     * per-test; absent users and capabilities default to false (fail closed).
+     * Deliberately NOT backed by the current_user_can() knob above: the code
+     * under test asks about a NAMED user (a grant's grantor), and a test that
+     * flips the current user's capabilities must not pass that check by accident.
+     */
+    function user_can(int|object $user, string $capability): bool
+    {
+        $id = is_object($user) && isset($user->ID) ? (int) $user->ID : (int) $user;
+
+        return (bool) ($GLOBALS['wpas_test_user_caps_by_id'][$id][$capability] ?? false);
+    }
+}
+
 if (!function_exists('__')) {
     /**
      * Honors $GLOBALS['wpas_test_translations'][$domain][$text] so tests can

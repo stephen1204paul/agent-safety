@@ -14,19 +14,20 @@ use Specflux\AgentSafety\Audit\AuditSink;
  *
  * A grant is the one place where a human's decision outruns the action it
  * authorises: by the time a governed call is auto-approved, the human who
- * allowed it may be hours gone. The audit trail therefore has to answer three
+ * allowed it may be hours gone. The audit trail therefore has to answer four
  * questions on its own — who granted what and how much, when it was withdrawn,
- * and when the budget ran out — which is exactly these three events.
+ * when the budget ran out, and who was turned away asking for one — which is
+ * exactly these four events.
  *
  * They ride the EXISTING record shape rather than a new one: the hash chain
  * commits to the canonical field order, so adding a top-level field would
  * change the payload of every record type. Instead the event name goes in
- * `reason` (`grant.issued` / `grant.revoked` / `grant.exhausted`), the grant id
- * and grantor go in the `approval` slot — a grant is an approval's precursor,
- * and the slot already means "the authorisation this row is about" — and the
- * count and plan-step provenance go in `input`. `decision` is the single
- * {@see AuditDecision::Grant} value, so one predicate selects every grant event
- * while `reason` still tells the three apart.
+ * `reason` (`grant.issued` / `grant.revoked` / `grant.exhausted` /
+ * `grant.refused`), the grant id and grantor go in the `approval` slot — a
+ * grant is an approval's precursor, and the slot already means "the
+ * authorisation this row is about" — and the count and plan-step provenance go
+ * in `input`. `decision` is the single {@see AuditDecision::Grant} value, so one
+ * predicate selects every grant event while `reason` still tells the four apart.
  *
  * No-op without a sink, like {@see DecisionRecorder}.
  */
@@ -35,6 +36,7 @@ final class GrantRecorder
     public const EVENT_ISSUED = 'grant.issued';
     public const EVENT_REVOKED = 'grant.revoked';
     public const EVENT_EXHAUSTED = 'grant.exhausted';
+    public const EVENT_REFUSED = 'grant.refused';
 
     /**
      * Synthetic pack name for grant events. A grant is issued out of band —
@@ -91,6 +93,24 @@ final class GrantRecorder
             ['grant_id' => $grant->grantId, 'count' => 0, 'plan_step_id' => $grant->planStepId],
             $grant->grantId,
             $grant->grantedBy,
+        );
+    }
+
+    /**
+     * A request for a grant was turned away past the feature switch, with the
+     * refusal reason ({@see \Specflux\AgentSafety\Plugin\Api\Grants::REFUSED_NO_GRANTOR}
+     * and siblings). The would-be grantor rides in `input`, not the `approval`
+     * slot: that slot names an authorisation that exists, and none does here.
+     */
+    public function refused(string $verb, int $count, string $correlationId, ?int $grantedBy, string $reason): void
+    {
+        $this->append(
+            self::EVENT_REFUSED,
+            $correlationId,
+            $verb,
+            ['count' => $count, 'granted_by' => $grantedBy, 'reason' => $reason],
+            null,
+            null,
         );
     }
 
