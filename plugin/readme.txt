@@ -69,6 +69,9 @@ By default, uninstalling the plugin keeps the audit log and approval data intact
 compliance record, and removing it silently on uninstall would defeat its purpose. A site
 operator who wants the tables and settings dropped can opt in explicitly (see the FAQ).
 
+WordPress multisite is not supported; activation is refused on a multisite install, network-wide
+or per site.
+
 == Frequently Asked Questions ==
 
 = Does this require WooCommerce? =

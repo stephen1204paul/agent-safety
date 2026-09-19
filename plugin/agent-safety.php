@@ -54,6 +54,7 @@ use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\ElevationRules;
 use Specflux\AgentSafety\Plugin\Support\GrantRecorder;
+use Specflux\AgentSafety\Plugin\Support\MultisiteGuard;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
@@ -87,12 +88,31 @@ require_once __DIR__ . '/src/api.php';
 register_activation_hook(__FILE__, __NAMESPACE__ . '\\activate_agent_safety');
 register_deactivation_hook(__FILE__, __NAMESPACE__ . '\\deactivate_agent_safety');
 
-/** Create/upgrade both tables and schedule the approval sweep. */
+/**
+ * Create/upgrade both tables and schedule the approval sweep — after refusing
+ * multisite (S2), per-site or network-wide: this plugin's identity/gate/audit
+ * wiring and approvals schema have never been designed or tested for a
+ * network install, and letting activation through would previously have left
+ * the ApprovalSweep cron scheduled on only the activating site
+ * (stephen1204paul/agent-safety#4) — refusing outright makes that moot.
+ */
 function activate_agent_safety(): void
 {
     $agsafe_autoload = __DIR__ . '/vendor/autoload.php';
     if (is_readable($agsafe_autoload)) {
         require_once $agsafe_autoload;
+    }
+
+    if (class_exists(MultisiteGuard::class) && MultisiteGuard::refused()) {
+        MultisiteGuard::refuseActivation(__FILE__);
+
+        return;
+    }
+
+    if (function_exists('is_multisite') && is_multisite()) {
+        // Defensive fallback if the autoloader failed to bring in the guard
+        // class above: still refuse rather than activate half-wired.
+        wp_die(esc_html__('Agent Safety does not support WordPress multisite. It was not activated.', 'agent-safety'));
     }
 
     if (!class_exists(Schema::class) || !class_exists(ApprovalSweep::class)) {
@@ -123,6 +143,16 @@ function deactivate_agent_safety(): void
 // are still wired long before any ability exists: the Abilities API registry
 // fires wp_abilities_api_init lazily, no earlier than init.
 add_action('plugins_loaded', static function (): void {
+    // Runtime refusal (S2): covers a copy somehow active on a multisite
+    // install (e.g. a site converted to multisite after activation), since
+    // register_activation_hook only ever fires on activation, not update.
+    // Wires nothing else below when refused.
+    if (class_exists(MultisiteGuard::class) && MultisiteGuard::refused()) {
+        MultisiteGuard::refuseRuntime(__FILE__);
+
+        return;
+    }
+
     if (!class_exists(Gate::class)) {
         return;
     }
