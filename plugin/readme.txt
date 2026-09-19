@@ -1,5 +1,5 @@
 === Agent Safety ===
-Contributors: specflux
+Contributors: specflux, stephen1204paul
 Requires at least: 6.9
 Tested up to: 7.0
 Requires PHP: 8.1
