@@ -9,8 +9,10 @@ use Specflux\AgentSafety\Policy\Tier;
 use Specflux\AgentSafety\Policy\VerbCatalog;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\BulkProductDeleteElevationRule;
+use Specflux\AgentSafety\Plugin\Integrations\Woo\CustomerNoteElevationRule;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\ForceDeleteElevationRule;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\OrderFulfillmentElevationRule;
+use Specflux\AgentSafety\Plugin\Integrations\Woo\ProductPriceOrPublishElevationRule;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\WooIntegration;
 
 /**
@@ -49,7 +51,13 @@ final class WooIntegrationTest extends TestCase
         $this->assertSame([], $identity->providers());
 
         $this->assertSame(
-            [OrderFulfillmentElevationRule::class, BulkProductDeleteElevationRule::class, ForceDeleteElevationRule::class],
+            [
+                OrderFulfillmentElevationRule::class,
+                BulkProductDeleteElevationRule::class,
+                ForceDeleteElevationRule::class,
+                ProductPriceOrPublishElevationRule::class,
+                CustomerNoteElevationRule::class,
+            ],
             array_map(static fn (object $rule): string => $rule::class, $contributions['elevationRules']),
         );
         $this->assertSame(['woocommerce/'], $contributions['governedNamespaces']);

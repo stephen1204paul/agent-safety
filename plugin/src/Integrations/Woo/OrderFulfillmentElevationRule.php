@@ -18,10 +18,13 @@ final class OrderFulfillmentElevationRule implements ElevationRule
     /** Order statuses whose transition cannot be quietly undone => irreversible. */
     private const IRREVERSIBLE_STATUSES = ['processing', 'completed', 'shipped', 'cancelled', 'refunded'];
 
+    /** The MCP-bridge verb and the session-visible verb both carry a `status` arg. */
+    private const VERBS = ['woocommerce/orders-update', 'woocommerce/order-update-status'];
+
     /** @param array<string, mixed> $args */
     public function apply(string $verb, array $args, Tier $currentTier): ?Tier
     {
-        if ($verb !== 'woocommerce/orders-update') {
+        if (!in_array($verb, self::VERBS, true)) {
             return null;
         }
 
