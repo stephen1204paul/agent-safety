@@ -55,7 +55,7 @@ final class ProductPriceOrPublishElevationRule implements ElevationRule
     /** @param array<string, mixed> $args */
     private static function publishes(array $args): bool
     {
-        $status = is_string($args['status'] ?? null) ? strtolower($args['status']) : null;
+        $status = is_string($args['status'] ?? null) ? strtolower(trim($args['status'])) : null;
 
         return $status !== null && in_array($status, self::PUBLISHING_STATUSES, true);
     }

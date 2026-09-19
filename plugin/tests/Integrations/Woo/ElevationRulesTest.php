@@ -32,7 +32,7 @@ final class ElevationRulesTest extends TestCase
         $rule = new OrderFulfillmentElevationRule();
 
         foreach ([self::ORDER_UPDATE, self::ORDER_UPDATE_STATUS] as $verb) {
-            foreach (['processing', 'completed', 'shipped', 'cancelled', 'refunded', 'Cancelled'] as $status) {
+            foreach (['processing', 'completed', 'shipped', 'cancelled', 'refunded', 'Cancelled', ' cancelled', "cancelled\n", " Cancelled \t"] as $status) {
                 $this->assertSame(
                     Tier::Irreversible,
                     $rule->apply($verb, ['id' => 42, 'status' => $status], Tier::SideEffecting),
@@ -84,7 +84,7 @@ final class ElevationRulesTest extends TestCase
     {
         $rule = new ProductPriceOrPublishElevationRule();
 
-        foreach (['publish', 'future', 'Publish'] as $status) {
+        foreach (['publish', 'future', 'Publish', ' publish', "publish\n", " Publish \t"] as $status) {
             $this->assertSame(
                 Tier::Irreversible,
                 $rule->apply(self::PRODUCT_CREATE, ['status' => $status], Tier::SideEffecting),
