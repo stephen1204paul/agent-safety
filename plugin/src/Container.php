@@ -6,6 +6,7 @@ namespace Specflux\AgentSafety\Plugin;
 
 use Specflux\AgentSafety\Plugin\Api\Approvals;
 use Specflux\AgentSafety\Plugin\Api\Grants;
+use Specflux\AgentSafety\Plugin\Support\PauseSwitch;
 
 /**
  * The plugin's service locator, built ONCE by the bootstrap after every seam
@@ -24,13 +25,14 @@ final class Container
     private function __construct(
         private readonly ?Approvals $approvals,
         private readonly ?Grants $grants = null,
+        private readonly ?PauseSwitch $pause = null,
     ) {
     }
 
     /** Called once by the plugin bootstrap on plugins_loaded. Later calls overwrite. */
-    public static function init(?Approvals $approvals, ?Grants $grants = null): void
+    public static function init(?Approvals $approvals, ?Grants $grants = null, ?PauseSwitch $pause = null): void
     {
-        self::$instance = new self($approvals, $grants);
+        self::$instance = new self($approvals, $grants, $pause);
     }
 
     /**
@@ -68,6 +70,17 @@ final class Container
     public function grants(): ?Grants
     {
         return $this->grants;
+    }
+
+    /**
+     * The emergency stop: pause or resume every governed call from site code
+     * or a WP-CLI command, with the same audit rows the Packs screen writes.
+     * Null only when the bootstrap has not wired it; feature-detect like the
+     * other services.
+     */
+    public function pause(): ?PauseSwitch
+    {
+        return $this->pause;
     }
 
     /** @internal tests only. */

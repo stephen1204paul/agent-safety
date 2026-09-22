@@ -9,10 +9,12 @@ use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Identity\IdentityProvider;
 use Specflux\AgentSafety\Plugin\Support\AdminChangeRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\PauseSwitch;
 use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 
 /**
- * Tools → "Agent Capability Packs": the human side of credential scoping.
+ * Tools → "Agent Capability Packs": the human side of credential scoping,
+ * and the emergency stop that overrides all of it.
  *
  * Shows the pack catalog (read-only) and lets an admin bind each identity a
  * configured {@see IdentityProvider} exposes (an application password, a user,
@@ -31,6 +33,10 @@ use Specflux\AgentSafety\Plugin\Support\ShadowMode;
  * {@see AdminChangeRecorder}, one row per binding or pack that actually
  * changed: the log must be able to say who widened a credential or switched
  * enforcement off, not only what the agent did afterwards.
+ *
+ * The emergency stop ({@see PauseSwitch}) sits first on the page and, while
+ * it holds, as a banner on every wp-admin screen: an operator who has just
+ * noticed an agent misbehaving must not have to find this page to stop it.
  */
 final class CapabilityPacksPage
 {
@@ -38,6 +44,8 @@ final class CapabilityPacksPage
     private const CAP = 'manage_options';
     private const SAVE = 'agsafe_save_pack_bindings';
     private const SHADOW = 'agsafe_save_shadow_packs';
+    private const PAUSE = 'agsafe_pause';
+    private const RESUME = 'agsafe_resume';
 
     /** Observation windows offered on the shadow form, in days; the last is the default. */
     private const SHADOW_DAYS = [1, 3, 7];
@@ -47,6 +55,7 @@ final class CapabilityPacksPage
         private readonly IdentityChain $identity,
         private readonly ShadowMode $shadow = new ShadowMode(),
         private readonly AdminChangeRecorder $changes = new AdminChangeRecorder(),
+        private readonly PauseSwitch $pause = new PauseSwitch(),
     ) {
     }
 
@@ -55,6 +64,9 @@ final class CapabilityPacksPage
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_post_' . self::SAVE, [$this, 'save']);
         add_action('admin_post_' . self::SHADOW, [$this, 'saveShadow']);
+        add_action('admin_post_' . self::PAUSE, [$this, 'pauseAction']);
+        add_action('admin_post_' . self::RESUME, [$this, 'resumeAction']);
+        add_action('admin_notices', [$this, 'pausedNotice']);
     }
 
     public function menu(): void
@@ -84,10 +96,121 @@ final class CapabilityPacksPage
             echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Capability pack bindings saved.', 'agent-safety') . '</p></div>';
         }
 
+        $this->renderEmergencyStop();
         $this->renderCatalog($registry->names());
         $this->renderBindings($registry->names(), $registry->defaultPack(), $registry->bindings());
 
         echo '</div>';
+    }
+
+    /**
+     * The emergency stop, first on the page: one button that denies every
+     * governed call while the audit trail keeps recording, and the way back.
+     * A pause the `agent_safety_paused` filter forces is shown but offers no
+     * Resume — nothing on this screen can lift it.
+     */
+    private function renderEmergencyStop(): void
+    {
+        echo '<h2>' . esc_html__('Emergency stop', 'agent-safety') . '</h2>';
+
+        if (!$this->pause->isPaused()) {
+            echo '<p>' . esc_html__('Pausing denies every governed agent call, of every tier, until you resume. Nothing executes and no approval is claimed; each refusal is audited as site_paused, and a shadowed pack is paused like any other.', 'agent-safety') . '</p>';
+            echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+            echo '<input type="hidden" name="action" value="' . esc_attr(self::PAUSE) . '">';
+            echo wp_nonce_field(self::PAUSE, '_wpnonce', true, false); // phpcs:ignore WordPress.Security.EscapeOutput -- core-built hidden fields.
+            echo '<p><label>' . esc_html__('Reason', 'agent-safety') . ' <input type="text" name="reason" class="regular-text" required></label></p>';
+            echo '<p><button type="submit" class="button button-primary">' . esc_html__('Pause all agent actions', 'agent-safety') . '</button></p>';
+            echo '</form>';
+
+            return;
+        }
+
+        $state = $this->pause->state();
+        echo '<div class="notice notice-error inline"><p><strong>' . esc_html__('All agent actions are paused.', 'agent-safety') . '</strong> ';
+        if ($state === null) {
+            echo esc_html(sprintf(
+                /* translators: %s filter hook name */
+                __('Forced by the %s filter; it cannot be lifted from this screen.', 'agent-safety'),
+                PauseSwitch::FILTER
+            ));
+        } else {
+            echo esc_html(sprintf(
+                /* translators: 1: date and time (UTC), 2: user id, 3: reason */
+                __('Since %1$s by user #%2$s. Reason: %3$s', 'agent-safety'),
+                $state['since'] === null ? '?' : gmdate('Y-m-d H:i', $state['since']) . ' UTC',
+                $state['by'] === null ? '?' : (string) $state['by'],
+                $state['reason'] === '' ? '—' : $state['reason']
+            ));
+        }
+        echo '</p></div>';
+
+        if ($state !== null) {
+            echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+            echo '<input type="hidden" name="action" value="' . esc_attr(self::RESUME) . '">';
+            echo wp_nonce_field(self::RESUME, '_wpnonce', true, false); // phpcs:ignore WordPress.Security.EscapeOutput -- core-built hidden fields.
+            echo '<p><button type="submit" class="button button-primary">' . esc_html__('Resume agent actions', 'agent-safety') . '</button></p>';
+            echo '</form>';
+        }
+    }
+
+    /** The banner on every wp-admin screen while paused, for administrators, linking back here. */
+    public function pausedNotice(): void
+    {
+        if (!current_user_can(self::CAP) || !$this->pause->isPaused()) {
+            return;
+        }
+
+        echo '<div class="notice notice-error"><p><strong>'
+            . esc_html__('Agent Safety: all agent actions are paused.', 'agent-safety')
+            . '</strong> <a href="' . esc_url(admin_url('tools.php?page=' . self::SLUG)) . '">'
+            . esc_html__('Review or resume', 'agent-safety')
+            . '</a></p></div>';
+    }
+
+    public function pauseAction(): void
+    {
+        if (!current_user_can(self::CAP)) {
+            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
+        }
+        check_admin_referer(self::PAUSE);
+
+        $reason = isset($_POST['reason']) && is_scalar($_POST['reason'])
+            ? sanitize_text_field((string) wp_unslash($_POST['reason']))
+            : '';
+
+        $this->applyPause($reason);
+
+        wp_safe_redirect(add_query_arg(['page' => self::SLUG], admin_url('tools.php')));
+        exit;
+    }
+
+    public function resumeAction(): void
+    {
+        if (!current_user_can(self::CAP)) {
+            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
+        }
+        check_admin_referer(self::RESUME);
+
+        $this->applyResume();
+
+        wp_safe_redirect(add_query_arg(['page' => self::SLUG], admin_url('tools.php')));
+        exit;
+    }
+
+    /**
+     * Pause as the logged-in user. An empty reason is accepted: stopping the
+     * agents must never be made harder by the form. Split from
+     * {@see pauseAction()} for the same reason as {@see applyShadow()}.
+     */
+    public function applyPause(string $reason): void
+    {
+        $this->pause->pause(get_current_user_id(), $reason);
+    }
+
+    /** Resume as the logged-in user; see {@see PauseSwitch::resume()} for what it can and cannot lift. */
+    public function applyResume(): void
+    {
+        $this->pause->resume(get_current_user_id());
     }
 
     /** @param list<string> $names */

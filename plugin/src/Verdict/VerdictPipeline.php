@@ -13,9 +13,11 @@ use Specflux\AgentSafety\Gate\Outcome;
 use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
+use Specflux\AgentSafety\Plugin\Support\PauseSwitch;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
 use Specflux\AgentSafety\Plugin\Support\ShadowMode;
+use Specflux\AgentSafety\Plugin\Support\Tripwires;
 use Specflux\AgentSafety\Policy\Tier;
 
 /**
@@ -31,6 +33,10 @@ use Specflux\AgentSafety\Policy\Tier;
  *   1. Core {@see Gate} evaluates verb + args + pack with the approval state the
  *      mode allows (peek: a non-mutating lookup; claim: none yet).
  *   2. A self-reported destructive hint may only TIGHTEN the decision.
+ *   2b. The stops ({@see PauseSwitch}, {@see Tripwires}): a paused site denies
+ *      everything, a locked-out token denies everything, and a denial the
+ *      gate just produced is counted towards that lockout. Ahead of the claim
+ *      because a stop must hold even for a call a human already approved.
  *   3. Claim mode only: if approval is now the SOLE blocker, reserve a human
  *      grant for this exact action and re-evaluate as approved. Reservation is
  *      a side effect, so it must never fire while any other deny gate
@@ -40,11 +46,13 @@ use Specflux\AgentSafety\Policy\Tier;
  *      record for these exact args, which step 3's ordinary claim then reserves.
  *      A human's decision about THIS action always outranks — and is spent
  *      before — a standing pre-authorisation.
- *   4. Rate/quota caps, then argument-aware caps, bind only on a call that
- *      would otherwise proceed — a denial must never itself consume budget.
+ *   4. Rate/quota caps, then the repeat-call guard, then argument-aware caps,
+ *      bind only on a call that would otherwise proceed — a denial must never
+ *      itself consume budget.
  *   5. Shadow mode: a pack in log-only observation audits the would-be verdict
  *      as a dry run and lets the call proceed; no pending approval is minted for
- *      an action that already ran.
+ *      an action that already ran. The pause is the one denial shadow does not
+ *      loosen: a stopped site runs nothing, dry or otherwise.
  *   6. A call that will NOT execute persists its pending approval (when
  *      required) and is audited HERE, because the execution seam never runs
  *      for it. Allowed calls are audited at execution time by AbilityAuditLog.
@@ -67,6 +75,8 @@ final class VerdictPipeline
         private readonly ArgumentCapGate $argumentCaps = new ArgumentCapGate(),
         private readonly ShadowMode $shadow = new ShadowMode(),
         private readonly ?GrantGate $grants = null,
+        private readonly PauseSwitch $pause = new PauseSwitch(),
+        private readonly Tripwires $tripwires = new Tripwires(),
     ) {
     }
 
@@ -75,6 +85,7 @@ final class VerdictPipeline
     {
         $peeked = VerdictMode::Peek === $mode && $this->recorder->hasApprovedGrant($verb, $args);
         $decision = $this->evaluate($verb, $args, $pack, $hints, $peeked);
+        $decision = $this->enforceStops($decision, $verb, $args);
 
         $claimed = false;
         $reservedId = null;
@@ -92,6 +103,10 @@ final class VerdictPipeline
 
         if (Outcome::Allow === $decision->outcome) {
             $decision = $this->enforceRateLimit($pack, $decision, $verb, $args);
+        }
+
+        if (Outcome::Allow === $decision->outcome) {
+            $decision = $this->enforceRepeatGuard($pack, $decision, $verb, $args);
         }
 
         if (Outcome::Allow === $decision->outcome) {
@@ -113,7 +128,9 @@ final class VerdictPipeline
 
         $eventId = RequestContext::event();
 
-        if ($this->shadow->isShadow($pack->name)) {
+        // A shadowed pack's would-be denial proceeds as a dry run — except the
+        // pause. The stop is absolute, or it is not a stop.
+        if (PauseSwitch::REASON !== $decision->reason && $this->shadow->isShadow($pack->name)) {
             $this->recorder->auditDecision($eventId, $verb, $args, $pack, $decision, null, true);
 
             return new Verdict($verb, $pack, $decision, null, $reservedId, $claimed, true, $eventId);
@@ -224,6 +241,34 @@ final class VerdictPipeline
     }
 
     /**
+     * Step 2b: the emergency stop and the denial lockout, on every decision
+     * alike. The pause wins outright and the tripwires are not consulted at
+     * all while it holds — there is nothing left to protect. Otherwise a
+     * locked-out token is denied whatever the gate said, and a decision the
+     * gate denied is counted towards that lockout. Neither of the two stop
+     * reasons feeds the count, and an approval park is not a denial.
+     *
+     * @param array<string, mixed> $args
+     */
+    private function enforceStops(Decision $decision, string $verb, array $args): Decision
+    {
+        if ($this->pause->isPaused()) {
+            return Decision::deny(PauseSwitch::REASON, $decision->tier);
+        }
+
+        $token = RequestContext::tokenId();
+        if ($this->tripwires->isLockedOut($token)) {
+            return Decision::deny(Tripwires::LOCKOUT, $decision->tier);
+        }
+
+        if (Outcome::Deny === $decision->outcome) {
+            $this->tripwires->recordDenial($token, $verb, $args);
+        }
+
+        return $decision;
+    }
+
+    /**
      * Enforce this pack's rate/quota caps on a decision that is otherwise
      * Allow. Returns the SAME decision when admitted (the call has just been
      * counted against the pack's limits as a side effect), or a Deny naming
@@ -236,6 +281,29 @@ final class VerdictPipeline
         $tripped = $this->rateLimits->admit($pack, RequestContext::tokenId(), $verb, $args);
 
         return $tripped === null ? $decision : Decision::deny('rate_limited_' . $tripped, $decision->tier);
+    }
+
+    /**
+     * The repeat-call guard on a decision that is otherwise Allow: a write
+     * (tier 1 or 2) this credential has already issued with these arguments
+     * too many times this hour is denied `repeat_call`; a read is never
+     * counted. A decision with no tier is counted rather than exempted.
+     *
+     * Sits after the rate limit and before the argument caps so a refused
+     * repeat is never summed into a spend total; as with any cap that trips
+     * after the rate limit admitted the call, the rate unit stays spent.
+     *
+     * @param array<string, mixed> $args
+     */
+    private function enforceRepeatGuard(Pack $pack, Decision $decision, string $verb, array $args): Decision
+    {
+        if (Tier::Reversible === $decision->tier) {
+            return $decision;
+        }
+
+        return $this->tripwires->admit($pack, RequestContext::tokenId(), $verb, $args)
+            ? $decision
+            : Decision::deny(Tripwires::REPEAT, $decision->tier);
     }
 
     /**

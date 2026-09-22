@@ -55,10 +55,13 @@ use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\ElevationRules;
 use Specflux\AgentSafety\Plugin\Support\GrantRecorder;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
+use Specflux\AgentSafety\Plugin\Support\PauseSwitch;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
 use Specflux\AgentSafety\Plugin\Support\Schema;
 use Specflux\AgentSafety\Plugin\Support\ShadowMode;
+use Specflux\AgentSafety\Plugin\Support\Tripwires;
+use Specflux\AgentSafety\Plugin\Support\WindowCounter;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -241,6 +244,13 @@ add_action('plugins_loaded', static function (): void {
     // page and the hourly sweep so both write identical rows.
     $agsafe_changes = new AdminChangeRecorder($agsafe_sink);
 
+    // The emergency stop and the tripwires. One notifier instance serves both
+    // the approval emails below and the lockout alert, so a site's configured
+    // recipient is read in exactly one place.
+    $agsafe_pause = new PauseSwitch($agsafe_changes);
+    $agsafe_notifier = new ApprovalNotifier();
+    $agsafe_tripwires = new Tripwires(new WindowCounter(), $agsafe_changes, $agsafe_notifier);
+
     // Pre-approval grants (AS-12), behind the default-false
     // `agent_safety_enable_grants` filter. Constructed whenever there is a
     // database — the objects are inert while the feature switch is off — so a
@@ -254,7 +264,17 @@ add_action('plugins_loaded', static function (): void {
     // evaluation, the approval claim and its re-entrancy memo, the caps, shadow
     // mode, and the audit/pending-approval obligations of a blocked call all
     // live here, so a call intercepted by either seam is judged identically.
-    $agsafe_pipeline = new VerdictPipeline($agsafe_gate, $agsafe_recorder, $agsafe_approvals, $agsafe_rate_limits, $agsafe_argument_caps, $agsafe_shadow, $agsafe_grant_gate);
+    $agsafe_pipeline = new VerdictPipeline(
+        $agsafe_gate,
+        $agsafe_recorder,
+        $agsafe_approvals,
+        $agsafe_rate_limits,
+        $agsafe_argument_caps,
+        $agsafe_shadow,
+        $agsafe_grant_gate,
+        $agsafe_pause,
+        $agsafe_tripwires,
+    );
 
     // Primary seam on the shipping stack (WP core Abilities API; adapter-version-independent).
     // Claim-mode adapter: owns the finalize/rollback of grants the pipeline
@@ -336,7 +356,7 @@ add_action('plugins_loaded', static function (): void {
         // Route each NEW pending approval to the humans who must clear it:
         // email (+ optional webhook), on the agent_safety_approval_requested
         // action the store fires from its fresh-insert path only.
-        (new ApprovalNotifier())->register();
+        $agsafe_notifier->register();
     } else {
         $agsafe_api_approvals = null;
     }
@@ -345,13 +365,16 @@ add_action('plugins_loaded', static function (): void {
     // global agent_safety() locator. approvals() and grants() are null only on
     // the pathological no-database path; consumers feature-detect on that.
     // A non-null grants() still does nothing until the site turns
-    // `agent_safety_enable_grants` on.
+    // `agent_safety_enable_grants` on. pause() is the emergency stop, for a
+    // host or a WP-CLI command.
     Container::init(
         $agsafe_api_approvals ?? null,
         $agsafe_grant_store !== null ? new Grants($agsafe_grant_store, new GrantRecorder($agsafe_sink)) : null,
+        $agsafe_pause,
     );
 
-    // Capability-pack admin (Tools → Agent Capability Packs): bind each identity
-    // the configured providers expose to a pack from the catalog.
-    (new CapabilityPacksPage($agsafe_packs, $agsafe_identity, $agsafe_shadow, $agsafe_changes))->register();
+    // Capability-pack admin (Tools → Agent Capability Packs): the emergency
+    // stop, then bind each identity the configured providers expose to a pack
+    // from the catalog.
+    (new CapabilityPacksPage($agsafe_packs, $agsafe_identity, $agsafe_shadow, $agsafe_changes, $agsafe_pause))->register();
 }, 0);

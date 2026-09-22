@@ -47,13 +47,40 @@ final class ApprovalNotifier
         $this->webhook($approvalId, $verb);
     }
 
-    private function email(string $approvalId, string $verb, string $summary): void
+    /**
+     * Where notifications go: the configured recipient, else the site's
+     * admin_email; null when neither is set, in which case nothing is sent.
+     */
+    public function recipient(): ?string
     {
         $to = (string) get_option(self::EMAIL_OPTION, '');
         if ($to === '') {
             $to = (string) get_option('admin_email', '');
         }
-        $to = apply_filters('agent_safety_approval_notify_to', $to, $approvalId, $verb);
+
+        return $to === '' ? null : $to;
+    }
+
+    /**
+     * An operator alert that is not about an approval — a tripwire locking a
+     * credential out ({@see Tripwires}) — over the same mail path and to the
+     * same recipient, without the approval-specific recipient filter. The
+     * caller composes the body from identifiers it resolved itself, never
+     * from anything the agent supplied.
+     */
+    public function alert(string $subject, string $body): void
+    {
+        $to = $this->recipient();
+        if ($to === null) {
+            return;
+        }
+
+        wp_mail($to, '[Agent Safety] ' . $subject, $body);
+    }
+
+    private function email(string $approvalId, string $verb, string $summary): void
+    {
+        $to = apply_filters('agent_safety_approval_notify_to', $this->recipient() ?? '', $approvalId, $verb);
         if (!is_string($to) || $to === '') {
             return;
         }

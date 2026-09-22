@@ -397,6 +397,53 @@ if (!function_exists('admin_url')) {
     }
 }
 
+if (!function_exists('wp_die')) {
+    /**
+     * Throws instead of exiting, so a test can assert that an admin_post
+     * handler stopped at its capability or nonce check before touching state.
+     *
+     * @param mixed $message
+     * @param mixed $title
+     * @param mixed $args
+     */
+    function wp_die($message = '', $title = '', $args = []): never
+    {
+        throw new RuntimeException('wp_die: ' . (is_string($message) ? $message : ''));
+    }
+}
+
+if (!function_exists('check_admin_referer')) {
+    /**
+     * Accepts exactly the value the wp_nonce_field shim above emits, read from
+     * $_POST or $_GET (CLI never rebuilds $_REQUEST); anything else dies, as
+     * core does.
+     */
+    function check_admin_referer(string $action = '-1', string $query_arg = '_wpnonce'): int
+    {
+        $nonce = $_POST[$query_arg] ?? $_GET[$query_arg] ?? null;
+        if ($nonce !== 'test-nonce') {
+            wp_die('The link you followed has expired.');
+        }
+
+        return 1;
+    }
+}
+
+if (!function_exists('wp_unslash')) {
+    /**
+     * @param mixed $value
+     * @return mixed
+     */
+    function wp_unslash($value)
+    {
+        if (is_array($value)) {
+            return array_map('wp_unslash', $value);
+        }
+
+        return is_string($value) ? stripslashes($value) : $value;
+    }
+}
+
 if (!function_exists('wpas_test_kses_protocol_ok')) {
     /**
      * The shim's stand-in for core's wp_kses_bad_protocol(): is this URL-bearing
