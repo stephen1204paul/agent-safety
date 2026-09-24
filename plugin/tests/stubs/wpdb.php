@@ -36,6 +36,16 @@ if (!class_exists('wpdb', false)) {
         /** Canned return for the next get_var() call. */
         public mixed $varReturn = null;
 
+        /**
+         * Optional per-call overrides for get_var(), consumed in FIFO order
+         * before falling back to $varReturn — needed by tests that issue
+         * more than one get_var() (e.g. Schema's old/new table-existence
+         * probes) and need each call to answer differently.
+         *
+         * @var list<mixed>
+         */
+        public array $varReturnQueue = [];
+
         /** @var array<string, mixed>|null Canned return for the next get_row() call. */
         public ?array $rowReturn = null;
 
@@ -79,6 +89,10 @@ if (!class_exists('wpdb', false)) {
         {
             if ($query !== null) {
                 $this->queries[] = $query;
+            }
+
+            if ($this->varReturnQueue !== []) {
+                return array_shift($this->varReturnQueue);
             }
 
             return $this->varReturn;
