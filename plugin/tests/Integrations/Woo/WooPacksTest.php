@@ -17,12 +17,12 @@ use Specflux\AgentSafety\Policy\Tier;
  */
 final class WooPacksTest extends TestCase
 {
-    public function testCatalogShipsTheFivePacksWithUniqueNames(): void
+    public function testCatalogShipsTheFourPacksWithUniqueNames(): void
     {
         $names = array_map(static fn (Pack $p): string => $p->name, WooPacks::all());
 
         $this->assertSame(
-            ['woo-default-agent', 'support-agent', 'readonly-analyst', 'fulfillment-bot', 'refund-desk'],
+            ['woo-default-agent', 'support-agent', 'readonly-analyst', 'fulfillment-bot'],
             $names,
         );
         $this->assertSame($names, array_unique($names));
@@ -33,7 +33,8 @@ final class WooPacksTest extends TestCase
         $pack = $this->pack('readonly-analyst');
 
         $this->assertTrue($pack->allows('woocommerce/orders-list'));
-        $this->assertTrue($pack->allows('woocommerce/reports-sales'));
+        $this->assertTrue($pack->allows('woocommerce/products-query'));
+        $this->assertTrue($pack->allows('woocommerce/orders-query'));
         $this->assertFalse($pack->allows('woocommerce/products-update'));
         $this->assertFalse($pack->allows('woocommerce/orders-refund'));
         // Belt and braces: even a verb that slipped INTO the allow list could
@@ -82,21 +83,25 @@ final class WooPacksTest extends TestCase
         }
     }
 
-    public function testRefundDeskApprovalGatesEveryRefundAndBoundsTheSpend(): void
+    public function testWooDefaultAgentResolvesTheSingularSessionVisibleVerbs(): void
     {
-        $pack = $this->pack('refund-desk');
+        $pack = $this->pack('woo-default-agent');
 
-        $this->assertTrue($pack->allows('woocommerce/orders-refund'));
-        $this->assertFalse($pack->allows('woocommerce/orders-update'));
-        $this->assertTrue($pack->requiresApproval(Tier::Irreversible));
-        $this->assertTrue($pack->hasArgumentCaps());
+        // Widened to the session-visible singular names; tier/elevation
+        // still governs whether a Tier-2 call needs approval, but the
+        // allow list itself no longer blocks these verbs.
+        $this->assertTrue($pack->allows('woocommerce/product-update'));
+        $this->assertTrue($pack->allows('woocommerce/product-create'));
+        $this->assertTrue($pack->allows('woocommerce/order-add-note'));
+        $this->assertTrue($pack->allows('woocommerce/order-update-status'));
+    }
 
-        $cap = $pack->argumentCaps[0];
-        $this->assertTrue($cap->appliesTo('woocommerce/orders-refund'));
-        $this->assertFalse($cap->appliesTo('woocommerce/orders-list'));
-        $this->assertSame('amount', $cap->argPath);
-        $this->assertSame(500.0, $cap->maxPerCall);
-        $this->assertSame(2000.0, $cap->maxTotalPerDay);
+    public function testSupportAgentAlsoGetsTheSingularSessionVisibleVerbs(): void
+    {
+        $pack = $this->pack('support-agent');
+
+        $this->assertTrue($pack->allows('woocommerce/product-update'));
+        $this->assertTrue($pack->allows('woocommerce/order-add-note'));
     }
 
     private function pack(string $name): Pack
