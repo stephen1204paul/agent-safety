@@ -47,7 +47,7 @@ final class SchemaTest extends TestCase
         $this->assertCount(3, $GLOBALS['wpas_test_dbdelta_queries']);
         $this->assertStringContainsString('wp_agsafe_audit_log', $GLOBALS['wpas_test_dbdelta_queries'][0]);
         $this->assertStringContainsString('wp_agsafe_approvals', $GLOBALS['wpas_test_dbdelta_queries'][1]);
-        $this->assertStringContainsString('wp_agent_safety_grants', $GLOBALS['wpas_test_dbdelta_queries'][2]);
+        $this->assertStringContainsString('wp_agsafe_grants', $GLOBALS['wpas_test_dbdelta_queries'][2]);
     }
 
     public function testTheGrantsTableIndexesTheOnlyLookupTheGatePerforms(): void
@@ -107,7 +107,6 @@ final class SchemaTest extends TestCase
 
         Schema::maybeUpgrade(new wpdb());
 
-        $this->assertSame('3', Schema::VERSION);
         $this->assertSame(Schema::VERSION, $GLOBALS['wpas_test_options'][Schema::VERSION_OPTION]);
         $this->assertSame([
             'support-agent' => self::NOW + ShadowMode::MAX_TTL,
@@ -135,5 +134,119 @@ final class SchemaTest extends TestCase
         // Left as-is: the reader fails closed on the legacy shape, the sweep
         // retires it. Only an upgrade hands out a fresh window.
         $this->assertSame(['support-agent'], $GLOBALS['wpas_test_options'][ShadowMode::OPTION]);
+    }
+
+    // --- version 4: fingerprint columns + grants table rename -------------
+
+    public function testApprovalsGainTheFingerprintColumns(): void
+    {
+        Schema::install(new wpdb());
+
+        $approvals = $GLOBALS['wpas_test_dbdelta_queries'][1];
+        $this->assertStringContainsString('fingerprint CHAR(64) NULL', $approvals);
+        $this->assertStringContainsString('fingerprint_kind VARCHAR(10) NULL', $approvals);
+    }
+
+    public function testAFreshInstallCreatesTheGrantsTableUnderItsNewNameDirectly(): void
+    {
+        $db = new wpdb();
+        // No legacy table on a fresh install: both existence probes miss.
+        $db->varReturnQueue = [null];
+
+        Schema::install($db);
+
+        $this->assertStringContainsString('wp_agsafe_grants', $GLOBALS['wpas_test_dbdelta_queries'][2]);
+        $this->assertSame([], self::renameQueries($db), 'a fresh install has nothing to RENAME');
+        $this->assertFalse($GLOBALS['wpas_test_options'][Schema::GRANTS_RENAME_CONFLICT_OPTION] ?? false);
+    }
+
+    /** @return list<string> */
+    private static function renameQueries(wpdb $db): array
+    {
+        return array_values(array_filter(
+            $db->queries,
+            static fn (string $query): bool => str_starts_with($query, 'RENAME TABLE')
+        ));
+    }
+
+    public function testUpgradingFromVersionThreeRenamesTheLegacyGrantsTable(): void
+    {
+        $GLOBALS['wpas_test_options'][Schema::VERSION_OPTION] = '3';
+        $db = new wpdb();
+        // Legacy table found (SHOW TABLES LIKE echoes the name back); the new
+        // name isn't there yet.
+        $db->varReturnQueue = ['wp_agent_safety_grants', null];
+
+        Schema::maybeUpgrade($db);
+
+        $this->assertSame(
+            ['RENAME TABLE wp_agent_safety_grants TO wp_agsafe_grants'],
+            self::renameQueries($db)
+        );
+        $this->assertSame(Schema::VERSION, $GLOBALS['wpas_test_options'][Schema::VERSION_OPTION]);
+        $this->assertArrayNotHasKey(Schema::GRANTS_RENAME_CONFLICT_OPTION, $GLOBALS['wpas_test_options']);
+    }
+
+    public function testRunningTheUpgradeASecondTimeIsANoOp(): void
+    {
+        // First run: legacy present, renames it. Second run (Schema::install()
+        // directly, bypassing the version short-circuit so the rename probe
+        // itself is exercised again): the legacy table is gone, so there's
+        // nothing left to RENAME and no error.
+        $GLOBALS['wpas_test_options'][Schema::VERSION_OPTION] = '3';
+        $db = new wpdb();
+        $db->varReturnQueue = ['wp_agent_safety_grants', null];
+        Schema::maybeUpgrade($db);
+
+        $this->assertSame(Schema::VERSION, $GLOBALS['wpas_test_options'][Schema::VERSION_OPTION]);
+
+        $db->varReturnQueue = [null];
+        $db->queries = [];
+        Schema::install($db);
+
+        $this->assertSame([], self::renameQueries($db), 'nothing left to RENAME once already migrated');
+        $this->assertSame(Schema::VERSION, $GLOBALS['wpas_test_options'][Schema::VERSION_OPTION]);
+    }
+
+    public function testBothGrantsTablesPresentLeavesBothAndFlagsForAnAdmin(): void
+    {
+        // A crashed earlier rename: both the legacy and the new table exist.
+        $GLOBALS['wpas_test_options'][Schema::VERSION_OPTION] = '3';
+        $db = new wpdb();
+        $db->varReturnQueue = ['wp_agent_safety_grants', 'wp_agsafe_grants'];
+
+        Schema::maybeUpgrade($db);
+
+        $this->assertSame([], self::renameQueries($db), 'neither table is touched when both exist');
+        $this->assertTrue($GLOBALS['wpas_test_options'][Schema::GRANTS_RENAME_CONFLICT_OPTION]);
+        // dbDelta still receives (and so maintains) the NEW table's name.
+        $this->assertStringContainsString('wp_agsafe_grants', $GLOBALS['wpas_test_dbdelta_queries'][2]);
+    }
+
+    public function testTheConflictFlagClearsOnceTheLegacyTableIsGone(): void
+    {
+        $GLOBALS['wpas_test_options'][Schema::GRANTS_RENAME_CONFLICT_OPTION] = true;
+        $db = new wpdb();
+        $db->varReturnQueue = [null];
+
+        Schema::install($db);
+
+        $this->assertArrayNotHasKey(Schema::GRANTS_RENAME_CONFLICT_OPTION, $GLOBALS['wpas_test_options']);
+    }
+
+    public function testTheConflictNoticeRendersOnlyWhenTheFlagIsSet(): void
+    {
+        ob_start();
+        Schema::renderGrantsRenameConflictNotice();
+        $this->assertSame('', ob_get_clean());
+
+        $GLOBALS['wpas_test_options'][Schema::GRANTS_RENAME_CONFLICT_OPTION] = true;
+
+        ob_start();
+        Schema::renderGrantsRenameConflictNotice();
+        $notice = ob_get_clean();
+
+        $this->assertStringContainsString('notice-warning', $notice);
+        $this->assertStringContainsString('agent_safety_grants', $notice);
     }
 }

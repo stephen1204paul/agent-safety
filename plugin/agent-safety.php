@@ -171,6 +171,11 @@ add_action('plugins_loaded', static function (): void {
         });
     }
 
+    // Unconditional (option-gated internally, like CapabilityPacksPage's
+    // pausedNotice()): shows only while a crashed grants-table rename has
+    // left both the old and new tables in place. See Schema::install().
+    add_action('admin_notices', [Schema::class, 'renderGrantsRenameConflictNotice']);
+
     // Identity chain: application passwords and users/roles apply
     // on ANY WordPress site; an integration appends its own provider below.
     $agsafe_identity = new IdentityChain([

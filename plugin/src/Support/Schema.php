@@ -35,10 +35,29 @@ final class Schema
      * reruns the option migrations once the stored option falls behind this.
      *
      * 3: `agsafe_shadow_packs` became pack name => expiry ({@see ShadowMode}).
+     * 4: approvals gained `fingerprint`/`fingerprint_kind` (AS-6); the grants
+     *    table was renamed `agent_safety_grants` => `agsafe_grants`
+     *    ({@see grantsTable()}, {@see renameLegacyGrantsTable()}).
      */
-    public const VERSION = '3';
+    public const VERSION = '4';
 
     public const VERSION_OPTION = 'agsafe_schema_version';
+
+    /**
+     * Legacy grants table name, pre-v4. Named ONLY here and in
+     * {@see renameLegacyGrantsTable()} — every other reference in the plugin
+     * goes through {@see grantsTable()}.
+     */
+    private const LEGACY_GRANTS_TABLE = 'agent_safety_grants';
+
+    /**
+     * Set (never autoloaded) when {@see renameLegacyGrantsTable()} finds BOTH
+     * the legacy and the current grants table present (a crashed earlier
+     * rename): the current table is used and the legacy one is left alone
+     * rather than guessed at. {@see renderGrantsRenameConflictNotice()} shows
+     * an admin notice until an operator resolves it by hand.
+     */
+    public const GRANTS_RENAME_CONFLICT_OPTION = 'agsafe_grants_rename_conflict';
 
     public static function auditLogTable(wpdb $db): string
     {
@@ -58,7 +77,7 @@ final class Schema
      */
     public static function grantsTable(wpdb $db): string
     {
-        return $db->prefix . 'agent_safety_grants';
+        return $db->prefix . 'agsafe_grants';
     }
 
     /** Column/key body (no surrounding `CREATE TABLE ... ( )`) for the audit log table. */
@@ -83,7 +102,13 @@ final class Schema
                 KEY ability (ability)";
     }
 
-    /** Column/key body (no surrounding `CREATE TABLE ... ( )`) for the approvals table. */
+    /**
+     * Column/key body (no surrounding `CREATE TABLE ... ( )`) for the
+     * approvals table. `fingerprint`/`fingerprint_kind` (AS-6, §3.3) are
+     * nullable: a row written before v4, or for a Verb with no declared
+     * state probe, has `fingerprint_kind = NULL`, read as `none`; the other
+     * values are `probe` and `grant`. No backfill.
+     */
     public static function approvalsColumns(): string
     {
         return "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -100,6 +125,8 @@ final class Schema
                 reserved_req VARCHAR(64) NULL,
                 reserved_ts DATETIME NULL,
                 grant_id VARCHAR(64) NULL,
+                fingerprint CHAR(64) NULL,
+                fingerprint_kind VARCHAR(10) NULL,
                 created_ts DATETIME NOT NULL,
                 pending_expires_ts DATETIME NULL,
                 expires_ts DATETIME NULL,
@@ -149,6 +176,11 @@ final class Schema
     {
         self::ensureDbDelta();
 
+        // MUST run before dbDelta(): dbDelta only ever creates or ALTERs the
+        // table it's told about (agsafe_grants); it has no idea a
+        // differently-named table already holds the data.
+        self::renameLegacyGrantsTable($db);
+
         $charset = $db->get_charset_collate();
         dbDelta([
             'CREATE TABLE ' . self::auditLogTable($db) . " (\n" . self::auditLogColumns() . "\n) {$charset};",
@@ -157,10 +189,72 @@ final class Schema
         ]);
 
         // Option migrations ride the same version gate as the tables. Each is
-        // a no-op once its shape is current, so rerunning on activation is safe.
+        // a no-op once its shape is current, so rerunning on activation is
+        // safe. Shape-gated (not version-gated), same as ShadowMode's below:
+        // the §3.4 item 3 "first bind for existing installs" migration (stage
+        // 7) belongs here too, as its own idempotent, shape-checked call.
         (new ShadowMode())->migrateLegacy();
 
         update_option(self::VERSION_OPTION, self::VERSION, false);
+    }
+
+    /**
+     * Pre-v4 installs named the grants table `{prefix}agent_safety_grants`;
+     * v4 renamed it to `{prefix}agsafe_grants` ({@see grantsTable()}) so only
+     * `Schema.php` ever names it, matching every other table (§3.6 item 4).
+     * Runs unconditionally (idempotent, shape-checked): a fresh install has
+     * no legacy table and no-ops immediately.
+     */
+    private static function renameLegacyGrantsTable(wpdb $db): void
+    {
+        $legacy = $db->prefix . self::LEGACY_GRANTS_TABLE;
+        $current = self::grantsTable($db);
+
+        if (!self::tableExists($db, $legacy)) {
+            // Nothing to migrate. Also resolves a previously flagged conflict
+            // (below): once the legacy table is gone (an admin dropped it by
+            // hand), the notice has nothing left to warn about.
+            delete_option(self::GRANTS_RENAME_CONFLICT_OPTION);
+
+            return;
+        }
+
+        if (self::tableExists($db, $current)) {
+            // Both tables present: a crashed earlier rename. Leave both, use
+            // the new one (dbDelta creates/maintains it right after this
+            // call returns) and flag it for a human rather than guess which
+            // table is authoritative.
+            update_option(self::GRANTS_RENAME_CONFLICT_OPTION, true, false);
+
+            return;
+        }
+
+        $db->query('RENAME TABLE ' . $legacy . ' TO ' . $current);
+    }
+
+    private static function tableExists(wpdb $db, string $table): bool
+    {
+        return $db->get_var($db->prepare('SHOW TABLES LIKE %s', $table)) === $table;
+    }
+
+    /**
+     * Admin notice for the {@see GRANTS_RENAME_CONFLICT_OPTION} flag. Wired
+     * unconditionally (see `agent-safety.php`); a no-op render when the flag
+     * isn't set, matching the `CapabilityPacksPage::pausedNotice()` pattern.
+     */
+    public static function renderGrantsRenameConflictNotice(): void
+    {
+        if (!get_option(self::GRANTS_RENAME_CONFLICT_OPTION, false)) {
+            return;
+        }
+
+        printf(
+            '<div class="notice notice-warning"><p>%s</p></div>',
+            esc_html__(
+                'Agent Safety found both the old (agent_safety_grants) and new (agsafe_grants) grants tables during an upgrade, which means an earlier upgrade did not finish. It is using the new table. Once you have confirmed no grants were lost, an administrator can drop the old table to clear this notice.',
+                'agent-safety'
+            )
+        );
     }
 
     /** Cheap version check; reinstalls only when the stored option is behind {@see VERSION}. */
