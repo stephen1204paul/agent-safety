@@ -1,19 +1,41 @@
 name: Release
 
-# D30: a tag push v* packages the plugin host into a WordPress-installable
-# zip and attaches it to a GitHub Release. The tag must match the plugin
-# header Version: (v0.3.0 -> 0.3.0) or the job fails loudly.
+# D30/spec §3.7.6, §3.12: a tag push v* — or a manual dispatch with a
+# dry_run input — runs the full release gate (CI suites + Plugin Check +
+# E2E) against a zip built once by bin/build-zip.sh, the single allowlisted
+# build. The GitHub Release is created only on a real tag push, never on a
+# workflow_dispatch (dry_run or not): that's how stage 13 proves a planted
+# failure blocks the release, and that an unplanted run is green, without a
+# scratch tag.
+#
+# Plugin Check runs inside ci.yml (called below via workflow_call) against
+# THIS SAME zip artifact, not a second build: ci.yml's plugin-check job
+# accepts an optional zip-artifact input and downloads it instead of
+# building its own when the input is set. That keeps one Plugin Check job
+# definition serving both standalone CI runs (which build their own zip)
+# and this gate (which reuses the release build), and guarantees the zip
+# Plugin Check inspects is byte-identical to the one that ships.
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run the full gate but never create a GitHub Release'
+        type: boolean
+        required: true
+        default: true
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    name: Build zip
+    outputs:
+      zip-name: ${{ steps.zip.outputs.name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -22,11 +44,15 @@ jobs:
           php-version: '8.3'
           tools: composer
 
-      - name: Install runtime dependencies only
-        working-directory: plugin
-        run: composer install --no-dev --prefer-dist --optimize-autoloader --quiet
-
       - name: Assert tag matches plugin header Version
+        # Only meaningful for a real tag push: a workflow_dispatch run has
+        # no tag to compare against (github.ref is whatever ref the owner
+        # dispatched on, not a version), so the assertion is skipped there.
+        # A dispatch's job is to prove the OTHER gates (suites, Plugin
+        # Check, e2e) on a planted failure; the tag/header match is
+        # re-proven for real at the stage-17 tag push, which is the only
+        # event that can reach the release job below anyway.
+        if: github.event_name == 'push'
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           HEADER_VERSION=$(awk '/^[[:space:]]*\*[[:space:]]*Version:/ {print $NF; exit}' plugin/agent-safety.php)
@@ -36,14 +62,49 @@ jobs:
             exit 1
           fi
 
-      - name: Build the zip (top-level folder agent-safety/)
+      - name: Build the zip (bin/build-zip.sh, the single allowlisted build)
+        run: bin/build-zip.sh
+
+      - name: Locate the zip
+        id: zip
         run: |
-          mkdir -p build/agent-safety
-          rsync -a --exclude 'tests' --exclude 'phpunit.xml.dist' --exclude '.DS_Store' plugin/ build/agent-safety/
-          cd build && zip -r "../agent-safety-${GITHUB_REF_NAME#v}.zip" agent-safety/
+          ZIP_PATH=$(ls agent-safety-*.zip | head -1)
+          echo "path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$ZIP_PATH" .zip)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.zip.outputs.name }}
+          path: ${{ steps.zip.outputs.path }}
+          if-no-files-found: error
+
+  ci:
+    needs: build
+    uses: ./.github/workflows/ci.yml
+    with:
+      zip-artifact: ${{ needs.build.outputs.zip-name }}
+
+  e2e:
+    needs: build
+    uses: ./.github/workflows/e2e.yml
+
+  release:
+    needs: [build, ci, e2e]
+    # Belt-and-braces: this alone (event_name, not the dry_run input) is
+    # what keeps a workflow_dispatch from ever creating a Release, whatever
+    # dry_run is set to — only a tag push reaches this job's condition.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    name: Create GitHub Release
+    steps:
+      - name: Download the built zip
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.zip-name }}
 
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: agent-safety-*.zip
+          files: '*.zip'
           generate_release_notes: true
