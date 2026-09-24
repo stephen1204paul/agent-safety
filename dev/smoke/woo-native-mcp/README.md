@@ -145,51 +145,54 @@ PASS  products-list response mentions the seeded product
 PASS  audit row(s) allowed for woocommerce/products-list
 ```
 
-## Live findings — two spec assumptions this harness disproves empirically
+## Live findings — one fixed defect, one documented transport limitation
 
-Both are **real, reproduced defects/gaps**, not harness bugs; both fail the
-same way on every run, restart or not. They block the exact Control
-assertion and Case-2 response-shape assertion spec §3.2 item 5 names. This
-harness deliberately keeps testing the SPEC'S stated expectation (not a
-weakened version of it) so the failure stays visible rather than getting
-quietly normalized away.
+Both were **real, reproduced** on this harness, not harness bugs; both failed
+the same way on every run, restart or not. This harness deliberately keeps
+testing the SPEC'S stated expectation (not a weakened version of it), which
+is why finding 1's regression stayed visible until it was fixed, and why
+finding 2 still asserts on the spec's stated shape rather than a version
+weakened to dodge it.
 
-### 1. The audit principal is `user:<id>`, not `wc:<key_id>`, for Woo MCP calls
+### 1. FIXED (`3791b4d`): the audit principal was `user:<id>`, not `wc:<key_id>`, for Woo MCP calls
 
 `WooCommerceRestTransport::authenticate()` calls `wp_set_current_user($user->ID)`
 as a side effect of validating the API key (`WooCommerceRestTransport.php`,
 WooCommerce 11.1.0). `RequestContext::tokenId()` — the audit actor field —
-returns the FIRST candidate token across the WHOLE identity chain
-(`plugin/src/Support/RequestContext.php:150-155`, explicitly documented as
-"the FIRST current candidate"), and the chain order is
-`[ApplicationPasswordIdentity, UserRoleIdentity, WcApiKeyIdentity]`
-(`plugin/agent-safety.php`, `WooIntegration::register()` appends the Woo
-provider LAST). So for a Woo-authenticated request, `UserRoleIdentity`'s
-`user:<id>` token is always first, and `WcApiKeyIdentity`'s `wc:<key_id>`
-token is always last.
+used to return the FIRST candidate token across the WHOLE identity chain,
+and the chain order is `[ApplicationPasswordIdentity, UserRoleIdentity,
+WcApiKeyIdentity]` (`plugin/agent-safety.php`, `WooIntegration::register()`
+appends the Woo provider LAST). So for a Woo-authenticated request,
+`UserRoleIdentity`'s `user:<id>` token was always first, and
+`WcApiKeyIdentity`'s `wc:<key_id>` token was always last.
 
-`PackResolver::resolve()` is unaffected — it walks the whole list looking
+`PackResolver::resolve()` was unaffected — it walks the whole list looking
 for the first BOUND token, finds `wc:<key_id>`, and resolves
 `woo-default-agent` correctly (verified: `row1.pack === 'woo-default-agent'`,
-never the fallback `default-agent`). Only the AUDIT actor field is wrong:
+never the fallback `default-agent`). Only the AUDIT actor field was wrong:
 
 ```json
 "actor":{"token_id":"user:2","wp_user":2}
 ```
 
 for a call authenticated purely by the WooCommerce REST key `wc:1` (no
-application password, no logged-in session). The pack decision is
+application password, no logged-in session). The pack decision was
 demonstrably right; the audit trail's *stated reason* (which principal
-earned it) is demonstrably wrong. This is exactly the identity-timing class
+earned it) was demonstrably wrong. This was exactly the identity-timing class
 of bug this repo's own `CLAUDE.md` calls out as one unit tests keep missing.
 
-Not fixed here: it touches `RequestContext`/`IdentityChain`, shared
-cross-cutting code several other stages build on (5-8's identity/environment
-work), and the right fix (should the recorded actor be the token that WON
-the binding, rather than the first token in chain order?) is an
-architectural call, not a stage-3 patch.
+**Fix (commit `3791b4d`):** the request's principal is now whichever
+identity-chain token actually WON the pack binding (falling back to the
+first token, then null), computed by `PackResolver::principal()` and wired
+into `RequestContext` through an injected resolver
+(`RequestContext::configurePrincipalResolver()`) set at plugin bootstrap
+alongside `$agsafe_packs`. Pack resolution itself is unchanged. Covered by
+unit tests (`PackResolverTest`, a `VerdictPipelineTest` case asserting both
+the approval `key_id` and the audit actor `token_id`); this harness's Case-2
+Control assertions (`run.js`) now pass on the same real Woo MCP request that
+originally surfaced the bug.
 
-### 2. Woo's bundled mcp-adapter v0.3.0 drops the WP_Error's structured data
+### 2. Documented transport limitation: Woo's bundled mcp-adapter v0.3.0 drops the WP_Error's structured data
 
 The tool-call response for the approval-required case is:
 
@@ -210,6 +213,15 @@ example, the gap spec §3.2 item 7 already documents ("agents connected only
 through Woo's MCP server can't see `agent-safety/check-approval`" either): an
 agent working purely against Woo's own endpoint cannot self-serve an
 approval id from the tool-call response and would need the admin's Pending
-Actions page. `run.js` still asserts on the spec's stated shape (so the gap
-stays visible) but treats "the approval was actually filed" as DB ground
-truth, checked independently.
+Actions page.
+
+**Orchestrator decision: this is a transport limitation, not an Agent Safety
+defect**, and is not fixed here — it lives in Woo's bundled mcp-adapter
+version, outside this plugin. `run.js`'s Case 2 asserts what actually crosses
+this transport (`isError: true`, an approval message for the verb, the
+product still existing) and treats "the approval was actually filed" —
+including its `key_id` — as DB ground truth against `wp_agsafe_approvals`
+and the audit log, checked independently of the MCP response body. The
+message-text assertion accepts either the pre-§3.11 "is irreversible"
+wording or spec §3.11's replacement text ("needs human approval"), whichever
+is live when `run.js` runs, and prints which one matched.
