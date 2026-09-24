@@ -73,3 +73,7 @@ _Avoid_: state hash, snapshot, checksum
 **Audit record**:
 One hash-chained row describing a call and its Verdict, written once per call whether or not it executed.
 _Avoid_: log entry, event (event id is the correlation key, not the record)
+
+**Disclosed retention**:
+Keeping a user's audit rows through an erasure request, with the reason stated to the requester and in the privacy policy.
+_Avoid_: (none)

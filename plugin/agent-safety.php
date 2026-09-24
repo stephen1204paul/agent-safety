@@ -42,6 +42,7 @@ use Specflux\AgentSafety\Plugin\Verdict\GrantGate;
 use Specflux\AgentSafety\Plugin\Verdict\VerdictPipeline;
 use Specflux\AgentSafety\Plugin\Hooks\ToolCallResultRedactor;
 use Specflux\AgentSafety\Plugin\Identity\ApplicationPasswordIdentity;
+use Specflux\AgentSafety\Plugin\Privacy\PrivacyIntegration;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Identity\UserRoleIdentity;
 use Specflux\AgentSafety\Plugin\Integrations\Core\CoreIntegration;
@@ -356,6 +357,11 @@ add_action('plugins_loaded', static function (): void {
 
         // wp-admin viewer + CSV export (Tools → Agent Audit Log).
         (new AuditLogPage(new AuditReader($wpdb)))->register();
+
+        // Privacy tools (§3.6 item 2): personal-data export/erase for Tools →
+        // Export/Erase Personal Data, plus suggested privacy-policy text.
+        // Uninstall (§3.6 item 3) is a separate stage.
+        (new PrivacyIntegration($wpdb))->register();
 
         // Forward-compat observability-based audit consumer: proves a plugin can
         // build the audit trail on mcp-adapter's public `McpObservabilityHandlerInterface`
