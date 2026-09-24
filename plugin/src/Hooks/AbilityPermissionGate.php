@@ -13,7 +13,7 @@ use Specflux\AgentSafety\Plugin\Verdict\VerdictMode;
 use Specflux\AgentSafety\Plugin\Verdict\VerdictPipeline;
 
 /**
- * Working gate seam for the SHIPPING stack (verified: WooCommerce 10.8.1 vendors
+ * Working gate seam for the SHIPPING stack (verified: WooCommerce 11.1.0 vendors
  * mcp-adapter v0.1.0, which lacks the `mcp_adapter_pre_tool_call` filter — that
  * arrived in v0.5.0). This seam instead lives in WP 7.0 core's Abilities API,
  * so it is independent of the adapter version:

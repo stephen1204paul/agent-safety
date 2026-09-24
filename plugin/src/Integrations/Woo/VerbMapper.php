@@ -8,7 +8,7 @@ namespace Specflux\AgentSafety\Plugin\Integrations\Woo;
  * Maps an MCP tool name to our canonical verb id (= the WP Ability id) for
  * WooCommerce-registered abilities.
  *
- * VERIFIED against Woo 10.8.1 + WP 7.0 (tools/list over the live MCP endpoint):
+ * VERIFIED against WooCommerce 11.1.0 + WP 7.0 (tools/list over the live MCP endpoint):
  * the tool name is "woocommerce-{resource}-{action}" and the ability id is
  * "woocommerce/{resource}-{action}" — i.e. the namespace separator is the FIRST
  * hyphen, which becomes a slash. Example: "woocommerce-orders-update" ->

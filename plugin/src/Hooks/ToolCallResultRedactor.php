@@ -21,7 +21,7 @@ use Specflux\AgentSafety\Plugin\Support\PackResolver;
  * `$mcp_tool->execute($args)` returns, before the result is shaped into a
  * response DTO. It never fires for denied/blocked calls (those return before
  * execution) — nothing to redact there, since nothing executed. Forward-compat
- * only: dormant, like {@see PreToolCallGate}, on Woo 10.8.1's vendored adapter
+ * only: dormant, like {@see PreToolCallGate}, on WooCommerce 11.1.0's vendored adapter
  * 0.1.0, which predates this filter (introduced 0.5.0).
  *
  * Scope: array-shaped results only. A `WP_Error` is passed through UNTOUCHED —
