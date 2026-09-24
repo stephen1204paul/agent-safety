@@ -7,6 +7,9 @@ namespace Specflux\AgentSafety\Plugin\Api;
 use Specflux\AgentSafety\Audit\AuditDecision;
 use Specflux\AgentSafety\Audit\AuditRecord;
 use Specflux\AgentSafety\Audit\AuditSink;
+use Specflux\AgentSafety\Plugin\Approval\StateFingerprint;
+use Specflux\AgentSafety\Plugin\Approval\StateProbe;
+use Specflux\AgentSafety\Plugin\Approval\SummaryArgs;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
@@ -31,10 +34,14 @@ use Specflux\AgentSafety\Plugin\Support\RequestContext;
  */
 final class Approvals
 {
+    /**
+     * @param array<string, StateProbe> $stateProbes Verb => probe (AS-6), for the approve-time re-check.
+     */
     public function __construct(
         private readonly WpdbApprovalStore $store,
         private readonly ?AuditSink $sink = null,
         private readonly ?PackResolver $packs = null,
+        private readonly array $stateProbes = [],
     ) {
     }
 
@@ -58,6 +65,12 @@ final class Approvals
     public function approveReturningToken(string $id, int $byUserId): ?string
     {
         if (!$this->authorized($id, $byUserId)) {
+            return null;
+        }
+
+        if ($this->isNowStale($id)) {
+            $this->store->markStale($id);
+
             return null;
         }
 
@@ -97,6 +110,51 @@ final class Approvals
         $row = $this->store->get($id);
 
         return $row !== null ? ApprovalSummary::fromRow($row) : null;
+    }
+
+    /**
+     * AS-6 §3.3 item 8: re-probe a fingerprinted pending row right before a
+     * human's approval takes effect. True only when the row declared a probe
+     * (`fingerprint_kind === 'probe'`), the target's id could be recovered from
+     * the summary ({@see SummaryArgs}), the verb's probe is registered on THIS
+     * request, and the freshly probed fingerprint disagrees with the one
+     * captured at request time. Anything else (no probe kind, id unrecoverable,
+     * probe now throws/returns null, no probe registered) is NOT treated as
+     * stale here — {@see SummaryArgs} explains why extraction failure fails
+     * open; a probe that now throws or returns null is a DIFFERENT failure mode
+     * (`state_unverifiable`) that this narrow admin-side check does not attempt
+     * to reproduce, since approve() has no pipeline to route a deny through.
+     */
+    private function isNowStale(string $id): bool
+    {
+        $row = $this->store->get($id);
+        if ($row === null || ($row['fingerprint_kind'] ?? null) !== 'probe') {
+            return false;
+        }
+
+        $stored = is_string($row['fingerprint'] ?? null) ? $row['fingerprint'] : null;
+        $verb = (string) ($row['verb'] ?? '');
+        $probe = $this->stateProbes[$verb] ?? null;
+        if ($stored === null || $probe === null) {
+            return false;
+        }
+
+        $objectId = SummaryArgs::extractId((string) ($row['summary'] ?? ''));
+        if ($objectId === null) {
+            return false;
+        }
+
+        try {
+            $result = $probe->read($verb, ['id' => $objectId]);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if ($result === null) {
+            return false;
+        }
+
+        return !hash_equals($stored, StateFingerprint::compute($result));
     }
 
     /**

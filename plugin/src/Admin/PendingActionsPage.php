@@ -31,6 +31,7 @@ final class PendingActionsPage
     private const REJECT = 'agsafe_reject_action';
     private const NOTIFY = 'agsafe_save_notifications';
     private const FLASH = 'agsafe_minted_token_';
+    private const STALE_FLASH = 'agsafe_stale_notice_';
 
     public function __construct(
         private readonly WpdbApprovalStore $store,
@@ -70,19 +71,25 @@ final class PendingActionsPage
         echo '<p>' . esc_html__('Irreversible agent actions blocked pending human approval. Approving mints a single-use token bound to the exact verb + arguments.', 'agent-safety') . '</p>';
 
         $this->maybeShowMintedToken();
+        $this->maybeShowStaleNotice();
 
         echo '<table class="widefat striped"><thead><tr>';
-        foreach (['Requested (UTC)', 'Expires (UTC)', 'Correlation', 'Verb', 'Summary', 'Approval ID', 'Action'] as $col) {
+        foreach (['Requested (UTC)', 'Expires (UTC)', 'Correlation', 'Verb', 'Summary', 'State', 'Approval ID', 'Action'] as $col) {
             echo '<th>' . esc_html($col) . '</th>';
         }
         echo '</tr></thead><tbody>';
 
         if (!$rows) {
-            echo '<tr><td colspan="7">' . esc_html__('No pending actions. The agent has nothing awaiting review.', 'agent-safety') . '</td></tr>';
+            echo '<tr><td colspan="8">' . esc_html__('No pending actions. The agent has nothing awaiting review.', 'agent-safety') . '</td></tr>';
         }
 
         foreach ($rows as $r) {
             $approvalId = (string) ($r['approval_id'] ?? '');
+            // AS-6 §3.3 item 4: a row with no probe declared for its verb has
+            // no state check at all, so the queue says so rather than
+            // implying every row is equally protected.
+            $kind = $r['fingerprint_kind'] ?? null;
+            $stateLabel = ($kind === null || $kind === 'none' || $kind === '') ? __('state not checked', 'agent-safety') : '';
             echo '<tr>';
             echo '<td>' . esc_html((string) ($r['created_ts'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($r['pending_expires_ts'] ?? '')) . '</td>';
@@ -90,6 +97,7 @@ final class PendingActionsPage
             echo '<td><code>' . esc_html((string) ($r['verb'] ?? '')) . '</code></td>';
             // phpcs:ignore WordPress.Security.EscapeOutput -- summaryHtml() escapes or wp_kses-es by provenance.
             echo '<td>' . self::summaryHtml((string) ($r['summary'] ?? '')) . '</td>';
+            echo '<td>' . esc_html($stateLabel) . '</td>';
             echo '<td><code style="font-size:11px;">' . esc_html($approvalId) . '</code></td>';
             echo '<td>' . $this->actionButtons($approvalId) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- built from esc_* helpers below.
             echo '</tr>';
@@ -159,6 +167,15 @@ final class PendingActionsPage
         $token = $this->approvals->approveReturningToken($approvalId, $approver);
         if ($token !== null) {
             set_transient(self::FLASH . $approver, ['approval_id' => $approvalId, 'token' => $token], 120);
+        } else {
+            // AS-6 §3.3 item 8: approveReturningToken() also returns null for
+            // an ordinary reason (unauthorized, already resolved) — only flag
+            // it as "changed since filed" when the row itself now reads back
+            // as `stale`, so we don't misattribute an unrelated failure.
+            $summary = $this->approvals->find($approvalId);
+            if ($summary !== null && $summary->status === 'stale') {
+                set_transient(self::STALE_FLASH . $approver, true, 120);
+            }
         }
 
         $this->redirectBack();
@@ -172,6 +189,21 @@ final class PendingActionsPage
         $this->approvals->reject($approvalId, $approver);
 
         $this->redirectBack();
+    }
+
+    /** AS-6 §3.3 item 8: the approve attempt that just redirected here found the target had changed. */
+    private function maybeShowStaleNotice(): void
+    {
+        $user = get_current_user_id();
+        if (!get_transient(self::STALE_FLASH . $user)) {
+            return;
+        }
+        delete_transient(self::STALE_FLASH . $user);
+
+        printf(
+            '<div class="notice notice-warning"><p>%s</p></div>',
+            esc_html__('The target of this request changed since it was filed. It cannot be approved as-is; if it is still needed, ask the agent to retry the call.', 'agent-safety')
+        );
     }
 
     private function maybeShowMintedToken(): void
