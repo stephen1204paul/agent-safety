@@ -22,6 +22,9 @@ namespace Specflux\AgentSafety\Approval;
  *   reserve()  → stale      (AS-6: the target's state fingerprint no longer matches the
  *                            one captured at request time — never claimed; see
  *                            {@see ReserveOutcome} and request()'s pending-dedupe rule below)
+ *   (host-only)→ void_environment (AS-7: an approved-but-unclaimed row voided by a
+ *                            site-binding mismatch — terminal, never claimed; reserve()
+ *                            reports it via {@see ReserveOutcome::voidEnvironment()})
  *
  * The reserve→finalize/rollback split is the "consume on execution success, not on
  * attempt" property: a token is only spent once the irreversible action truly ran,
@@ -35,7 +38,7 @@ namespace Specflux\AgentSafety\Approval;
  *
  * Record shape (associative array) returned by the host's pending()/get():
  *   approval_id, verb, args_hash, summary, correlation_id, audit_event_id, key_id,
- *   status (pending|approved|in_flight|consumed|rejected|expired|stale), approver (?int),
+ *   status (pending|approved|in_flight|consumed|rejected|expired|stale|void_environment), approver (?int),
  *   fingerprint (?string), fingerprint_kind (probe|none|grant|null),
  *   created_ts, pending_expires_ts, expires_ts, consumed_ts.
  */
