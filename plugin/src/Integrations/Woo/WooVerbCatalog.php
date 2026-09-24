@@ -33,6 +33,17 @@ final class WooVerbCatalog
         'woocommerce/orders-create'   => Tier::SideEffecting,
         'woocommerce/orders-update'   => Tier::SideEffecting, // status->fulfillment/cancelled/refunded elevates to Tier 2 (OrderFulfillmentElevationRule)
 
+        // The 7 session-visible abilities Woo core exposes to the MCP/Abilities
+        // session surface (distinct ids from the 9 MCP-bridge names above —
+        // verified against Woo 10.8.1 + WP 7.0).
+        'woocommerce/orders-query'        => Tier::Reversible,
+        'woocommerce/products-query'      => Tier::Reversible,
+        'woocommerce/product-create'      => Tier::SideEffecting, // regular_price/sale_price or status publish/future elevates to Tier 2 (ProductPriceOrPublishElevationRule)
+        'woocommerce/product-update'      => Tier::SideEffecting, // regular_price/sale_price or status publish/future elevates to Tier 2 (ProductPriceOrPublishElevationRule)
+        'woocommerce/order-add-note'      => Tier::SideEffecting, // customer_note=true elevates to Tier 2 (CustomerNoteElevationRule)
+        'woocommerce/order-update-status' => Tier::SideEffecting, // fulfillment/cancelled/refunded elevates to Tier 2 (OrderFulfillmentElevationRule)
+        'woocommerce/product-delete'      => Tier::Irreversible,
+
         // NOT exposed by Woo core 10.8.1 — mapped for forward-compat (extensions / future core
         // abilities). Kept so the gate fails CLOSED-with-intent rather than "unknown" if they appear.
         'woocommerce/orders-refund'   => Tier::Irreversible,  // cannot un-charge a card

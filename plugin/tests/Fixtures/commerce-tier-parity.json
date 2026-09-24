@@ -1,0 +1,23 @@
+[
+    { "ability": "woocommerce/orders-query", "args": { "status": "processing" }, "tier": 0 },
+    { "ability": "woocommerce/products-query", "args": { "search": "widget" }, "tier": 0 },
+    { "ability": "woocommerce/product-create", "args": { "name": "Widget" }, "tier": 1 },
+    { "ability": "woocommerce/product-update", "args": { "id": 5, "description": "New copy" }, "tier": 1 },
+    { "ability": "woocommerce/order-add-note", "args": { "id": 10, "note": "Called the customer" }, "tier": 1 },
+    { "ability": "woocommerce/order-update-status", "args": { "id": 101, "status": "pending" }, "tier": 1 },
+    { "ability": "woocommerce/product-delete", "args": { "id": 5 }, "tier": 2 },
+
+    { "ability": "woocommerce/product-update", "args": { "id": 5, "regular_price": "19.99" }, "tier": 2 },
+    { "ability": "woocommerce/product-update", "args": { "id": 5, "sale_price": "14.99" }, "tier": 2 },
+    { "ability": "woocommerce/product-update", "args": { "id": 5, "status": "publish" }, "tier": 2 },
+    { "ability": "woocommerce/product-update", "args": { "id": 5, "status": "draft" }, "tier": 1 },
+
+    { "ability": "woocommerce/product-create", "args": { "name": "Widget", "status": "publish" }, "tier": 2 },
+    { "ability": "woocommerce/product-create", "args": { "name": "Widget", "status": "draft" }, "tier": 1 },
+
+    { "ability": "woocommerce/order-add-note", "args": { "id": 10, "note": "Refund processed", "customer_note": true }, "tier": 2 },
+    { "ability": "woocommerce/order-add-note", "args": { "id": 10, "note": "Internal only", "customer_note": false }, "tier": 1 },
+
+    { "ability": "woocommerce/order-update-status", "args": { "id": 101, "status": "completed" }, "tier": 2 },
+    { "ability": "woocommerce/order-update-status", "args": { "id": 101, "status": "on-hold" }, "tier": 1 }
+]

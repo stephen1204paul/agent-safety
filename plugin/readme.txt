@@ -1,5 +1,5 @@
 === Agent Safety ===
-Contributors: specflux
+Contributors: specflux, stephen1204paul
 Requires at least: 6.9
 Tested up to: 7.0
 Requires PHP: 8.1
@@ -68,6 +68,9 @@ integration module and is wired up automatically only when WooCommerce is active
 By default, uninstalling the plugin keeps the audit log and approval data intact — it is a
 compliance record, and removing it silently on uninstall would defeat its purpose. A site
 operator who wants the tables and settings dropped can opt in explicitly (see the FAQ).
+
+WordPress multisite is not supported; activation is refused on a multisite install, network-wide
+or per site.
 
 == Frequently Asked Questions ==
 

@@ -163,10 +163,51 @@ if (!function_exists('remove_all_filters')) {
 }
 
 if (!function_exists('add_action')) {
-    /** @param mixed ...$args */
+    $GLOBALS['wpas_test_added_actions'] = [];
+
+    /**
+     * Recording shim: $GLOBALS['wpas_test_added_actions'][$hook][] = callback,
+     * so a test can assert a hook was WIRED without a real WP action dispatcher.
+     *
+     * @param mixed ...$args
+     */
     function add_action(...$args): bool
     {
+        $GLOBALS['wpas_test_added_actions'][(string) $args[0]][] = $args[1] ?? null;
+
         return true;
+    }
+}
+
+if (!function_exists('is_multisite')) {
+    /** Toggle shim: tests set $GLOBALS['wpas_test_multisite']. */
+    function is_multisite(): bool
+    {
+        return !empty($GLOBALS['wpas_test_multisite']);
+    }
+}
+
+if (!function_exists('plugin_basename')) {
+    /** Identity-ish shim: tests don't depend on the exact shape. */
+    function plugin_basename(string $file): string
+    {
+        return basename(dirname($file)) . '/' . basename($file);
+    }
+}
+
+if (!function_exists('deactivate_plugins')) {
+    $GLOBALS['wpas_test_deactivated_plugins'] = [];
+
+    /**
+     * Recording shim: $GLOBALS['wpas_test_deactivated_plugins'][].
+     *
+     * @param string|string[] $plugins
+     */
+    function deactivate_plugins($plugins): void
+    {
+        foreach ((array) $plugins as $plugin) {
+            $GLOBALS['wpas_test_deactivated_plugins'][] = $plugin;
+        }
     }
 }
 
