@@ -187,6 +187,38 @@ final class AbilityPermissionGateTest extends TestCase
     }
 
     /**
+     * §3.6.9 / stage 4 audit-handler question, answered empirically: the
+     * wrapped callback SEES the ability's own denial (it holds `$orig` in a
+     * local variable at the moment it returns it, {@see AbilityPermissionGate::wrap()}),
+     * but as of this commit it records NOTHING about that denial anywhere a
+     * later hook could read — not the audit sink, not the approval store, not
+     * any per-request flag. `McpRequestAuditHandler::record_event()` runs on a
+     * LATER hook (`mcp.request`, after `ToolsHandler::call_tool()` has already
+     * turned this exact WP_Error into `status=error` +
+     * `failure_reason=<message>`) and has no way to ask the gate "did YOU deny
+     * this one, and why" — which is why it falls back to string-matching the
+     * translated 'Permission denied' text instead.
+     */
+    public function testTheAbilitysOwnDenialIsSeenButLeavesNoPerRequestRecordForTheAuditHandlerToRead(): void
+    {
+        $sink = new InMemoryAuditSink();
+        $approvals = new FakeApprovalStore();
+        $pack = new Pack(name: 'owner', allow: ['*']);
+        $gate = $this->gateWithPackAndRecording($pack, $sink, $approvals);
+        $refusal = new WP_Error('woocommerce_rest_cannot_view', 'Sorry, you cannot list resources.');
+        $callback = $gate->wrap(['permission_callback' => static fn () => $refusal], 'woocommerce/orders-list')['permission_callback'];
+
+        $result = $callback(['id' => 1]);
+
+        // The denial itself is returned verbatim (proven already above)...
+        $this->assertSame($refusal, $result);
+        // ...but nothing was written anywhere this request could still read:
+        // no audit event, no approval row, so the pipeline never even ran.
+        $this->assertSame([], $sink->records, 'the ability\'s own denial short-circuits before the pipeline judges anything, so nothing is audited here');
+        $this->assertSame([], $approvals->rows, 'no approval row exists for a denial the gate itself never reserved');
+    }
+
+    /**
      * REGRESSION (live smoke test, 2026-07-07): wrap() runs at ability-registration
      * time (`init`), but application-password identity only exists after the REST
      * server's authentication phase — strictly later. The pack must therefore be
