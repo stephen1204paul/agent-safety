@@ -35,7 +35,7 @@ final class CoreIntegration
     }
 
     /**
-     * @return array{elevationRules: list<ElevationRule>, packs: list<Pack>, governedNamespaces: list<string>}
+     * @return array{elevationRules: list<ElevationRule>, packs: list<Pack>, governedNamespaces: list<string>, stateProbes: array<string, \Specflux\AgentSafety\Plugin\Approval\StateProbe>}
      */
     public static function register(VerbCatalog $catalog, IdentityChain $identity, ?wpdb $db): array
     {
@@ -48,6 +48,9 @@ final class CoreIntegration
             'elevationRules' => [],
             'packs' => CorePacks::all(),
             'governedNamespaces' => ['core/'],
+            // AS-6: no core verb overwrites state in a way that warrants a
+            // probe yet.
+            'stateProbes' => [],
         ];
     }
 }

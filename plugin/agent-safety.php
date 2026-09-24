@@ -61,6 +61,7 @@ use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
 use Specflux\AgentSafety\Plugin\Support\Schema;
 use Specflux\AgentSafety\Plugin\Support\ShadowMode;
+use Specflux\AgentSafety\Plugin\Support\StateProbes;
 use Specflux\AgentSafety\Plugin\Support\Tripwires;
 use Specflux\AgentSafety\Plugin\Support\WindowCounter;
 
@@ -193,12 +194,14 @@ add_action('plugins_loaded', static function (): void {
     $agsafe_elevation_rules = [];
     $agsafe_extra_packs = [];
     $agsafe_governed_namespaces = [];
+    $agsafe_state_probes = [];
 
     // Core first (definitionally available on every site), then Woo.
     $agsafe_core = CoreIntegration::register($agsafe_catalog, $agsafe_identity, isset($wpdb) ? $wpdb : null);
     $agsafe_elevation_rules = [...$agsafe_core['elevationRules']];
     $agsafe_extra_packs = [...$agsafe_core['packs']];
     $agsafe_governed_namespaces = [...$agsafe_core['governedNamespaces']];
+    $agsafe_state_probes = [...$agsafe_core['stateProbes']];
 
     if (WooIntegration::available()) {
         $agsafe_woo = WooIntegration::register($agsafe_catalog, $agsafe_identity, isset($wpdb) ? $wpdb : null);
@@ -207,6 +210,7 @@ add_action('plugins_loaded', static function (): void {
         $agsafe_elevation_rules = [...$agsafe_elevation_rules, ...$agsafe_woo['elevationRules']];
         $agsafe_extra_packs = [...$agsafe_extra_packs, ...$agsafe_woo['packs']];
         $agsafe_governed_namespaces = array_values(array_unique([...$agsafe_governed_namespaces, ...$agsafe_woo['governedNamespaces']]));
+        $agsafe_state_probes = [...$agsafe_state_probes, ...$agsafe_woo['stateProbes']];
     }
 
     // Site owners (or other plugins) can widen the governed namespace list
@@ -245,6 +249,11 @@ add_action('plugins_loaded', static function (): void {
     // (publish vs draft, bulk vs single). A rule can only ever ELEVATE, so this
     // narrows and never widens. Non-rule entries are dropped, not trusted.
     $agsafe_elevation_rules = ElevationRules::filtered($agsafe_elevation_rules);
+
+    // Companion seam for state probes (AS-6): a site can add a probe for a
+    // verb no module already declared one for, mirroring the elevation-rules
+    // seam's add-only posture exactly.
+    $agsafe_state_probes = StateProbes::filtered($agsafe_state_probes);
 
     RequestContext::configure($agsafe_identity);
 
@@ -309,6 +318,7 @@ add_action('plugins_loaded', static function (): void {
         $agsafe_grant_gate,
         $agsafe_pause,
         $agsafe_tripwires,
+        $agsafe_state_probes,
     );
 
     // Primary seam on the shipping stack (WP core Abilities API; adapter-version-independent).
@@ -370,7 +380,7 @@ add_action('plugins_loaded', static function (): void {
         // the programmatic API below, and any consumer (e.g. SenroFlux inline
         // approve) all resolve approvals through it, so capability checks,
         // audit reconciliation and lifecycle actions can never diverge.
-        $agsafe_api_approvals = new Approvals($agsafe_approvals, $agsafe_sink, $agsafe_packs);
+        $agsafe_api_approvals = new Approvals($agsafe_approvals, $agsafe_sink, $agsafe_packs, $agsafe_state_probes);
 
         (new PendingActionsPage($agsafe_approvals, $agsafe_api_approvals))->register();
 

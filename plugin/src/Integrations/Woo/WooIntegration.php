@@ -7,6 +7,7 @@ namespace Specflux\AgentSafety\Plugin\Integrations\Woo;
 use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Policy\ElevationRule;
 use Specflux\AgentSafety\Policy\VerbCatalog;
+use Specflux\AgentSafety\Plugin\Approval\StateProbe;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use wpdb;
 
@@ -33,7 +34,7 @@ final class WooIntegration
     }
 
     /**
-     * @return array{elevationRules: list<ElevationRule>, packs: list<Pack>, governedNamespaces: list<string>}
+     * @return array{elevationRules: list<ElevationRule>, packs: list<Pack>, governedNamespaces: list<string>, stateProbes: array<string, StateProbe>}
      */
     public static function register(VerbCatalog $catalog, IdentityChain $identity, ?wpdb $db): array
     {
@@ -45,6 +46,9 @@ final class WooIntegration
             $identity->register(new WcApiKeyIdentity($db));
         }
 
+        $productProbe = new WooProductStateProbe();
+        $orderProbe = new WooOrderStateProbe();
+
         return [
             'elevationRules' => [
                 new OrderFulfillmentElevationRule(),
@@ -55,6 +59,17 @@ final class WooIntegration
             ],
             'packs' => WooPacks::all(),
             'governedNamespaces' => ['woocommerce/'],
+            // AS-6: the six verbs that overwrite an existing product/order get
+            // a state probe; order-add-note (appends) and every read/create
+            // verb deliberately do not.
+            'stateProbes' => [
+                'woocommerce/products-update' => $productProbe,
+                'woocommerce/products-delete' => $productProbe,
+                'woocommerce/product-update' => $productProbe,
+                'woocommerce/product-delete' => $productProbe,
+                'woocommerce/orders-update' => $orderProbe,
+                'woocommerce/order-update-status' => $orderProbe,
+            ],
         ];
     }
 }
