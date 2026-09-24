@@ -13,8 +13,8 @@ use Specflux\AgentSafety\Plugin\Integrations\Core\CoreVerbCatalog;
 
 /**
  * The Core module is wired unconditionally, so its contract is simpler than
- * Woo's: always available, contributes the core namespace + three elevation
- * rules + three packs, and never touches identity.
+ * Woo's: always available, contributes the core namespace + no elevation
+ * rules + one pack, and never touches identity.
  */
 final class CoreIntegrationTest extends TestCase
 {
@@ -23,7 +23,7 @@ final class CoreIntegrationTest extends TestCase
         $this->assertTrue(CoreIntegration::available());
     }
 
-    public function testRegisterContributesCoreNamespaceAndThreeRulesAndThreePacks(): void
+    public function testRegisterContributesCoreNamespaceAndNoRulesAndOnePack(): void
     {
         $catalog = new VerbCatalog();
         $contributions = CoreIntegration::register($catalog, new IdentityChain(), null);
@@ -32,10 +32,12 @@ final class CoreIntegrationTest extends TestCase
         $this->assertSame(Tier::Reversible, $catalog->baseTier(CoreVerbCatalog::GET_SITE_INFO));
         $this->assertSame(Tier::Reversible, $catalog->baseTier(CoreVerbCatalog::GET_ENVIRONMENT_INFO));
         $this->assertSame(Tier::Reversible, $catalog->baseTier(CoreVerbCatalog::GET_USER_INFO));
-        $this->assertSame(Tier::Irreversible, $catalog->baseTier(CoreVerbCatalog::MANAGE_SETTINGS));
 
-        $this->assertCount(3, $contributions['elevationRules']);
-        $this->assertCount(3, $contributions['packs']);
+        // Anything outside the three live verbs is fail-closed unclassified.
+        $this->assertNull($catalog->baseTier('core/manage-content'));
+
+        $this->assertSame([], $contributions['elevationRules']);
+        $this->assertCount(1, $contributions['packs']);
 
         // D23: the namespace is governed by prefix, never an enumerated list,
         // and no wildcard VERB entries exist to pre-classify unseen verbs.

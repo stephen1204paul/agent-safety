@@ -169,6 +169,27 @@ final class ToolCallResultRedactorTest extends TestCase
         $this->assertSame('Stephen', $redacted['display_name']);
     }
 
+    /**
+     * §3.1 item 4: `core/get-site-info`'s `admin_email` carries no D26 exact-key
+     * treatment of its own — it is masked by the generic {@see Redactor}
+     * fragment denylist matching the substring "email", same as any other
+     * `*email*`-shaped key. Pins that behaviour so a future change to the
+     * fragment list can't silently stop masking it.
+     */
+    public function testSiteInfoAdminEmailIsMaskedByTheGenericEmailFragment(): void
+    {
+        $redactor = $this->redactorFor(['core/']);
+        $result = [
+            'admin_email' => 'admin@example.com',
+            'url'         => 'https://example.test',
+        ];
+
+        $redacted = $redactor->redact($result, [], 'core-get-site-info', FakeMcpTool::withAbility('core/get-site-info'));
+
+        $this->assertSame('«redacted»', $redacted['admin_email']);
+        $this->assertSame('https://example.test', $redacted['url']);
+    }
+
     public function testCoreRedactionDoesNotTouchWooResults(): void
     {
         // The D26 exact-key extension is scoped to the two core user verbs:

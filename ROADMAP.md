@@ -73,14 +73,12 @@ rules, and a rule can only ever raise a tier — now enforced in
 
 **Core WordPress integration module.** The `core/` ability namespace is
 governed unconditionally (D23): the three abilities WordPress ships today are
-classified reversible, the six verbs proposed by the July 2026 core merge
-proposal are pre-classified as named constants, and anything else in the
-namespace fails closed as `unknown_verb`. Argument-aware elevation rules send
-publishing/scheduling and bulk delete/trash of content, plus any user role or
-capability change, to Tier 2; three starter packs ship (`site-readonly`,
-`content-editor`, `site-admin-agent` — the last with a 25-item bulk cap).
-Read-path redaction masks `user_pass`, `user_activation_key`, and `user_email`
-on user-info results; logins stay visible so approvals can name their target.
+classified reversible, and anything else in the namespace fails closed as
+`unknown_verb` — including future core write abilities, so they run governed
+or not at all. One starter pack ships (`site-readonly`, the three reads with
+both write tier classes hard-walled). Read-path redaction masks `user_pass`,
+`user_activation_key`, and `user_email` on user-info results; logins stay
+visible so approvals can name their target.
 
 **Programmatic approvals API.** A shared `Approvals` service (`agent_safety()->approvals()`)
 exposes approve/reject/lookup gated by `manage_options` through the new

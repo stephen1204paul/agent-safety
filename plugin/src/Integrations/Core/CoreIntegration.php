@@ -45,11 +45,7 @@ final class CoreIntegration
         $catalog->register(CoreVerbCatalog::MAP);
 
         return [
-            'elevationRules' => [
-                new PublishElevationRule(),
-                new BulkContentDeleteElevationRule(),
-                new UserRoleChangeElevationRule(),
-            ],
+            'elevationRules' => [],
             'packs' => CorePacks::all(),
             'governedNamespaces' => ['core/'],
         ];

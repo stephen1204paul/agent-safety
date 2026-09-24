@@ -78,7 +78,6 @@ final class ToolCallResultRedactor
      */
     private const CORE_USER_VERBS = [
         CoreVerbCatalog::GET_USER_INFO,
-        CoreVerbCatalog::READ_USERS,
     ];
 
     /** Exact keys masked for the verbs above. */
