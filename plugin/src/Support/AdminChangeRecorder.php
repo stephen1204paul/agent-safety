@@ -38,6 +38,11 @@ final class AdminChangeRecorder
     public const EVENT_PAUSE_ENABLED = 'pause.enabled';
     public const EVENT_PAUSE_DISABLED = 'pause.disabled';
     public const EVENT_TRIPWIRE_LOCKED = 'tripwire.locked';
+    public const EVENT_ENVIRONMENT_BOUND = 'environment.bound';
+    public const EVENT_ENVIRONMENT_MISMATCH = 'environment.mismatch';
+    public const EVENT_ENVIRONMENT_REBOUND = 'environment.rebound';
+    public const EVENT_APPROVAL_VOID_ENVIRONMENT = 'approval.void_environment';
+    public const EVENT_GRANTS_VOID_ENVIRONMENT = 'grants.void_environment';
 
     /**
      * Synthetic pack name for configuration events: no call is in flight, so
@@ -65,11 +70,19 @@ final class AdminChangeRecorder
     /**
      * $pack's stored entry stopped shadowing anything and was removed —
      * usually because its window lapsed, which $expiresAt shows; null when
-     * the entry was malformed and never shadowed at all.
+     * the entry was malformed and never shadowed at all. $cause distinguishes
+     * an environment-ceiling drop (AS-7 §3.4 item 10: the entry's own stamp
+     * was still in the future, but a flip — e.g. this site is now production
+     * — lowered the ceiling below it) from an ordinary TTL lapse (null).
      */
-    public function shadowExpired(string $pack, ?int $expiresAt): void
+    public function shadowExpired(string $pack, ?int $expiresAt, ?string $cause = null): void
     {
-        $this->append(self::EVENT_SHADOW_EXPIRED, ShadowMode::OPTION, ['pack' => $pack, 'expires_at' => $expiresAt]);
+        $input = ['pack' => $pack, 'expires_at' => $expiresAt];
+        if ($cause !== null) {
+            $input['cause'] = $cause;
+        }
+
+        $this->append(self::EVENT_SHADOW_EXPIRED, ShadowMode::OPTION, $input);
     }
 
     /**
@@ -105,6 +118,47 @@ final class AdminChangeRecorder
             Tripwires::LOCKOUT,
             ['token' => $token, 'denials' => $denials, 'lockout_seconds' => $lockoutSeconds],
         );
+    }
+
+    /** First site bind (activation, or the first request after a schema upgrade) — AS-7 §3.4 item 3. */
+    public function environmentBound(string $host): void
+    {
+        $this->append(self::EVENT_ENVIRONMENT_BOUND, EnvironmentGuard::OPTION, ['host' => $host]);
+    }
+
+    /**
+     * The ONE row for a detected site-binding mismatch (item 4): the bound
+     * and current host, and how many of each Relaxation kind this call just
+     * voided. The void itself runs once (guarded by a lock the caller owns);
+     * this is that single summary row, not one per relaxation.
+     */
+    public function environmentMismatch(string $boundHost, string $currentHost, int $shadowVoided, int $grantsVoided, int $approvalsVoided): void
+    {
+        $this->append(self::EVENT_ENVIRONMENT_MISMATCH, EnvironmentGuard::OPTION, [
+            'bound_host' => $boundHost,
+            'current_host' => $currentHost,
+            'shadow_voided' => $shadowVoided,
+            'grants_voided' => $grantsVoided,
+            'approvals_voided' => $approvalsVoided,
+        ]);
+    }
+
+    /** An administrator rebound the site on the settings page (item 7); restores nothing. */
+    public function environmentRebound(string $oldHost, string $newHost): void
+    {
+        $this->append(self::EVENT_ENVIRONMENT_REBOUND, EnvironmentGuard::OPTION, ['from' => $oldHost, 'to' => $newHost]);
+    }
+
+    /** One approved-but-unclaimed Approval voided by a site-binding mismatch (item 5). */
+    public function approvalVoidedEnvironment(string $approvalId, string $verb): void
+    {
+        $this->append(self::EVENT_APPROVAL_VOID_ENVIRONMENT, $verb, ['approval_id' => $approvalId]);
+    }
+
+    /** Every still-live Grant revoked in one site-binding mismatch (item 5) — one row, the count. */
+    public function grantsVoidedEnvironment(int $count): void
+    {
+        $this->append(self::EVENT_GRANTS_VOID_ENVIRONMENT, 'grants', ['count' => $count]);
     }
 
     /**

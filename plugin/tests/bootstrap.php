@@ -295,6 +295,52 @@ if (!function_exists('wp_add_privacy_policy_content')) {
     }
 }
 
+if (!function_exists('add_option')) {
+    /**
+     * Test control knob: mirrors the real add_option()'s "only the FIRST
+     * write wins" contract — the atomic lock AS-7's EnvironmentGuard relies
+     * on — against the same $GLOBALS['wpas_test_options'] store.
+     *
+     * @param mixed $value
+     */
+    function add_option(string $name, $value = '', string $deprecated = '', $autoload = true): bool
+    {
+        if (array_key_exists($name, $GLOBALS['wpas_test_options'])) {
+            return false;
+        }
+
+        $GLOBALS['wpas_test_options'][$name] = $value;
+
+        return true;
+    }
+}
+
+if (!function_exists('home_url')) {
+    /** Test control knob: set $GLOBALS['wpas_test_home_url'] per-test; defaults to a stable host. */
+    function home_url(string $path = ''): string
+    {
+        return ($GLOBALS['wpas_test_home_url'] ?? 'https://example.com') . $path;
+    }
+}
+
+if (!function_exists('wp_get_environment_type')) {
+    /**
+     * Test control knob: set $GLOBALS['wpas_test_environment_type'] per-test.
+     *
+     * Deliberately defaults to 'local', NOT the real WordPress default of
+     * 'production' (AS-7 §3.4 item 8) — every pre-stage-7 shadow-mode test
+     * was written assuming the full 7-day {@see \Specflux\AgentSafety\Plugin\Support\ShadowMode::MAX_TTL}
+     * ceiling with no environment configured; defaulting this shim to
+     * 'production' would silently reinterpret all of them under the new
+     * 24-hour production ceiling. A test that wants the production heuristic
+     * sets this global explicitly.
+     */
+    function wp_get_environment_type(): string
+    {
+        return $GLOBALS['wpas_test_environment_type'] ?? 'local';
+    }
+}
+
 if (!function_exists('dbDelta')) {
     $GLOBALS['wpas_test_dbdelta_queries'] = [];
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Specflux\AgentSafety\Plugin\Support;
 
+use Specflux\AgentSafety\Plugin\Audit\WpdbAuditSink;
 use wpdb;
 
 /**
@@ -190,12 +191,29 @@ final class Schema
 
         // Option migrations ride the same version gate as the tables. Each is
         // a no-op once its shape is current, so rerunning on activation is
-        // safe. Shape-gated (not version-gated), same as ShadowMode's below:
-        // the §3.4 item 3 "first bind for existing installs" migration (stage
-        // 7) belongs here too, as its own idempotent, shape-checked call.
+        // safe.
         (new ShadowMode())->migrateLegacy();
 
+        // §3.4 item 3: first site bind, idempotent and shape-gated (already
+        // bound is a no-op) rather than version-gated, exactly like the
+        // migration above — covers both a fresh activation and an existing
+        // install's first request after this schema upgrade, since this
+        // method runs from both activation and {@see maybeUpgrade()}.
+        self::firstSiteBind($db);
+
         update_option(self::VERSION_OPTION, self::VERSION, false);
+    }
+
+    /** @see EnvironmentGuard::firstBindIfNeeded() — duplicated here (no AuditSink/AdminChangeRecorder to inject into Schema::install()) rather than instantiating a full EnvironmentGuard. */
+    private static function firstSiteBind(wpdb $db): void
+    {
+        if (get_option(EnvironmentGuard::OPTION, null) !== null) {
+            return;
+        }
+
+        $host = SiteBinding::normalize(function_exists('home_url') ? (string) home_url() : '');
+        update_option(EnvironmentGuard::OPTION, $host, false);
+        (new AdminChangeRecorder(new WpdbAuditSink($db)))->environmentBound($host);
     }
 
     /**

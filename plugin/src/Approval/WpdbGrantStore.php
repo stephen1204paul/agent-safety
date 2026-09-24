@@ -190,6 +190,26 @@ final class WpdbGrantStore implements GrantStore
         return is_int($affected) ? $affected : 0;
     }
 
+    /**
+     * AS-7 §3.4 item 5: revoke EVERY still-live grant (a Relaxation) on a
+     * site-binding mismatch, whatever its correlation scope — unlike
+     * {@see revokeAllActive()}'s sibling {@see revokeByCorrelation()}, which is
+     * scoped to a single run. Returns how many rows this call actually
+     * revoked, for the single `environment.mismatch` audit row's void count.
+     */
+    public function revokeAllActive(): int
+    {
+        $this->ensureTable();
+
+        $affected = $this->db->query(
+            // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name, no user input.
+            "UPDATE {$this->table()} SET status = 'revoked', revoked_ts = UTC_TIMESTAMP()
+              WHERE status IN ('active', 'exhausted')"
+        );
+
+        return is_int($affected) ? $affected : 0;
+    }
+
     public function get(string $grantId): ?Grant
     {
         if ($grantId === '') {

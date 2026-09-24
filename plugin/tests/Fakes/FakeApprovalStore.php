@@ -168,7 +168,11 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
     {
         $id = $this->find($token, $verb, $argsHash, $subject);
         if ($id === null) {
-            return ReserveOutcome::none();
+            // AS-7 §3.4 item 6: mirror WpdbApprovalStore::reserve()'s fallback
+            // check for a row a site-binding mismatch already voided.
+            $voided = $this->findByStatus($token, $verb, $argsHash, $subject, 'void_environment');
+
+            return $voided !== null ? ReserveOutcome::voidEnvironment($voided) : ReserveOutcome::none();
         }
 
         $kind = $this->rows[$id]['fingerprint_kind'] ?? null;
@@ -224,8 +228,13 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
      */
     private function find(?string $token, string $verb, string $argsHash, ?string $subject): ?string
     {
+        return $this->findByStatus($token, $verb, $argsHash, $subject, 'approved');
+    }
+
+    private function findByStatus(?string $token, string $verb, string $argsHash, ?string $subject, string $status): ?string
+    {
         foreach ($this->rows as $id => $row) {
-            if ($row['status'] !== 'approved' || $row['verb'] !== $verb || $row['args_hash'] !== $argsHash) {
+            if ($row['status'] !== $status || $row['verb'] !== $verb || $row['args_hash'] !== $argsHash) {
                 continue;
             }
 
@@ -242,6 +251,25 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
         }
 
         return null;
+    }
+
+    /** Test control knob: seed a row already voided by a site-binding mismatch (AS-7 §3.4 item 5). */
+    public function seedVoidEnvironment(string $verb, string $argsHash, ?string $subject): string
+    {
+        $id = $this->mintId();
+        $this->rows[$id] = [
+            'verb' => $verb,
+            'args_hash' => $argsHash,
+            'summary' => '',
+            'correlation_id' => '',
+            'audit_event_id' => '',
+            'subject' => $subject,
+            'status' => 'void_environment',
+            'fingerprint' => null,
+            'fingerprint_kind' => null,
+        ];
+
+        return $id;
     }
 
     private function mintId(): string

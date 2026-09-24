@@ -77,3 +77,11 @@ _Avoid_: log entry, event (event id is the correlation key, not the record)
 **Disclosed retention**:
 Keeping a user's audit rows through an erasure request, with the reason stated to the requester and in the privacy policy.
 _Avoid_: (none)
+
+**Site binding**:
+The normalised home URL (host, port, path) that an install's Relaxations were granted under; a mismatch voids them.
+_Avoid_: domain lock, host lock
+
+**Relaxation**:
+Any stored state that lets a call through that the Pack alone would stop or park: a shadow window, a Grant, an approved-but-unclaimed Approval.
+_Avoid_: loosening state, override

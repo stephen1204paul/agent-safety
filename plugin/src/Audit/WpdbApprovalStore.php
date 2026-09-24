@@ -327,7 +327,24 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
         );
 
         if (!is_array($candidate) || !is_string($candidate['approval_id'] ?? null) || $candidate['approval_id'] === '') {
-            return ReserveOutcome::none();
+            // AS-7 §3.4 item 6: no live `approved` row, but a matching one may
+            // have already been voided by a site-binding mismatch. Report that
+            // distinctly (never re-mutated: void_environment is terminal) so
+            // the caller routes this retry through the stale-shaped path with
+            // the site-moved message rather than an ordinary first-time park.
+            $voided = $this->db->get_var(
+                $this->db->prepare(
+                    // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name + literal match column.
+                    "SELECT approval_id FROM {$this->table()}
+                      WHERE {$matchCol} = %s AND verb = %s AND args_hash = %s AND status = 'void_environment'
+                      ORDER BY id DESC LIMIT 1",
+                    $matchVal,
+                    $verb,
+                    $argsHash
+                )
+            );
+
+            return is_string($voided) && $voided !== '' ? ReserveOutcome::voidEnvironment($voided) : ReserveOutcome::none();
         }
 
         $candidateId = $candidate['approval_id'];
@@ -468,6 +485,51 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
         );
 
         return is_int($affected) ? $affected : 0;
+    }
+
+    /**
+     * AS-7 §3.4 item 5: void every approved-but-unclaimed row (a Relaxation)
+     * on a site-binding mismatch — flipped to the terminal `void_environment`
+     * status, never `in_flight`/`consumed`/etc, so a row already claimed by a
+     * concurrent request is left alone. Pending (unapproved) rows are
+     * untouched by design (item 5): only a human's already-granted-but-unused
+     * decision is a Relaxation.
+     *
+     * @return list<array{approval_id: string, verb: string, key_id: ?string}>
+     */
+    public function voidUnclaimedApprovals(): array
+    {
+        $this->ensureTable();
+
+        // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name, no user input.
+        $rows = $this->db->get_results(
+            "SELECT approval_id, verb, key_id FROM {$this->table()} WHERE status = 'approved'",
+            ARRAY_A
+        );
+        $rows = is_array($rows) ? $rows : [];
+        if ($rows === []) {
+            return [];
+        }
+
+        $ids = array_values(array_map(static fn (array $r): string => (string) ($r['approval_id'] ?? ''), $rows));
+        $placeholders = implode(',', array_fill(0, count($ids), '%s'));
+        $this->db->query(
+            $this->db->prepare(
+                // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name + generated placeholder count.
+                "UPDATE {$this->table()} SET status = 'void_environment'
+                  WHERE status = 'approved' AND approval_id IN ({$placeholders})",
+                ...$ids
+            )
+        );
+
+        return array_map(
+            static fn (array $r): array => [
+                'approval_id' => (string) ($r['approval_id'] ?? ''),
+                'verb' => (string) ($r['verb'] ?? ''),
+                'key_id' => is_string($r['key_id'] ?? null) ? $r['key_id'] : null,
+            ],
+            $rows
+        );
     }
 
     /** Flip pending requests past their TTL to `expired` (item 3). */

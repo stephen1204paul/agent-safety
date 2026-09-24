@@ -103,6 +103,79 @@ final class WpdbApprovalStoreTest extends TestCase
         ));
     }
 
+    // --- AS-7 §3.4 items 5, 6: environment voiding ----------------------------
+
+    public function testVoidUnclaimedApprovalsFlipsOnlyApprovedRowsAndReturnsThem(): void
+    {
+        $db = new wpdb();
+        $db->resultsReturn = [
+            ['approval_id' => 'apr_1', 'verb' => 'demo/refund', 'key_id' => 'app:1'],
+            ['approval_id' => 'apr_2', 'verb' => 'demo/cancel', 'key_id' => null],
+        ];
+        $store = new WpdbApprovalStore($db);
+
+        $voided = $store->voidUnclaimedApprovals();
+
+        $this->assertSame([
+            ['approval_id' => 'apr_1', 'verb' => 'demo/refund', 'key_id' => 'app:1'],
+            ['approval_id' => 'apr_2', 'verb' => 'demo/cancel', 'key_id' => null],
+        ], $voided);
+
+        $select = current(array_filter($db->queries, static fn (string $q): bool => str_starts_with(trim($q), 'SELECT')));
+        $this->assertNotFalse($select);
+        $this->assertStringContainsString("status = 'approved'", $select);
+        $this->assertStringNotContainsString('pending', $select);
+
+        $update = current(array_filter($db->queries, static fn (string $q): bool => str_starts_with(trim($q), 'UPDATE')));
+        $this->assertNotFalse($update);
+        $this->assertStringContainsString("status = 'void_environment'", $update);
+        $this->assertStringContainsString("status = 'approved'", $update);
+        $this->assertStringContainsString("'apr_1'", $update);
+        $this->assertStringContainsString("'apr_2'", $update);
+    }
+
+    public function testVoidUnclaimedApprovalsIsANoOpWhenNothingIsApproved(): void
+    {
+        $db = new wpdb();
+        $db->resultsReturn = [];
+        $store = new WpdbApprovalStore($db);
+
+        $this->assertSame([], $store->voidUnclaimedApprovals());
+        $this->assertSame([], array_values(array_filter($db->queries, static fn (string $q): bool => str_starts_with(trim($q), 'UPDATE'))));
+    }
+
+    public function testReserveReportsVoidEnvironmentWhenTheOnlyMatchWasAlreadyVoided(): void
+    {
+        $db = new wpdb();
+        $db->rowReturn = null; // no live `approved` row
+        $db->varReturn = 'apr_voided_1';
+        $store = new WpdbApprovalStore($db);
+
+        $outcome = $store->reserve(null, 'demo/refund', 'hash123', 'key_1');
+
+        $this->assertTrue($outcome->voidEnvironment);
+        $this->assertFalse($outcome->stale);
+        $this->assertNull($outcome->approvalId);
+        $this->assertSame('apr_voided_1', $outcome->voidedApprovalId);
+
+        $sql = (string) end($db->queries);
+        $this->assertStringContainsString("status = 'void_environment'", $sql);
+    }
+
+    public function testReserveReportsNoneWhenNeitherAnApprovedNorAVoidedRowMatches(): void
+    {
+        $db = new wpdb();
+        $db->rowReturn = null;
+        $db->varReturn = null;
+        $store = new WpdbApprovalStore($db);
+
+        $outcome = $store->reserve(null, 'demo/refund', 'hash123', 'key_1');
+
+        $this->assertFalse($outcome->voidEnvironment);
+        $this->assertFalse($outcome->stale);
+        $this->assertNull($outcome->approvalId);
+    }
+
     private function lastDeleteQuery(wpdb $db): string
     {
         $deletes = array_values(array_filter($db->queries, static fn (string $q): bool => str_starts_with(trim($q), 'DELETE')));

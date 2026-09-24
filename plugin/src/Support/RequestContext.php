@@ -151,12 +151,47 @@ final class RequestContext
         return is_string($ip) && $ip !== '' ? substr($ip, 0, 45) : null;
     }
 
-    /** @return array{token_id: ?string, wp_user: ?int} */
+    /**
+     * AS-7 §3.4 item 11: every audit row's context carries the environment
+     * type and whether a site-binding mismatch is currently in effect — folded
+     * into `actor` (a nested key each row already carries) rather than a new
+     * top-level {@see \Specflux\AgentSafety\Audit\AuditRecord} field, so the
+     * hash-chained record shape itself never changes. Reads the SAME option
+     * {@see EnvironmentGuard} owns, directly: a full EnvironmentGuard needs an
+     * approval store and a grant store to do its job, neither of which this
+     * static, dependency-free class should ever hold.
+     *
+     * @return array{token_id: ?string, wp_user: ?int, env_type: string, env_mismatch: bool}
+     */
     public static function actor(): array
     {
         $user = function_exists('get_current_user_id') ? (int) get_current_user_id() : 0;
 
-        return ['token_id' => self::tokenId(), 'wp_user' => $user > 0 ? $user : null];
+        return [
+            'token_id' => self::tokenId(),
+            'wp_user' => $user > 0 ? $user : null,
+            'env_type' => self::environmentType(),
+            'env_mismatch' => self::environmentMismatch(),
+        ];
+    }
+
+    private static function environmentType(): string
+    {
+        return function_exists('wp_get_environment_type') ? (string) wp_get_environment_type() : 'production';
+    }
+
+    private static function environmentMismatch(): bool
+    {
+        if (!function_exists('get_option') || !function_exists('home_url')) {
+            return false;
+        }
+
+        $bound = get_option(EnvironmentGuard::OPTION, null);
+        if (!is_string($bound) || $bound === '') {
+            return false;
+        }
+
+        return $bound !== SiteBinding::normalize((string) home_url());
     }
 
     /**

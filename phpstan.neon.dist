@@ -47,7 +47,7 @@ parameters:
             # behavioral defect.
             message: '#^Parameter \#1 \$query of method wpdb::query\(\) expects string, string\|null given\.$#'
             path: plugin/src/*
-            count: 13
+            count: 14
         -
             # Schema::ensureDbDelta()'s require_once is a real-WordPress-only
             # fallback (only reached when dbDelta() isn't already defined,

@@ -15,6 +15,7 @@ use Specflux\AgentSafety\Plugin\Approval\StateFingerprint;
 use Specflux\AgentSafety\Plugin\Approval\StateProbe;
 use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
+use Specflux\AgentSafety\Plugin\Support\EnvironmentGuard;
 use Specflux\AgentSafety\Plugin\Support\PauseSwitch;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
@@ -83,12 +84,22 @@ final class VerdictPipeline
         private readonly PauseSwitch $pause = new PauseSwitch(),
         private readonly Tripwires $tripwires = new Tripwires(),
         private readonly array $stateProbes = [],
+        private readonly ?EnvironmentGuard $environment = null,
     ) {
     }
 
-    /** @param array<string, mixed> $args */
+    /**
+     * @param array<string, mixed> $args
+     */
     public function judge(string $verb, array $args, Pack $pack, Hints $hints, VerdictMode $mode): Verdict
     {
+        // AS-7 §3.4 item 4: the environment check on every governed call —
+        // one option read and a string compare on the common case, before
+        // anything else runs. Both gate seams adapt this one pipeline
+        // (docs/adr/0001), so wiring it here covers them identically instead
+        // of duplicating the check in each seam.
+        $this->environment?->ensureCurrent();
+
         $peeked = VerdictMode::Peek === $mode && $this->recorder->hasApprovedGrant($verb, $args);
         $decision = $this->evaluate($verb, $args, $pack, $hints, $peeked);
         $decision = $this->enforceStops($decision, $verb, $args);
@@ -110,8 +121,9 @@ final class VerdictPipeline
         $reservedId = null;
         $grantId = null;
         $staleClaim = false;
+        $envVoidClaim = false;
         if (VerdictMode::Claim === $mode && Outcome::ApprovalRequired === $decision->outcome) {
-            $claimed = $this->claim($verb, $args, $reservedId, $probe->fingerprint, $isShadowed, $staleClaim);
+            $claimed = $this->claim($verb, $args, $reservedId, $probe->fingerprint, $isShadowed, $staleClaim, $envVoidClaim);
             if (!$claimed) {
                 $claimed = $this->claimUnderGrant($verb, $args, $reservedId, $grantId, $probe->fingerprint, $isShadowed);
             }
@@ -147,7 +159,14 @@ final class VerdictPipeline
         }
 
         $eventId = RequestContext::event();
-        $variant = $staleClaim ? ApprovalMessageVariant::Stale : ApprovalMessageVariant::Base;
+        // AS-7 §3.4 item 6: a retry against an approval a site-binding
+        // mismatch already voided takes the SAME fresh-request path as a
+        // stale claim, but with the site-moved message — never both at once,
+        // since $envVoidClaim only sets when $staleClaim's own check found
+        // nothing (see claim()).
+        $variant = $staleClaim
+            ? ApprovalMessageVariant::Stale
+            : ($envVoidClaim ? ApprovalMessageVariant::SiteMoved : ApprovalMessageVariant::Base);
 
         // A shadowed pack's would-be denial proceeds as a dry run — except the
         // pause. The stop is absolute, or it is not a stop.
@@ -222,9 +241,10 @@ final class VerdictPipeline
         // grant-authorised call is reserved, finalized and rolled back by exactly
         // the same machinery a human-approved one is. Grant-minted rows are kind
         // `grant`, never `probe`, so the store never treats one as stale
-        // regardless of $currentFingerprint — $unusedStale is genuinely unused.
+        // regardless of $currentFingerprint — $unusedStale/$unusedEnvVoid are genuinely unused.
         $unusedStale = false;
-        if (!$this->claim($verb, $args, $reservedId, $currentFingerprint, $isShadowed, $unusedStale)) {
+        $unusedEnvVoid = false;
+        if (!$this->claim($verb, $args, $reservedId, $currentFingerprint, $isShadowed, $unusedStale, $unusedEnvVoid)) {
             // Should not happen (the row was written for these exact args), so
             // fail closed and hand the reservation back rather than proceeding
             // on an approval nothing can prove was claimed.
@@ -399,7 +419,8 @@ final class VerdictPipeline
             // is whatever the earlier probe step found — none, unless this
             // verb ALSO has an ApprovalRequired tier outcome for other args.
             $capStale = false;
-            if (VerdictMode::Claim === $mode && $this->claim($verb, $args, $reservedId, $currentFingerprint, $isShadowed, $capStale)) {
+            $capEnvVoid = false;
+            if (VerdictMode::Claim === $mode && $this->claim($verb, $args, $reservedId, $currentFingerprint, $isShadowed, $capStale, $capEnvVoid)) {
                 $claimed = true;
                 $recheck = $this->argumentCaps->check($pack, RequestContext::tokenId(), $verb, $args, true);
 
@@ -437,6 +458,12 @@ final class VerdictPipeline
      * pack is shadowed, in which case that path is skipped and the call
      * proceeds under shadow with no new pending row (§3.3 item 11).
      *
+     * AS-7 §3.4 item 6: when no LIVE approved row matches but one was already
+     * voided by a site-binding mismatch, the store reports that via
+     * $envVoided instead — nothing to (re-)mutate (void_environment is
+     * terminal), just a signal for the caller to take the same fresh-request
+     * path with the site-moved message rather than an ordinary first park.
+     *
      * @param array<string, mixed> $args
      */
     private function claim(
@@ -446,6 +473,7 @@ final class VerdictPipeline
         ?string $currentFingerprint,
         bool $isShadowed,
         bool &$stale,
+        bool &$envVoided,
     ): bool {
         if ($this->approvals === null) {
             return false;
@@ -459,6 +487,12 @@ final class VerdictPipeline
 
         $token = isset($args[ApprovalBinding::TOKEN_ARG]) ? (string) $args[ApprovalBinding::TOKEN_ARG] : null;
         $result = $this->approvals->reserve($token, $verb, $argsHash, RequestContext::tokenId(), $currentFingerprint);
+
+        if ($result->voidEnvironment) {
+            $envVoided = true;
+
+            return false;
+        }
 
         if ($result->stale) {
             $stale = true;

@@ -415,6 +415,22 @@ final class WpdbGrantStoreTest extends TestCase
         $this->assertNull((new WpdbGrantStore($db))->get(''));
     }
 
+    // --- AS-7 §3.4 item 5: revoke every live grant on a site-binding mismatch ---
+
+    public function testRevokeAllActiveRevokesEveryActiveAndExhaustedGrantRegardlessOfCorrelation(): void
+    {
+        $db = new wpdb();
+        $db->queryReturn = 4;
+        $store = new WpdbGrantStore($db);
+
+        $this->assertSame(4, $store->revokeAllActive());
+
+        $sql = end($db->queries);
+        $this->assertStringContainsString("status = 'revoked'", $sql);
+        $this->assertStringContainsString("status IN ('active', 'exhausted')", $sql);
+        $this->assertStringNotContainsString('correlation_id', $sql, 'unlike revokeAllByCorrelation(), this is NOT scoped to one run');
+    }
+
     // --- sweep ---------------------------------------------------------------
 
     public function testTheSweepOnlyDeletesLapsedActiveGrants(): void

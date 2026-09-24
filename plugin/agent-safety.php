@@ -54,6 +54,7 @@ use Specflux\AgentSafety\Plugin\Support\ApprovalSweep;
 use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\ElevationRules;
+use Specflux\AgentSafety\Plugin\Support\EnvironmentGuard;
 use Specflux\AgentSafety\Plugin\Support\GrantRecorder;
 use Specflux\AgentSafety\Plugin\Support\MultisiteGuard;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
@@ -309,6 +310,14 @@ add_action('plugins_loaded', static function (): void {
         ? new GrantGate($agsafe_grant_store, $agsafe_approvals, $agsafe_recorder, new GrantRecorder($agsafe_sink))
         : null;
 
+    // Site binding (AS-7): every governed call and admin_init check the bound
+    // host against the current one, voiding every Relaxation (shadow, grants,
+    // approved-but-unclaimed approvals) exactly once on a mismatch. Inert
+    // (null) only on the pathological no-database path.
+    $agsafe_environment = isset($wpdb)
+        ? new EnvironmentGuard($agsafe_shadow, $agsafe_changes, $agsafe_approvals, $agsafe_grant_store)
+        : null;
+
     // The ONE verdict pipeline both gate seams adapt (docs/adr/0001): the ordered
     // evaluation, the approval claim and its re-entrancy memo, the caps, shadow
     // mode, and the audit/pending-approval obligations of a blocked call all
@@ -324,7 +333,18 @@ add_action('plugins_loaded', static function (): void {
         $agsafe_pause,
         $agsafe_tripwires,
         $agsafe_state_probes,
+        $agsafe_environment,
     );
+
+    // AS-7 §3.4 item 4: the admin_init half of the environment check (the
+    // governed-call half lives inside VerdictPipeline::judge() above), and
+    // the banner that shows until an administrator rebinds.
+    if ($agsafe_environment !== null) {
+        add_action('admin_init', static function () use ($agsafe_environment): void {
+            $agsafe_environment->ensureCurrent();
+        });
+        add_action('admin_notices', [$agsafe_environment, 'renderMismatchNotice']);
+    }
 
     // Primary seam on the shipping stack (WP core Abilities API; adapter-version-independent).
     // Claim-mode adapter: owns the finalize/rollback of grants the pipeline
@@ -431,5 +451,5 @@ add_action('plugins_loaded', static function (): void {
     // Capability-pack admin (Tools → Agent Capability Packs): the emergency
     // stop, then bind each identity the configured providers expose to a pack
     // from the catalog.
-    (new CapabilityPacksPage($agsafe_packs, $agsafe_identity, $agsafe_shadow, $agsafe_changes, $agsafe_pause))->register();
+    (new CapabilityPacksPage($agsafe_packs, $agsafe_identity, $agsafe_shadow, $agsafe_changes, $agsafe_pause, $agsafe_environment))->register();
 }, 0);

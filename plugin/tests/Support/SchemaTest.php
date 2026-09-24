@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
+use Specflux\AgentSafety\Plugin\Support\EnvironmentGuard;
 use Specflux\AgentSafety\Plugin\Support\Schema;
 use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 use wpdb;
@@ -31,6 +32,32 @@ final class SchemaTest extends TestCase
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_dbdelta_queries'] = [];
         $GLOBALS['wpas_test_time'] = \time();
+        unset($GLOBALS['wpas_test_home_url']);
+    }
+
+    // --- AS-7 §3.4 item 3: first site bind ------------------------------------
+
+    public function testInstallBindsTheSiteOnFirstActivation(): void
+    {
+        $GLOBALS['wpas_test_home_url'] = 'https://example.com';
+        $db = new wpdb();
+        $db->varReturnQueue = [null]; // legacy grants table does not exist
+
+        Schema::install($db);
+
+        $this->assertSame('example.com', $GLOBALS['wpas_test_options'][EnvironmentGuard::OPTION]);
+    }
+
+    public function testInstallDoesNotRebindAnAlreadyBoundSite(): void
+    {
+        $GLOBALS['wpas_test_options'][EnvironmentGuard::OPTION] = 'already-bound.example';
+        $GLOBALS['wpas_test_home_url'] = 'https://different.example';
+        $db = new wpdb();
+        $db->varReturnQueue = [null];
+
+        Schema::install($db);
+
+        $this->assertSame('already-bound.example', $GLOBALS['wpas_test_options'][EnvironmentGuard::OPTION]);
     }
 
     public function testInstallStoresTheCurrentSchemaVersion(): void
