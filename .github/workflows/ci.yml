@@ -8,6 +8,20 @@ on:
     # Weekly Plugin Check run against the latest action release, so a new
     # check added upstream surfaces even between our own commits.
     - cron: '17 6 * * 1'
+  workflow_call:
+    inputs:
+      zip-artifact:
+        description: >
+          Name of a zip artifact already uploaded earlier in this workflow
+          run (by release.yml's build job). When set, the Plugin Check job
+          downloads and checks THAT zip instead of building its own, so the
+          release gate builds the shipped zip exactly once and reuses it for
+          both Plugin Check and the GitHub Release. Left empty for the
+          ordinary push/PR/schedule triggers, where there is no sibling
+          build job to reuse and Plugin Check builds its own zip.
+        required: false
+        type: string
+        default: ''
 
 jobs:
   check:
@@ -48,16 +62,37 @@ jobs:
           php-version: '8.1'
           coverage: none
 
-      - name: Install core dependencies
-        run: composer install --prefer-dist --no-progress
+      # Plugin Check must run against the BUILT zip (spec §3.6.8, §3.7.5),
+      # never against ./plugin directly: the zip is the allowlisted subset
+      # that actually ships, and that's what a reviewer (and wordpress.org's
+      # own automation) sees.
+      - name: Download the release build's zip
+        if: inputs.zip-artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.zip-artifact }}
+          path: build-artifact
 
-      - name: Install plugin dependencies
-        run: composer install --prefer-dist --no-progress --working-dir=plugin
+      - name: Build the zip (bin/build-zip.sh, the single allowlisted build)
+        if: inputs.zip-artifact == ''
+        run: bin/build-zip.sh
+
+      - name: Locate and extract the zip
+        id: zip
+        run: |
+          if [ -n "${{ inputs.zip-artifact }}" ]; then
+            ZIP_PATH=$(ls build-artifact/*.zip | head -1)
+          else
+            ZIP_PATH=$(ls agent-safety-*.zip | head -1)
+          fi
+          echo "path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
+          mkdir -p extracted
+          unzip -q "$ZIP_PATH" -d extracted
 
       - name: Run Plugin Check
         uses: wordpress/plugin-check-action@v1.1.9
         with:
-          build-dir: './plugin'
+          build-dir: './extracted/agent-safety'
 
   plugin-check-latest:
     if: github.event_name == 'schedule'
@@ -72,13 +107,16 @@ jobs:
           php-version: '8.1'
           coverage: none
 
-      - name: Install core dependencies
-        run: composer install --prefer-dist --no-progress
+      - name: Build the zip (bin/build-zip.sh, the single allowlisted build)
+        run: bin/build-zip.sh
 
-      - name: Install plugin dependencies
-        run: composer install --prefer-dist --no-progress --working-dir=plugin
+      - name: Extract the zip
+        run: |
+          ZIP_PATH=$(ls agent-safety-*.zip | head -1)
+          mkdir -p extracted
+          unzip -q "$ZIP_PATH" -d extracted
 
       - name: Run Plugin Check (latest release)
         uses: wordpress/plugin-check-action@v1
         with:
-          build-dir: './plugin'
+          build-dir: './extracted/agent-safety'
