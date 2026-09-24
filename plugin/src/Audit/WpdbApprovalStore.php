@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Audit;
 
 use Specflux\AgentSafety\Approval\ApprovalStore;
+use Specflux\AgentSafety\Approval\ReserveOutcome;
 use Specflux\AgentSafety\Plugin\Approval\ApprovalMinter;
 use Specflux\AgentSafety\Plugin\Support\Schema;
 use Specflux\AgentSafety\Plugin\Support\SummaryMarkup;
@@ -57,6 +58,8 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
         string $correlationId,
         string $auditEventId,
         ?string $subject,
+        ?string $fingerprint = null,
+        string $fingerprintKind = 'none',
     ): string {
         $this->ensureTable();
         $table = $this->table();
@@ -65,15 +68,34 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
         // exists, so a retrying agent does not pile up duplicate approvals for one
         // human to clear. Scoped by subject so two principals get distinct grants.
         $keyClause = $subject === null ? 'key_id IS NULL' : 'key_id = %s';
-        $sql = "SELECT approval_id FROM {$table}
+        $sql = "SELECT approval_id, fingerprint, fingerprint_kind FROM {$table}
                  WHERE verb = %s AND args_hash = %s AND status = 'pending'
                    AND pending_expires_ts > UTC_TIMESTAMP() AND {$keyClause}
                  ORDER BY id DESC LIMIT 1";
         $params = $subject === null ? [$verb, $argsHash] : [$verb, $argsHash, $subject];
         // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name + literal key clause.
-        $existing = $this->db->get_var($this->db->prepare($sql, ...$params));
-        if (is_string($existing) && $existing !== '') {
-            return $existing;
+        $existing = $this->db->get_row($this->db->prepare($sql, ...$params), ARRAY_A);
+
+        if (is_array($existing) && is_string($existing['approval_id'] ?? null) && $existing['approval_id'] !== '') {
+            $existingId = $existing['approval_id'];
+            $existingKind = $existing['fingerprint_kind'] ?? null;
+            $existingFingerprint = is_string($existing['fingerprint'] ?? null) ? $existing['fingerprint'] : null;
+
+            $mismatched = $existingKind === 'probe'
+                && ($fingerprint === null || $existingFingerprint === null || !hash_equals($existingFingerprint, $fingerprint));
+
+            if (!$mismatched) {
+                return $existingId;
+            }
+
+            // AS-6 §3.3 item 7: the target changed since this still-pending request
+            // was filed. Retire it and fall through to insert a fresh one below —
+            // never reuse a pending row whose captured state has drifted.
+            // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name.
+            $this->db->query($this->db->prepare(
+                "UPDATE {$table} SET status = 'stale' WHERE approval_id = %s AND status = 'pending'",
+                $existingId
+            ));
         }
 
         $approvalId = 'apr_' . $this->uuid();
@@ -88,10 +110,15 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
                 'audit_event_id' => $auditEventId,
                 'key_id' => $subject,
                 'status' => 'pending',
+                // A row written with no probe fingerprint stores fingerprint_kind
+                // as NULL (read as `none`), never the literal string 'none' — see
+                // Schema's column doc comment.
+                'fingerprint' => $fingerprint,
+                'fingerprint_kind' => $fingerprint !== null ? $fingerprintKind : null,
                 'created_ts' => gmdate('Y-m-d H:i:s'),
                 'pending_expires_ts' => gmdate('Y-m-d H:i:s', time() + self::PENDING_TTL_SECONDS),
             ],
-            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'],
         );
 
         // Fires only for a genuinely NEW pending approval — the idempotent
@@ -186,10 +213,11 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
                 'status' => 'approved',
                 'approver' => $approver,
                 'grant_id' => $grantId,
+                'fingerprint_kind' => 'grant',
                 'created_ts' => gmdate('Y-m-d H:i:s', $now),
                 'expires_ts' => gmdate('Y-m-d H:i:s', $now + self::TTL_SECONDS),
             ],
-            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s'],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s'],
         );
 
         return $inserted === 1 ? $approvalId : null;
@@ -205,6 +233,27 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
                 "UPDATE {$this->table()} SET status = 'rejected', approver = %d
                   WHERE approval_id = %s AND status = 'pending'",
                 $approver,
+                $approvalId
+            )
+        );
+
+        return $affected === 1;
+    }
+
+    /**
+     * Flip a still-pending row straight to `stale` (AS-6 approve-time
+     * re-check, §3.3 item 8) without filing a replacement — the human is
+     * already looking at this row and will see why on their next visit.
+     * Idempotent-ish: false if the row was no longer pending.
+     */
+    public function markStale(string $approvalId): bool
+    {
+        $this->ensureTable();
+
+        $affected = $this->db->query(
+            $this->db->prepare(
+                // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name.
+                "UPDATE {$this->table()} SET status = 'stale' WHERE approval_id = %s AND status = 'pending'",
                 $approvalId
             )
         );
@@ -243,7 +292,7 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
         return is_string($found) && $found !== '';
     }
 
-    public function reserve(?string $token, string $verb, string $argsHash, ?string $subject): ?string
+    public function reserve(?string $token, string $verb, string $argsHash, ?string $subject, ?string $currentFingerprint = null): ReserveOutcome
     {
         $this->ensureTable();
 
@@ -256,7 +305,45 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
             $matchCol = 'key_id';
             $matchVal = $subject;
         } else {
-            return null;
+            return ReserveOutcome::none();
+        }
+
+        // AS-6: read the candidate row's fingerprint BEFORE claiming, so a
+        // target that changed since the approval was granted can be marked
+        // `stale` instead of reserved — never claims a stale target (§3.3
+        // items 6, 10).
+        $candidate = $this->db->get_row(
+            $this->db->prepare(
+                // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name + literal match column.
+                "SELECT approval_id, fingerprint, fingerprint_kind FROM {$this->table()}
+                  WHERE {$matchCol} = %s AND verb = %s AND args_hash = %s
+                    AND status = 'approved' AND expires_ts > UTC_TIMESTAMP()
+                  ORDER BY id DESC LIMIT 1",
+                $matchVal,
+                $verb,
+                $argsHash
+            ),
+            ARRAY_A
+        );
+
+        if (!is_array($candidate) || !is_string($candidate['approval_id'] ?? null) || $candidate['approval_id'] === '') {
+            return ReserveOutcome::none();
+        }
+
+        $candidateId = $candidate['approval_id'];
+        $kind = $candidate['fingerprint_kind'] ?? null;
+        $storedFingerprint = is_string($candidate['fingerprint'] ?? null) ? $candidate['fingerprint'] : null;
+
+        if ($kind === 'probe' && ($currentFingerprint === null || $storedFingerprint === null || !hash_equals($storedFingerprint, $currentFingerprint))) {
+            $affected = $this->db->query(
+                $this->db->prepare(
+                    // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name.
+                    "UPDATE {$this->table()} SET status = 'stale' WHERE approval_id = %s AND status = 'approved'",
+                    $candidateId
+                )
+            );
+
+            return $affected === 1 ? ReserveOutcome::stale($candidateId, $storedFingerprint) : ReserveOutcome::none();
         }
 
         // Atomically claim ONE approved, unexpired grant for this exact verb+args.
@@ -264,31 +351,16 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
         $nonce = bin2hex(random_bytes(16));
         $affected = $this->db->query(
             $this->db->prepare(
-                // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name + literal match column.
+                // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name.
                 "UPDATE {$this->table()}
                     SET status = 'in_flight', reserved_req = %s, reserved_ts = UTC_TIMESTAMP()
-                  WHERE {$matchCol} = %s AND verb = %s AND args_hash = %s
-                    AND status = 'approved' AND expires_ts > UTC_TIMESTAMP()
-                  ORDER BY id DESC LIMIT 1",
+                  WHERE approval_id = %s AND status = 'approved'",
                 $nonce,
-                $matchVal,
-                $verb,
-                $argsHash
-            )
-        );
-        if ($affected !== 1) {
-            return null;
-        }
-
-        $id = $this->db->get_var(
-            $this->db->prepare(
-                // phpcs:ignore WordPress.DB.PreparedSQL -- trusted internal table name.
-                "SELECT approval_id FROM {$this->table()} WHERE reserved_req = %s LIMIT 1",
-                $nonce
+                $candidateId
             )
         );
 
-        return is_string($id) && $id !== '' ? $id : null;
+        return $affected === 1 ? ReserveOutcome::claimed($candidateId) : ReserveOutcome::none();
     }
 
     public function finalize(string $approvalId): void

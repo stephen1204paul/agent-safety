@@ -106,9 +106,13 @@ final class DecisionRecorder
      * match it, and the audit event id is linked for cross-reference. No-op (null)
      * without an approval store.
      *
+     * AS-6: $fingerprint/$fingerprintKind carry the state-probe result (or its
+     * absence) through to the store, which uses them for the pending-dedupe
+     * staleness check (see {@see \Specflux\AgentSafety\Approval\ApprovalStore::request()}).
+     *
      * @param array<string, mixed> $input
      */
-    public function requestApproval(string $verb, array $input, string $auditEventId): ?string
+    public function requestApproval(string $verb, array $input, string $auditEventId, ?string $fingerprint = null, string $fingerprintKind = 'none'): ?string
     {
         if ($this->approvals === null) {
             return null;
@@ -121,7 +125,42 @@ final class DecisionRecorder
             RequestContext::correlation(),
             $auditEventId,
             RequestContext::tokenId(),
+            $fingerprint,
+            $fingerprintKind,
         );
+    }
+
+    /**
+     * AS-6: emit the `approval.stale` lifecycle event when a claim-time
+     * re-probe found the target changed since the approval was requested
+     * ({@see \Specflux\AgentSafety\Plugin\Verdict\VerdictPipeline::claim()}).
+     * Records BOTH hashes so an auditor can see exactly what changed. Audited
+     * as a dry run when the pack is shadowed (the call proceeds anyway; no
+     * pending approval is filed for it — §3.3 item 11). No-op without a sink.
+     *
+     * @param array<string, mixed> $args
+     */
+    public function auditStale(string $verb, array $args, string $staleApprovalId, ?string $oldFingerprint, ?string $newFingerprint, bool $shadow): void
+    {
+        if ($this->sink === null) {
+            return;
+        }
+
+        $this->sink->append(AuditRecord::decision(
+            id: RequestContext::event(),
+            ts: RequestContext::nowUtc(),
+            correlationId: RequestContext::correlation(),
+            pack: 'approvals',
+            actor: RequestContext::actor(),
+            ability: $verb,
+            tier: null,
+            input: ['old_fingerprint' => $oldFingerprint, 'new_fingerprint' => $newFingerprint],
+            decision: AuditDecision::Stale,
+            approval: ['id' => $staleApprovalId, 'approver' => null],
+            ip: RequestContext::ip(),
+            dryRun: $shadow,
+            reason: 'approval.stale',
+        ));
     }
 
     /**

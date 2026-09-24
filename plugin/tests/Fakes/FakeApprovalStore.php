@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Tests\Fakes;
 
 use Specflux\AgentSafety\Approval\ApprovalStore;
+use Specflux\AgentSafety\Approval\ReserveOutcome;
 use Specflux\AgentSafety\Plugin\Approval\ApprovalMinter;
 
 /**
@@ -18,10 +19,10 @@ use Specflux\AgentSafety\Plugin\Approval\ApprovalMinter;
  */
 final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
 {
-    /** @var array<string, array{verb: string, args_hash: string, summary: string, correlation_id: string, audit_event_id: string, subject: ?string, status: string}> */
+    /** @var array<string, array{verb: string, args_hash: string, summary: string, correlation_id: string, audit_event_id: string, subject: ?string, status: string, fingerprint: ?string, fingerprint_kind: ?string}> */
     public array $rows = [];
 
-    /** @var list<array{verb: string, args_hash: string, summary: string, correlation_id: string, audit_event_id: string, subject: ?string}> */
+    /** @var list<array{verb: string, args_hash: string, summary: string, correlation_id: string, audit_event_id: string, subject: ?string, fingerprint: ?string, fingerprint_kind: string}> */
     public array $requestCalls = [];
 
     /** @var list<array{verb: string, args_hash: string, summary: string, subject: ?string, approver: ?int, grant_id: ?string}> */
@@ -47,6 +48,31 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
             'audit_event_id' => '',
             'subject' => $subject,
             'status' => 'approved',
+            'fingerprint' => null,
+            'fingerprint_kind' => null,
+        ];
+
+        return $id;
+    }
+
+    /**
+     * AS-6 test control knob: seed an approved, unexpired grant that carries a
+     * `probe`-kind fingerprint, so a test can drive {@see reserve()}'s
+     * staleness comparison directly.
+     */
+    public function seedApprovedWithFingerprint(string $verb, string $argsHash, ?string $subject, string $fingerprint): string
+    {
+        $id = $this->mintId();
+        $this->rows[$id] = [
+            'verb' => $verb,
+            'args_hash' => $argsHash,
+            'summary' => '',
+            'correlation_id' => '',
+            'audit_event_id' => '',
+            'subject' => $subject,
+            'status' => 'approved',
+            'fingerprint' => $fingerprint,
+            'fingerprint_kind' => 'probe',
         ];
 
         return $id;
@@ -59,6 +85,8 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
         string $correlationId,
         string $auditEventId,
         ?string $subject,
+        ?string $fingerprint = null,
+        string $fingerprintKind = 'none',
     ): string {
         $this->requestCalls[] = [
             'verb' => $verb,
@@ -67,6 +95,8 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
             'correlation_id' => $correlationId,
             'audit_event_id' => $auditEventId,
             'subject' => $subject,
+            'fingerprint' => $fingerprint,
+            'fingerprint_kind' => $fingerprintKind,
         ];
 
         $id = $this->nextId ?? $this->mintId();
@@ -78,6 +108,8 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
             'audit_event_id' => $auditEventId,
             'subject' => $subject,
             'status' => 'pending',
+            'fingerprint' => $fingerprint,
+            'fingerprint_kind' => $fingerprint !== null ? $fingerprintKind : null,
         ];
 
         return $id;
@@ -120,6 +152,8 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
             'audit_event_id' => $auditEventId,
             'subject' => $subject,
             'status' => 'approved',
+            'fingerprint' => null,
+            'fingerprint_kind' => 'grant',
         ];
 
         return $id;
@@ -130,16 +164,25 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
         return $this->find($token, $verb, $argsHash, $subject) !== null;
     }
 
-    public function reserve(?string $token, string $verb, string $argsHash, ?string $subject): ?string
+    public function reserve(?string $token, string $verb, string $argsHash, ?string $subject, ?string $currentFingerprint = null): ReserveOutcome
     {
         $id = $this->find($token, $verb, $argsHash, $subject);
         if ($id === null) {
-            return null;
+            return ReserveOutcome::none();
+        }
+
+        $kind = $this->rows[$id]['fingerprint_kind'] ?? null;
+        $stored = $this->rows[$id]['fingerprint'] ?? null;
+
+        if ($kind === 'probe' && ($currentFingerprint === null || $stored === null || !hash_equals($stored, $currentFingerprint))) {
+            $this->rows[$id]['status'] = 'stale';
+
+            return ReserveOutcome::stale($id, $stored);
         }
 
         $this->rows[$id]['status'] = 'in_flight';
 
-        return $id;
+        return ReserveOutcome::claimed($id);
     }
 
     public function finalize(string $approvalId): void
@@ -154,6 +197,24 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
         if (($this->rows[$approvalId]['status'] ?? null) === 'in_flight') {
             $this->rows[$approvalId]['status'] = 'approved';
         }
+    }
+
+    /** Test control knob mirroring {@see \Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore::markStale()}. */
+    public function markStale(string $approvalId): bool
+    {
+        if (($this->rows[$approvalId]['status'] ?? null) !== 'pending') {
+            return false;
+        }
+
+        $this->rows[$approvalId]['status'] = 'stale';
+
+        return true;
+    }
+
+    /** @return array<string, mixed>|null */
+    public function get(string $approvalId): ?array
+    {
+        return $this->rows[$approvalId] ?? null;
     }
 
     /**

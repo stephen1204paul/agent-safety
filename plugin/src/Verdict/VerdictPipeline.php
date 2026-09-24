@@ -11,6 +11,8 @@ use Specflux\AgentSafety\Gate\Gate;
 use Specflux\AgentSafety\Gate\GateContext;
 use Specflux\AgentSafety\Gate\Outcome;
 use Specflux\AgentSafety\Packs\Pack;
+use Specflux\AgentSafety\Plugin\Approval\StateFingerprint;
+use Specflux\AgentSafety\Plugin\Approval\StateProbe;
 use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
 use Specflux\AgentSafety\Plugin\Support\PauseSwitch;
@@ -67,6 +69,9 @@ final class VerdictPipeline
     /** @var array<string, true> verb|args_hash already claimed in THIS request (re-entrancy guard). */
     private array $reentry = [];
 
+    /**
+     * @param array<string, StateProbe> $stateProbes Verb => probe (AS-6), see {@see probeState()}.
+     */
     public function __construct(
         private readonly Gate $gate,
         private readonly DecisionRecorder $recorder,
@@ -77,6 +82,7 @@ final class VerdictPipeline
         private readonly ?GrantGate $grants = null,
         private readonly PauseSwitch $pause = new PauseSwitch(),
         private readonly Tripwires $tripwires = new Tripwires(),
+        private readonly array $stateProbes = [],
     ) {
     }
 
@@ -87,13 +93,27 @@ final class VerdictPipeline
         $decision = $this->evaluate($verb, $args, $pack, $hints, $peeked);
         $decision = $this->enforceStops($decision, $verb, $args);
 
+        // AS-6: only a call that is (still) approval-required needs a state
+        // probe at all — an allowed or denied call has nothing pending whose
+        // target could go stale.
+        $probe = Outcome::ApprovalRequired === $decision->outcome
+            ? $this->probeState($verb, $args)
+            : ProbeOutcome::none();
+
+        if ($probe->failed) {
+            $decision = Decision::deny('state_unverifiable', $decision->tier);
+        }
+
+        $isShadowed = $this->shadow->isShadow($pack->name);
+
         $claimed = false;
         $reservedId = null;
         $grantId = null;
+        $staleClaim = false;
         if (VerdictMode::Claim === $mode && Outcome::ApprovalRequired === $decision->outcome) {
-            $claimed = $this->claim($verb, $args, $reservedId);
+            $claimed = $this->claim($verb, $args, $reservedId, $probe->fingerprint, $isShadowed, $staleClaim);
             if (!$claimed) {
-                $claimed = $this->claimUnderGrant($verb, $args, $reservedId, $grantId);
+                $claimed = $this->claimUnderGrant($verb, $args, $reservedId, $grantId, $probe->fingerprint, $isShadowed);
             }
             if ($claimed) {
                 $decision = $this->evaluate($verb, $args, $pack, $hints, true);
@@ -110,7 +130,7 @@ final class VerdictPipeline
         }
 
         if (Outcome::Allow === $decision->outcome) {
-            $decision = $this->enforceArgumentCaps($pack, $decision, $verb, $args, $hasValidApproval, $mode, $claimed, $reservedId);
+            $decision = $this->enforceArgumentCaps($pack, $decision, $verb, $args, $hasValidApproval, $mode, $claimed, $reservedId, $probe->fingerprint, $isShadowed);
         }
 
         if (Outcome::Allow === $decision->outcome) {
@@ -127,21 +147,49 @@ final class VerdictPipeline
         }
 
         $eventId = RequestContext::event();
+        $variant = $staleClaim ? ApprovalMessageVariant::Stale : ApprovalMessageVariant::Base;
 
         // A shadowed pack's would-be denial proceeds as a dry run — except the
         // pause. The stop is absolute, or it is not a stop.
-        if (PauseSwitch::REASON !== $decision->reason && $this->shadow->isShadow($pack->name)) {
+        if (PauseSwitch::REASON !== $decision->reason && $isShadowed) {
             $this->recorder->auditDecision($eventId, $verb, $args, $pack, $decision, null, true);
 
-            return new Verdict($verb, $pack, $decision, null, $reservedId, $claimed, true, $eventId);
+            return new Verdict($verb, $pack, $decision, null, $reservedId, $claimed, true, $eventId, null, $variant);
         }
 
         $approvalId = Outcome::ApprovalRequired === $decision->outcome
-            ? $this->recorder->requestApproval($verb, $args, $eventId)
+            ? $this->recorder->requestApproval($verb, $args, $eventId, $probe->fingerprint, $probe->kind)
             : null;
         $this->recorder->auditDecision($eventId, $verb, $args, $pack, $decision, $approvalId);
 
-        return new Verdict($verb, $pack, $decision, $approvalId, $reservedId, $claimed, false, $eventId);
+        return new Verdict($verb, $pack, $decision, $approvalId, $reservedId, $claimed, false, $eventId, $grantId, $variant);
+    }
+
+    /**
+     * Step between the core gate and the claim: does this verb declare a
+     * {@see StateProbe}, and if so has its target changed since it was last
+     * seen? No probe declared is `kind = none` and NEVER a failure —
+     * unfingerprinted behaviour is byte-for-byte what it was before AS-6. A
+     * probe that throws or returns null (target gone) is ALWAYS a failure,
+     * regardless of what the exception says, because there is nothing safe to
+     * fingerprint.
+     *
+     * @param array<string, mixed> $args
+     */
+    private function probeState(string $verb, array $args): ProbeOutcome
+    {
+        $probe = $this->stateProbes[$verb] ?? null;
+        if ($probe === null) {
+            return ProbeOutcome::none();
+        }
+
+        try {
+            $result = $probe->read($verb, $args);
+        } catch (\Throwable) {
+            return ProbeOutcome::failed();
+        }
+
+        return $result === null ? ProbeOutcome::failed() : ProbeOutcome::ok(StateFingerprint::compute($result));
     }
 
     /**
@@ -159,7 +207,7 @@ final class VerdictPipeline
      *
      * @param array<string, mixed> $args
      */
-    private function claimUnderGrant(string $verb, array $args, ?string &$reservedId, ?string &$grantId): bool
+    private function claimUnderGrant(string $verb, array $args, ?string &$reservedId, ?string &$grantId, ?string $currentFingerprint, bool $isShadowed): bool
     {
         if ($this->grants === null) {
             return false;
@@ -172,8 +220,11 @@ final class VerdictPipeline
 
         // Claim the row the grant just minted through the ORDINARY path, so a
         // grant-authorised call is reserved, finalized and rolled back by exactly
-        // the same machinery a human-approved one is.
-        if (!$this->claim($verb, $args, $reservedId)) {
+        // the same machinery a human-approved one is. Grant-minted rows are kind
+        // `grant`, never `probe`, so the store never treats one as stale
+        // regardless of $currentFingerprint — $unusedStale is genuinely unused.
+        $unusedStale = false;
+        if (!$this->claim($verb, $args, $reservedId, $currentFingerprint, $isShadowed, $unusedStale)) {
             // Should not happen (the row was written for these exact args), so
             // fail closed and hand the reservation back rather than proceeding
             // on an approval nothing can prove was claimed.
@@ -334,6 +385,8 @@ final class VerdictPipeline
         VerdictMode $mode,
         bool &$claimed,
         ?string &$reservedId,
+        ?string $currentFingerprint,
+        bool $isShadowed,
     ): Decision {
         $check = $this->argumentCaps->check($pack, RequestContext::tokenId(), $verb, $args, $hasValidApproval);
         if ($check->allowed) {
@@ -341,7 +394,12 @@ final class VerdictPipeline
         }
 
         if ($check->requiresApproval) {
-            if (VerdictMode::Claim === $mode && $this->claim($verb, $args, $reservedId)) {
+            // A spend-cap approval was never probe-fingerprinted above (the
+            // decision was Allow at that point), so $currentFingerprint here
+            // is whatever the earlier probe step found — none, unless this
+            // verb ALSO has an ApprovalRequired tier outcome for other args.
+            $capStale = false;
+            if (VerdictMode::Claim === $mode && $this->claim($verb, $args, $reservedId, $currentFingerprint, $isShadowed, $capStale)) {
                 $claimed = true;
                 $recheck = $this->argumentCaps->check($pack, RequestContext::tokenId(), $verb, $args, true);
 
@@ -368,10 +426,27 @@ final class VerdictPipeline
      * per (verb, args_hash) is memoized and later checks pass without a second
      * reservation. Cross-request single-claim is still enforced by the store.
      *
+     * AS-6: when a fingerprinted approval exists but $currentFingerprint no
+     * longer matches the one captured at request time, the store marks that
+     * row `stale` instead of claiming it (never claims a stale target) and
+     * this method reports the mismatch via $stale — audited here with both
+     * hashes, as a dry run when the pack is shadowed. The caller (judge())
+     * then falls through to its ordinary blocked-call path, which files a
+     * fresh pending approval carrying the CURRENT fingerprint (the same
+     * idempotent request() call an entirely new call would make) unless the
+     * pack is shadowed, in which case that path is skipped and the call
+     * proceeds under shadow with no new pending row (§3.3 item 11).
+     *
      * @param array<string, mixed> $args
      */
-    private function claim(string $verb, array $args, ?string &$reservedId): bool
-    {
+    private function claim(
+        string $verb,
+        array $args,
+        ?string &$reservedId,
+        ?string $currentFingerprint,
+        bool $isShadowed,
+        bool &$stale,
+    ): bool {
         if ($this->approvals === null) {
             return false;
         }
@@ -383,13 +458,21 @@ final class VerdictPipeline
         }
 
         $token = isset($args[ApprovalBinding::TOKEN_ARG]) ? (string) $args[ApprovalBinding::TOKEN_ARG] : null;
-        $approvalId = $this->approvals->reserve($token, $verb, $argsHash, RequestContext::tokenId());
-        if ($approvalId === null) {
+        $result = $this->approvals->reserve($token, $verb, $argsHash, RequestContext::tokenId(), $currentFingerprint);
+
+        if ($result->stale) {
+            $stale = true;
+            $this->recorder->auditStale($verb, $args, (string) $result->staleApprovalId, $result->staleFingerprint, $currentFingerprint, $isShadowed);
+
+            return false;
+        }
+
+        if ($result->approvalId === null) {
             return false;
         }
 
         $this->reentry[$memoKey] = true;
-        $reservedId = $approvalId;
+        $reservedId = $result->approvalId;
 
         return true;
     }

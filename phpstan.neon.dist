@@ -36,7 +36,7 @@ parameters:
             # attacker-controlled, so this is not a SQL-injection risk.
             message: '#^Parameter \#1 \$query of method wpdb::prepare\(\) expects literal\-string, non\-falsy\-string given\.$#'
             path: plugin/src/*
-            count: 19
+            count: 22
         -
             # wpdb::prepare()'s stub declares its return as `string|void` (real
             # wpdb only returns void for an EMPTY $query, which never happens
@@ -47,7 +47,7 @@ parameters:
             # behavioral defect.
             message: '#^Parameter \#1 \$query of method wpdb::query\(\) expects string, string\|null given\.$#'
             path: plugin/src/*
-            count: 10
+            count: 13
         -
             # Schema::ensureDbDelta()'s require_once is a real-WordPress-only
             # fallback (only reached when dbDelta() isn't already defined,
@@ -56,4 +56,20 @@ parameters:
             # real WordPress install, never in this repo/CI checkout.
             message: '#^Path in require_once\(\) ".*wp\-admin/includes/upgrade\.php" is not a file or it does not exist\.$#'
             path: plugin/src/Support/Schema.php
+            count: 1
+        -
+            # WooCommerce itself (not a dependency of this repo — see the
+            # mcp-adapter scanFiles note above) declares wc_get_product() at
+            # runtime; WooIntegration::available() gates this probe's every
+            # real call site on class_exists('WooCommerce'), so the function
+            # is always defined whenever this code actually executes.
+            message: '#^Function wc_get_product not found\.$#'
+            path: plugin/src/Integrations/Woo/WooProductStateProbe.php
+            count: 1
+        -
+            # Same as wc_get_product above: WooCommerce declares wc_get_order()
+            # at runtime, and this probe is only ever wired up behind
+            # WooIntegration::available().
+            message: '#^Function wc_get_order not found\.$#'
+            path: plugin/src/Integrations/Woo/WooOrderStateProbe.php
             count: 1

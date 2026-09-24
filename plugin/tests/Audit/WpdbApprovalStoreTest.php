@@ -90,7 +90,8 @@ final class WpdbApprovalStoreTest extends TestCase
     {
         $GLOBALS['wpas_test_actions'] = [];
         $db = new wpdb();
-        $db->varReturn = 'apr_existing'; // a live pending row for the same (verb, args_hash, subject)
+        // A live pending row for the same (verb, args_hash, subject), unfingerprinted.
+        $db->rowReturn = ['approval_id' => 'apr_existing', 'fingerprint' => null, 'fingerprint_kind' => null];
         $store = new WpdbApprovalStore($db);
 
         $approvalId = $store->request('woocommerce/orders-refund', 'hash123', 'summary text', 'corr', 'evt', 'key_1');
