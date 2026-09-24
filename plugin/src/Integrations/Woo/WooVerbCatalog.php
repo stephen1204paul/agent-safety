@@ -16,9 +16,11 @@ use Specflux\AgentSafety\Policy\Tier;
 final class WooVerbCatalog
 {
     // Verb ids are the canonical WP Ability ids as registered by WooCommerce
-    // (verified at runtime against Woo 10.8.1 + WP 7.0): "woocommerce/{resource}-{action}".
+    // (verified at runtime against WooCommerce 11.1.0 + WP 7.0): "woocommerce/{resource}-{action}".
     // The MCP tool name is the hyphenated form "woocommerce-{resource}-{action}"; see VerbMapper.
     // Keys ending in "*" are prefix patterns (see VerbCatalog::register()).
+    // These are the only 16 named abilities; anything else under "woocommerce/"
+    // is refused as unknown_verb.
 
     /** @var array<string, Tier> */
     public const MAP = [
@@ -35,22 +37,13 @@ final class WooVerbCatalog
 
         // The 7 session-visible abilities Woo core exposes to the MCP/Abilities
         // session surface (distinct ids from the 9 MCP-bridge names above —
-        // verified against Woo 10.8.1 + WP 7.0).
+        // verified against WooCommerce 11.1.0 + WP 7.0).
         'woocommerce/orders-query'        => Tier::Reversible,
         'woocommerce/products-query'      => Tier::Reversible,
         'woocommerce/product-create'      => Tier::SideEffecting, // regular_price/sale_price or status publish/future elevates to Tier 2 (ProductPriceOrPublishElevationRule)
         'woocommerce/product-update'      => Tier::SideEffecting, // regular_price/sale_price or status publish/future elevates to Tier 2 (ProductPriceOrPublishElevationRule)
         'woocommerce/order-add-note'      => Tier::SideEffecting, // customer_note=true elevates to Tier 2 (CustomerNoteElevationRule)
         'woocommerce/order-update-status' => Tier::SideEffecting, // fulfillment/cancelled/refunded elevates to Tier 2 (OrderFulfillmentElevationRule)
-        'woocommerce/product-delete'      => Tier::Irreversible,
-
-        // NOT exposed by Woo core 10.8.1 — mapped for forward-compat (extensions / future core
-        // abilities). Kept so the gate fails CLOSED-with-intent rather than "unknown" if they appear.
-        'woocommerce/orders-refund'   => Tier::Irreversible,  // cannot un-charge a card
-        'woocommerce/customers-email' => Tier::Irreversible,  // cannot un-send
-
-        // Forward-compat prefix patterns; none exposed by core 10.8.1.
-        'woocommerce/reports-*'  => Tier::Reversible,    // read; aggregate
-        'woocommerce/settings-*' => Tier::SideEffecting, // allowlist; sensitive keys gated/denied per pack
+        'woocommerce/product-delete'      => Tier::SideEffecting, // force=true elevates to Tier 2 (ForceDeleteElevationRule); restore stays Tier 1
     ];
 }

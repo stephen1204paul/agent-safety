@@ -43,6 +43,19 @@ final class VerbGlobTest extends TestCase
         $this->assertFalse(VerbGlob::matches('woocommerce/*', 'demo/orders-list'));
     }
 
+    public function testSingularPrefixDoesNotAccidentallyMatchThePluralVerb(): void
+    {
+        // "product-*" must not swallow "products-list": the literal segment
+        // right after "product" is the hyphen, and "products-list" has an
+        // "s" there instead. Widening a pack's allow list to the singular
+        // session-visible names must not also widen it to the plural
+        // MCP-bridge names by accident.
+        $this->assertFalse(VerbGlob::matches('woocommerce/product-*', 'woocommerce/products-list'));
+        $this->assertFalse(VerbGlob::matches('woocommerce/product-*', 'woocommerce/products-delete'));
+        $this->assertTrue(VerbGlob::matches('woocommerce/product-*', 'woocommerce/product-update'));
+        $this->assertTrue(VerbGlob::matches('woocommerce/product-*', 'woocommerce/product-delete'));
+    }
+
     public function testPackAllowsStillDelegatesToVerbGlob(): void
     {
         $pack = new Pack(name: 'p', allow: ['woocommerce/orders-*']);

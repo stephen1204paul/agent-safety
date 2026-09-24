@@ -44,7 +44,10 @@ final class WooIntegrationTest extends TestCase
 
         // VerbCatalog was mutated in place with the Woo verb map.
         $this->assertSame(Tier::Reversible, $catalog->baseTier('woocommerce/products-list'));
-        $this->assertSame(Tier::Irreversible, $catalog->baseTier('woocommerce/orders-refund'));
+        $this->assertSame(Tier::SideEffecting, $catalog->baseTier('woocommerce/product-delete'));
+        // Forward-compat entries are gone: anything under woocommerce/ outside
+        // the 16 named abilities is unmapped, not pre-classified.
+        $this->assertNull($catalog->baseTier('woocommerce/orders-refund'));
         $this->assertNull($catalog->baseTier('woocommerce/unknown-verb'));
 
         // No $wpdb passed in -> the WC API key identity provider is NOT added.

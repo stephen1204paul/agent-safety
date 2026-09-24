@@ -12,11 +12,12 @@ use Specflux\AgentSafety\Policy\Tier;
  * and deletes permanently, which no snapshot restores. Only a CLEARLY false
  * flag keeps the base tier: absent, false, 0, '0', '', or 'false' in any
  * case. Every other shape — true, 1, '1', 'true', 'yes', an array — elevates,
- * because guessing wrong in the other direction is unrecoverable.
+ * because guessing wrong in the other direction is unrecoverable. Applies to
+ * both the MCP-bridge name and the session-visible singular name.
  */
 final class ForceDeleteElevationRule implements ElevationRule
 {
-    private const VERBS = ['woocommerce/products-delete'];
+    private const VERBS = ['woocommerce/products-delete', 'woocommerce/product-delete'];
 
     private const CLEARLY_FALSE = ['', '0', 'false'];
 
