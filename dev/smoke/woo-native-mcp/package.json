@@ -1,0 +1,8 @@
+{
+    "name": "agent-safety-woo-native-mcp-smoke",
+    "private": true,
+    "description": "Stage-3 wp-env leg: Agent Safety governing WooCommerce 11.1's own native MCP server. See README.md.",
+    "dependencies": {
+        "@wordpress/env": "^10.0.0"
+    }
+}

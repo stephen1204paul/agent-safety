@@ -9,3 +9,4 @@ HANDOFF*.md
 /*.zip
 dev/smoke/shots
 node_modules/
+dev/smoke/woo-native-mcp/state.json
