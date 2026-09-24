@@ -5,21 +5,41 @@ name: E2E
 # fail-closed unknown-verb denial, and read-path PII redaction. Woo-off legs
 # are mandatory; Woo-on legs prove the core module coexists with the Woo
 # integration (presets merge, namespaces unique).
+#
+# Blocking legs (spec §3.7.7): the exact current WordPress release (checked
+# against https://api.wordpress.org/core/version-check/1.7/ on 2026-09-25:
+# 7.1.2) x {Woo on, off}, plus the Woo 11.1 native-MCP leg below. Trunk legs
+# run with continue-on-error so a moving target never blocks the gate.
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_call: {}
 
 jobs:
-  e2e:
+  core-smoke:
     runs-on: ubuntu-latest
+    name: Core smoke (${{ matrix.trunk && 'trunk' || 'latest' }}, Woo ${{ matrix.woo && 'on' || 'off' }})
+    continue-on-error: ${{ matrix.trunk }}
     strategy:
       fail-fast: false
       matrix:
-        # null = latest released WordPress; trunk = the moving target.
-        core: [null, 'WordPress/WordPress#master']
-        woo: [true, false]
+        include:
+          # Blocking: the exact current WordPress release, per spec §3.7.7.
+          - core: '7.1.2'
+            woo: true
+            trunk: false
+          - core: '7.1.2'
+            woo: false
+            trunk: false
+          # Non-blocking: trunk is a moving target.
+          - core: 'WordPress/WordPress#master'
+            woo: true
+            trunk: true
+          - core: 'WordPress/WordPress#master'
+            woo: false
+            trunk: true
     env:
       # Pinned upstream mcp-adapter (0.6.0). Bump deliberately: the smoke
       # drives its public HTTP transport + default-server config filter.
@@ -41,11 +61,10 @@ jobs:
       - name: Generate .wp-env.json (matrix core)
         run: |
           node -e '
-            const core = process.env.WPENV_CORE === "null" ? null : process.env.WPENV_CORE;
             const fs = require("fs");
             const config = {
               "$schema": "https://schemas.wp.org/trunk/wp-env.json",
-              core,
+              core: process.env.WPENV_CORE,
               phpVersion: "8.3",
               mappings: {
                 "wp-content/plugins/agent-safety": "./plugin",
@@ -106,6 +125,48 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-shots-core-${{ matrix.core == 'null' && 'latest' || 'trunk' }}-woo-${{ matrix.woo }}
+          name: smoke-shots-core-${{ matrix.trunk && 'trunk' || 'latest' }}-woo-${{ matrix.woo }}
           path: dev/smoke/shots/
           if-no-files-found: ignore
+
+  woo-native-mcp:
+    runs-on: ubuntu-latest
+    name: Woo 11.1 native-MCP e2e
+    # Blocking (spec §3.2.5, §3.7.7): WooCommerce 11.1.0 is pinned by the
+    # leg's own .wp-env.json (exact downloads.wordpress.org zip), so there is
+    # no "trunk" variant of this leg to soften. Runs Woo's OWN bundled
+    # mcp-adapter v0.3.0 — no standalone mcp-adapter checkout needed here.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+
+      - name: Install the plugin's runtime deps (core lib copy)
+        working-directory: plugin
+        run: composer install --no-dev --prefer-dist --optimize-autoloader --quiet
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dev/smoke/woo-native-mcp/package.json
+
+      - name: Install wp-env + the leg's own deps
+        working-directory: dev/smoke/woo-native-mcp
+        run: npm install
+
+      - name: Provision the Woo-native-MCP environment
+        working-directory: dev/smoke/woo-native-mcp
+        run: ./setup.sh
+
+      - name: Run the Woo-native-MCP smoke (cases + control)
+        working-directory: dev/smoke/woo-native-mcp
+        run: node run.js
+
+      - name: Stop wp-env
+        if: always()
+        working-directory: dev/smoke/woo-native-mcp
+        run: npx @wordpress/env stop
