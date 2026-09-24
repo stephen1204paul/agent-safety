@@ -30,6 +30,7 @@ enum AuditDecision: string
     case Rejected = 'rejected'; // a human refused a pending request
     case Grant = 'grant';       // a pre-approval grant's own lifecycle (AS-12)
     case Admin = 'admin';       // a change to the plugin's own configuration
+    case Stale = 'stale';       // an approval whose target changed before it could be claimed or re-filed (AS-6)
 
     /** Map a synchronous gate verdict to its audit decision. */
     public static function fromOutcome(Outcome $outcome): self

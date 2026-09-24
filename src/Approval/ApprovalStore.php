@@ -19,6 +19,9 @@ namespace Specflux\AgentSafety\Approval;
  *   finalize() → consumed   (the action actually executed — terminal)
  *   rollback() → approved   (the action did NOT execute — the grant is released so a
  *                            retry within the original TTL can reuse it)
+ *   reserve()  → stale      (AS-6: the target's state fingerprint no longer matches the
+ *                            one captured at request time — never claimed; see
+ *                            {@see ReserveOutcome} and request()'s pending-dedupe rule below)
  *
  * The reserve→finalize/rollback split is the "consume on execution success, not on
  * attempt" property: a token is only spent once the irreversible action truly ran,
@@ -32,7 +35,8 @@ namespace Specflux\AgentSafety\Approval;
  *
  * Record shape (associative array) returned by the host's pending()/get():
  *   approval_id, verb, args_hash, summary, correlation_id, audit_event_id, key_id,
- *   status (pending|approved|in_flight|consumed|rejected|expired), approver (?int),
+ *   status (pending|approved|in_flight|consumed|rejected|expired|stale), approver (?int),
+ *   fingerprint (?string), fingerprint_kind (probe|none|grant|null),
  *   created_ts, pending_expires_ts, expires_ts, consumed_ts.
  */
 interface ApprovalStore
@@ -42,6 +46,15 @@ interface ApprovalStore
      * idempotent per (verb, args_hash, subject) while a non-expired pending row
      * exists, so an agent that retries before a human acts does not spawn duplicate
      * requests.
+     *
+     * AS-6: $fingerprintKind is one of `probe` (a host {@see \Specflux\AgentSafety\Plugin\Approval\StateProbe}
+     * produced $fingerprint), `none` (the verb declares no probe), or `grant`
+     * (the row was minted under a pre-approval grant, never fingerprinted). A
+     * request whose (verb, args_hash, subject) matches an existing NON-EXPIRED
+     * **pending** row, but whose fresh $fingerprint differs from that row's
+     * stored one (both kind `probe`), marks the old row `stale` and inserts a
+     * fresh pending row instead of reusing it (the "pending dedupe" rule,
+     * AS-6 §3.3 item 7).
      *
      * @param ?string $subject The authenticated principal that requested the action
      *                         (host: a namespaced identity-provider token id, e.g.
@@ -56,6 +69,8 @@ interface ApprovalStore
         string $correlationId,
         string $auditEventId,
         ?string $subject,
+        ?string $fingerprint = null,
+        string $fingerprintKind = 'none',
     ): string;
 
     /**
@@ -72,12 +87,19 @@ interface ApprovalStore
 
     /**
      * Atomically claim an approved, unexpired grant for ONE execution
-     * (approved → in_flight), returning its approval id, or null when nothing
-     * matches. Matches by bearer $token when given, else by $subject (by-reference).
-     * Atomicity guarantees a single grant can be reserved at most once concurrently,
-     * so it can never drive two executions of an irreversible verb.
+     * (approved → in_flight), returning a {@see ReserveOutcome}. Matches by bearer
+     * $token when given, else by $subject (by-reference). Atomicity guarantees a
+     * single grant can be reserved at most once concurrently, so it can never
+     * drive two executions of an irreversible verb.
+     *
+     * AS-6: when the matched row's fingerprint_kind is `probe` and
+     * $currentFingerprint does not match the row's stored fingerprint
+     * (hash_equals), the target changed since the approval was granted — the
+     * row is flipped straight to the terminal `stale` status instead of being
+     * reserved, and {@see ReserveOutcome::stale()} is returned so the caller
+     * can file a fresh pending request carrying the current fingerprint.
      */
-    public function reserve(?string $token, string $verb, string $argsHash, ?string $subject): ?string;
+    public function reserve(?string $token, string $verb, string $argsHash, ?string $subject, ?string $currentFingerprint = null): ReserveOutcome;
 
     /**
      * Mark a reserved grant as truly spent (in_flight → consumed) once the action

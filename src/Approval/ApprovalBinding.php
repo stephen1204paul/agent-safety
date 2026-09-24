@@ -51,10 +51,15 @@ final class ApprovalBinding
      * sets hash identically regardless of the order the agent serialised them in.
      * List arrays (sequential 0..n keys) keep their order — position is meaningful.
      *
+     * Public: {@see \Specflux\AgentSafety\Plugin\Approval\StateFingerprint}
+     * (AS-6) reuses this exact canonicalisation for state-probe fingerprints,
+     * so a probe result that differs only in key order hashes identically —
+     * the same property this class relies on for its own args hash.
+     *
      * @param mixed $value
      * @return mixed
      */
-    private static function canonicalize($value)
+    public static function canonicalize($value)
     {
         if (!is_array($value)) {
             return $value;
