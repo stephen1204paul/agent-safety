@@ -222,6 +222,5 @@ this transport (`isError: true`, an approval message for the verb, the
 product still existing) and treats "the approval was actually filed" —
 including its `key_id` — as DB ground truth against `wp_agsafe_approvals`
 and the audit log, checked independently of the MCP response body. The
-message-text assertion accepts either the pre-§3.11 "is irreversible"
-wording or spec §3.11's replacement text ("needs human approval"), whichever
-is live when `run.js` runs, and prints which one matched.
+message-text assertion matches spec §3.11's base `approval_required` text
+exactly.

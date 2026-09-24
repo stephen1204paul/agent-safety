@@ -177,18 +177,11 @@ function haystack(resp) {
   // product survives, and DB ground truth for the filed approval + audit row.
   check('products-delete{force} call is refused (isError)', delRes.json?.result?.isError === true, JSON.stringify(delRes.json || delRes.raw).slice(0, 500));
 
-  // A parallel stage is replacing Verdict::error()'s message with spec §3.11's
-  // exact text ("%1$s" needs human approval before it can run...); until that
-  // merges here, either wording is acceptable — print which one matched so a
-  // re-run after that stage shows the message actually changed.
-  const newWording = delHay.includes('needs human approval');
-  const oldWording = delHay.includes('is irreversible');
   check(
     'response text carries the approval message for the verb',
-    newWording || oldWording,
+    delHay.includes('"woocommerce/products-delete" needs human approval before it can run. A request has been filed for review.'),
     delHay.slice(0, 500),
   );
-  console.log('  (message matched: ' + (newWording ? '"needs human approval" (spec §3.11)' : oldWording ? '"is irreversible" (pre-§3.11 wording)' : 'neither') + ')');
 
   const productStatus = wp(`post get ${state.product_id} --field=status`);
   check('product still exists after the approval-required call', productStatus === 'publish', productStatus);
