@@ -34,6 +34,10 @@ final class Verdict
      *                                    back, so a human's budget is only charged for an action that
      *                                    actually ran. Null when no grant was involved, including a
      *                                    re-entrant claim that reused this request's earlier one.
+     * @param ApprovalMessageVariant $approvalVariant Which `approval_required` message
+     *                                    {@see error()} emits (AS-6 §3.11): `Base` for an ordinary
+     *                                    first-time park, `Stale` when this call's own claim attempt
+     *                                    found the target had changed and re-filed a fresh request.
      */
     public function __construct(
         public readonly string $verb,
@@ -45,6 +49,7 @@ final class Verdict
         public readonly bool $shadowed = false,
         public readonly ?string $eventId = null,
         public readonly ?string $grantId = null,
+        public readonly ApprovalMessageVariant $approvalVariant = ApprovalMessageVariant::Base,
     ) {
     }
 
@@ -80,7 +85,7 @@ final class Verdict
 
         return new WP_Error(
             'approval_required',
-            sprintf('"%s" is irreversible and requires human approval before it can run. A request has been logged for review.', $this->verb),
+            sprintf(self::approvalMessage($this->approvalVariant), $this->verb),
             array_filter([
                 'status' => 202,
                 'verb' => $this->verb,
@@ -88,5 +93,15 @@ final class Verdict
                 'approval_id' => $this->approvalId,
             ], static fn ($v) => $v !== null)
         );
+    }
+
+    /** The untranslated-but-i18n-wrapped `approval_required` message format string, by variant (§3.11). */
+    private static function approvalMessage(ApprovalMessageVariant $variant): string
+    {
+        return match ($variant) {
+            ApprovalMessageVariant::Stale => __('"%1$s" needs human approval again: the target changed after the earlier approval, so a new request has been filed for review.', 'agent-safety'),
+            ApprovalMessageVariant::SiteMoved => __('"%1$s" needs human approval again: the site\'s address changed after the earlier approval, so a new request has been filed for review.', 'agent-safety'),
+            ApprovalMessageVariant::Base => __('"%1$s" needs human approval before it can run. A request has been filed for review.', 'agent-safety'),
+        };
     }
 }
