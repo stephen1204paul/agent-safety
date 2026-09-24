@@ -53,6 +53,7 @@ require_once __DIR__ . '/Fakes/FakeGrantStore.php';
 require_once __DIR__ . '/Fakes/FakeIdentityProvider.php';
 require_once __DIR__ . '/Fakes/FakeToolAnnotations.php';
 require_once __DIR__ . '/Fakes/FakeMcpTool.php';
+require_once __DIR__ . '/Fakes/InMemoryAuditRowsWpdb.php';
 require_once __DIR__ . '/Fixtures/VerdictErrorFixture.php';
 
 // --- Minimal WP function shims -------------------------------------------
@@ -247,6 +248,50 @@ if (!function_exists('delete_option')) {
         unset($GLOBALS['wpas_test_options'][$name]);
 
         return true;
+    }
+}
+
+if (!class_exists('WP_User', false)) {
+    /** Minimal stand-in: only the `ID` property the privacy tools read. */
+    final class WP_User
+    {
+        public function __construct(public readonly int $ID)
+        {
+        }
+    }
+}
+
+if (!function_exists('get_user_by')) {
+    $GLOBALS['wpas_test_users_by_email'] = [];
+
+    /**
+     * Test control knob: set $GLOBALS['wpas_test_users_by_email'][$email] = $userId
+     * per-test. Only the `email` field (the one the privacy tools use) is
+     * honoured; anything else misses, like a real lookup on an unindexed field.
+     *
+     * @param mixed $value
+     */
+    function get_user_by(string $field, $value): WP_User|false
+    {
+        if ($field !== 'email') {
+            return false;
+        }
+
+        $id = $GLOBALS['wpas_test_users_by_email'][$value] ?? null;
+
+        return $id !== null ? new WP_User((int) $id) : false;
+    }
+}
+
+if (!function_exists('wp_add_privacy_policy_content')) {
+    $GLOBALS['wpas_test_privacy_policy_content'] = [];
+
+    /**
+     * Test control knob: recorded into $GLOBALS['wpas_test_privacy_policy_content'].
+     */
+    function wp_add_privacy_policy_content(string $pluginName, string $content): void
+    {
+        $GLOBALS['wpas_test_privacy_policy_content'][] = ['plugin_name' => $pluginName, 'content' => $content];
     }
 }
 

@@ -51,9 +51,21 @@
     </rule>
     <rule ref="Squiz.Classes.ValidClassName">
         <exclude-pattern>plugin/tests/stubs/*</exclude-pattern>
+        <!--
+            bootstrap.php declares a minimal WP_User stand-in (real upstream
+            name, non-PascalCase by WP's own convention) for the same reason
+            as the stubs above.
+        -->
+        <exclude-pattern>plugin/tests/bootstrap.php</exclude-pattern>
     </rule>
     <rule ref="PSR1.Classes.ClassDeclaration.MissingNamespace">
         <exclude-pattern>plugin/tests/stubs/*</exclude-pattern>
+        <exclude-pattern>plugin/tests/bootstrap.php</exclude-pattern>
+        <!--
+            InMemoryAuditRowsWpdb extends the global-namespace `wpdb` stub, so
+            it must live in the global namespace too.
+        -->
+        <exclude-pattern>plugin/tests/Fakes/InMemoryAuditRowsWpdb.php</exclude-pattern>
     </rule>
     <rule ref="PSR1.Methods.CamelCapsMethodName">
         <exclude-pattern>plugin/tests/stubs/*</exclude-pattern>
@@ -64,5 +76,11 @@
             same rationale as the stubs above, just one file outside that dir.
         -->
         <exclude-pattern>plugin/tests/Fakes/FakeMcpTool.php</exclude-pattern>
+        <!--
+            InMemoryAuditRowsWpdb overrides wpdb's real snake_case methods
+            (get_var()/get_results()) — renaming them would break the
+            override.
+        -->
+        <exclude-pattern>plugin/tests/Fakes/InMemoryAuditRowsWpdb.php</exclude-pattern>
     </rule>
 </ruleset>
