@@ -60,7 +60,15 @@ _Avoid_: observe-only, log-only, dry run (dry run is the audit marker, not the m
 
 **Approval**:
 A human grant for one exact action (Verb plus canonical arguments), requested when a Decision is approval required and resolved on the Pending Actions page or programmatically.
-_Avoid_: grant (the granted state of an Approval), request, ticket
+_Avoid_: grant (a Grant is a different thing)
+
+**Grant**:
+A human's advance authorisation for up to N future calls of one Verb inside one correlation scope; each matching call mints an already-approved Approval bound to its real arguments.
+_Avoid_: pre-approval, approval
+
+**State fingerprint**:
+The target's revision marker, captured when an Approval is requested and compared when it is claimed; a mismatch makes the Approval stale; an Approval whose Verb declares no probe is unfingerprinted.
+_Avoid_: state hash, snapshot, checksum
 
 **Audit record**:
 One hash-chained row describing a call and its Verdict, written once per call whether or not it executed.

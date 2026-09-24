@@ -8,6 +8,8 @@ use PHPUnit\Framework\TestCase;
 use Specflux\AgentSafety\Audit\AuditDecision;
 use Specflux\AgentSafety\Plugin\Api\Approvals;
 use Specflux\AgentSafety\Plugin\Api\ApprovalSummary;
+use Specflux\AgentSafety\Plugin\Approval\StateFingerprint;
+use Specflux\AgentSafety\Plugin\Approval\StateProbe;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 use Specflux\AgentSafety\Plugin\Container;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
@@ -229,5 +231,108 @@ final class ApprovalsServiceTest extends TestCase
 
             $this->assertNull($summary->grantId);
         }
+    }
+
+    // --- AS-6: approve-time re-probe ------------------------------------------
+
+    public function testApproveTimeStaleTargetRefusesTheApprovalAndMarksTheRowStale(): void
+    {
+        $GLOBALS['wpas_test_user_caps']['manage_options'] = true;
+        $oldFingerprint = StateFingerprint::compute(['modified' => 1, 'status' => 'draft']);
+        $this->db->rowReturn = [
+            'approval_id' => 'apr_abc',
+            'verb' => 'woocommerce/product-update',
+            'args_hash' => 'hash_123',
+            'summary' => 'woocommerce/product-update { id=42, regular_price=19.99 }',
+            'correlation_id' => 'sess_corr',
+            'status' => 'pending',
+            'fingerprint' => $oldFingerprint,
+            'fingerprint_kind' => 'probe',
+            'created_ts' => '2026-08-23 10:00:00',
+            'pending_expires_ts' => '2026-08-23 11:00:00',
+        ];
+        $probe = new class implements StateProbe {
+            public function read(string $verb, array $args): ?array
+            {
+                // A DIFFERENT result than the one that produced $oldFingerprint.
+                return ['modified' => 999, 'status' => 'published'];
+            }
+        };
+        $service = new Approvals(new WpdbApprovalStore($this->db), $this->sink, null, ['woocommerce/product-update' => $probe]);
+
+        $token = $service->approveReturningToken('apr_abc', 7);
+
+        $this->assertNull($token, 'a stale target must never be approved');
+        $updates = array_values(array_filter($this->db->queries, static fn (string $q): bool => str_starts_with(trim($q), 'UPDATE')));
+        $this->assertNotEmpty($updates, 'markStale() must issue an UPDATE');
+        $this->assertStringContainsString("SET status = 'stale'", (string) end($updates));
+        foreach ($updates as $update) {
+            $this->assertStringNotContainsString("status = 'approved'", $update, 'the row must never be flipped to approved');
+        }
+        $this->assertSame([], $this->sink->records, 'no ordinary approve reconciliation row for a refused approval');
+        $this->assertSame([], $this->resolvedActions());
+    }
+
+    public function testApproveProceedsWhenTheTargetIsUnchanged(): void
+    {
+        $GLOBALS['wpas_test_user_caps']['manage_options'] = true;
+        $this->db->queryReturn = 1;
+        $fingerprint = StateFingerprint::compute(['modified' => 1, 'status' => 'draft']);
+        $this->db->rowReturn = [
+            'approval_id' => 'apr_abc',
+            'verb' => 'woocommerce/product-update',
+            'args_hash' => 'hash_123',
+            'summary' => 'woocommerce/product-update { id=42, regular_price=19.99 }',
+            'correlation_id' => 'sess_corr',
+            'status' => 'pending',
+            'fingerprint' => $fingerprint,
+            'fingerprint_kind' => 'probe',
+            'created_ts' => '2026-08-23 10:00:00',
+            'pending_expires_ts' => '2026-08-23 11:00:00',
+        ];
+        $probe = new class implements StateProbe {
+            public function read(string $verb, array $args): ?array
+            {
+                // The SAME result that produced $fingerprint.
+                return ['modified' => 1, 'status' => 'draft'];
+            }
+        };
+        $service = new Approvals(new WpdbApprovalStore($this->db), $this->sink, null, ['woocommerce/product-update' => $probe]);
+
+        $token = $service->approveReturningToken('apr_abc', 7);
+
+        $this->assertNotNull($token, 'an unchanged target must still be approvable');
+    }
+
+    public function testApproveIsInconclusiveWhenTheIdCannotBeRecoveredFromTheSummary(): void
+    {
+        // A host-authored summary (agent_safety_approval_summary filter) can't
+        // be trusted to contain the raw id -- SummaryArgs fails OPEN here, so
+        // approve() proceeds exactly as it did before AS-6.
+        $GLOBALS['wpas_test_user_caps']['manage_options'] = true;
+        $this->db->queryReturn = 1;
+        $this->db->rowReturn = [
+            'approval_id' => 'apr_abc',
+            'verb' => 'woocommerce/product-update',
+            'args_hash' => 'hash_123',
+            'summary' => "\x02agent-safety:html\x03<a href=\"https://example.com\">Custom summary</a>",
+            'correlation_id' => 'sess_corr',
+            'status' => 'pending',
+            'fingerprint' => StateFingerprint::compute(['modified' => 1, 'status' => 'draft']),
+            'fingerprint_kind' => 'probe',
+            'created_ts' => '2026-08-23 10:00:00',
+            'pending_expires_ts' => '2026-08-23 11:00:00',
+        ];
+        $probe = new class implements StateProbe {
+            public function read(string $verb, array $args): ?array
+            {
+                return ['modified' => 999, 'status' => 'published'];
+            }
+        };
+        $service = new Approvals(new WpdbApprovalStore($this->db), $this->sink, null, ['woocommerce/product-update' => $probe]);
+
+        $token = $service->approveReturningToken('apr_abc', 7);
+
+        $this->assertNotNull($token, 'extraction failure must fail open, not block the approval');
     }
 }
