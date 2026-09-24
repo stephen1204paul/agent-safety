@@ -260,6 +260,10 @@ add_action('plugins_loaded', static function (): void {
     $agsafe_classifier = new TierClassifier($agsafe_catalog, $agsafe_elevation_rules);
     $agsafe_gate = new Gate($agsafe_classifier);
     $agsafe_packs = new PackResolver($agsafe_extra_packs);
+    // The audit actor / rate-limit / approval subject must name the token
+    // that WON the pack binding, not merely the first token the identity
+    // chain lists (see PackResolver::principal()).
+    RequestContext::configurePrincipalResolver([$agsafe_packs, 'principal']);
     $agsafe_sink = isset($wpdb) ? new WpdbAuditSink($wpdb) : null;
     $agsafe_approvals = isset($wpdb) ? new WpdbApprovalStore($wpdb) : null;
 

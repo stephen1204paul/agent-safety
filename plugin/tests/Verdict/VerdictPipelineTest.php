@@ -385,6 +385,45 @@ final class VerdictPipelineTest extends TestCase
         $this->assertSame('approved', $approvals->rows[$id]['status']);
     }
 
+    /**
+     * Fix A (identity-timing bug found by the stage-3 wp-env harness): the
+     * approval's `key_id` and the audit actor `token_id` must name the token
+     * that WON the pack binding, not merely the first token the identity
+     * chain lists — e.g. Woo's MCP transport calls wp_set_current_user(),
+     * which ranks `user:2` ahead of the bound `wc:1` in provider order.
+     */
+    public function testApprovalKeyIdAndAuditActorNameTheTokenThatWonTheBindingNotTheFirstToken(): void
+    {
+        $catalog = new VerbCatalog();
+        $catalog->register(['demo/refund' => Tier::Irreversible]);
+
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: ['user:2', 'role:shop_manager', 'wc:1']),
+        ]));
+        $GLOBALS['wpas_test_options'][\Specflux\AgentSafety\Plugin\Support\PackResolver::BINDINGS_OPTION] = [
+            'wc:1' => 'woo-default-agent',
+        ];
+        $packResolver = new \Specflux\AgentSafety\Plugin\Support\PackResolver([
+            new Pack(name: 'woo-default-agent', allow: ['demo/*'], approvalByClass: ['tier2' => true]),
+        ]);
+        RequestContext::configurePrincipalResolver([$packResolver, 'principal']);
+
+        $sink = new InMemoryAuditSink();
+        $approvals = new FakeApprovalStore();
+        $pipeline = new VerdictPipeline(
+            new Gate(new TierClassifier($catalog)),
+            new DecisionRecorder($sink, $approvals),
+            $approvals,
+        );
+
+        $verdict = $pipeline->judge('demo/refund', ['amount' => 5], $packResolver->resolve(), Hints::none(), VerdictMode::Claim);
+
+        $this->assertSame(Outcome::ApprovalRequired, $verdict->decision->outcome);
+        $this->assertNotNull($verdict->approvalId);
+        $this->assertSame('wc:1', $approvals->rows[$verdict->approvalId]['subject'], 'approval key_id must be the bound token, not user:2');
+        $this->assertSame('wc:1', $sink->records[0]->toArray()['actor']['token_id'], 'audit actor must be the bound token, not user:2');
+    }
+
     // --- Re-entrancy ---------------------------------------------------------
 
     public function testRepeatedClaimModeJudgementsReserveTheGrantOnlyOnce(): void

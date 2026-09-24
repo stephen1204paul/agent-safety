@@ -28,11 +28,38 @@ final class RequestContext
     /** @var list<string>|null */
     private static ?array $tokens = null;
 
+    /** @var (callable(): ?string)|null */
+    private static $principalResolver = null;
+
+    private static ?string $principal = null;
+    private static bool $principalResolved = false;
+
     /** Wire the identity chain the plugin bootstrap assembled. */
     public static function configure(IdentityChain $identity): void
     {
         self::$identity = $identity;
         self::$tokens = null;
+        self::$principal = null;
+        self::$principalResolved = false;
+    }
+
+    /**
+     * Wire the principal resolver the bootstrap assembled alongside the
+     * identity chain — {@see \Specflux\AgentSafety\Plugin\Support\PackResolver::principal()}
+     * in production, so the audit actor / rate-limit / approval subject
+     * names the SAME credential whose binding decided the pack, not merely
+     * the first token the identity chain happens to list. When no resolver
+     * is configured (a host that never wired {@see PackResolver}, or a test
+     * exercising `tokenId()` in isolation) `tokenId()` falls back to the
+     * first current token, exactly as before this seam existed.
+     *
+     * @param callable(): ?string $resolver
+     */
+    public static function configurePrincipalResolver(callable $resolver): void
+    {
+        self::$principalResolver = $resolver;
+        self::$principal = null;
+        self::$principalResolved = false;
     }
 
     /** Forget all memoized state (tests only). */
@@ -41,6 +68,9 @@ final class RequestContext
         self::$correlation = null;
         self::$identity = null;
         self::$tokens = null;
+        self::$principalResolver = null;
+        self::$principal = null;
+        self::$principalResolved = false;
     }
 
     public static function correlation(): string
@@ -147,14 +177,24 @@ final class RequestContext
     }
 
     /**
-     * Back-compat single token for the audit actor `token_id` field: the FIRST
-     * current candidate, or null when none applies.
+     * The single principal id for the audit actor `token_id` field, the
+     * rate-limit/tripwire/argument-cap subject, and the approval's `key_id`:
+     * the token that WON the pack binding (the first {@see currentTokens()}
+     * candidate with a stored binding, per the configured resolver),
+     * falling back to the first current token when nothing is bound, or
+     * null when there are no tokens at all. Memoized for the request like
+     * {@see currentTokens()}, and reset wherever that memo is reset.
      */
     public static function tokenId(): ?string
     {
-        $tokens = self::currentTokens();
+        if (!self::$principalResolved) {
+            self::$principal = self::$principalResolver !== null
+                ? (self::$principalResolver)()
+                : (self::currentTokens()[0] ?? null);
+            self::$principalResolved = true;
+        }
 
-        return $tokens[0] ?? null;
+        return self::$principal;
     }
 
     private static function uuid(): string

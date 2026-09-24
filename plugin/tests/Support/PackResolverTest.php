@@ -125,4 +125,84 @@ final class PackResolverTest extends TestCase
         $this->assertSame('woo-support', $pack->name);
         $this->assertTrue($pack->allows('woocommerce/orders-list'));
     }
+
+    // --- principal() (Fix A: the recorded principal must be the token that
+    // WON the pack binding, not merely the first token in chain order) -------
+
+    public function testPrincipalIsTheBoundTokenNotTheFirstTokenInChainOrder(): void
+    {
+        // Mirrors Woo's MCP transport: wp_set_current_user() ranks user:2
+        // ahead of wc:1 in provider order, but only wc:1 is bound.
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: ['user:2', 'role:shop_manager', 'wc:1']),
+        ]));
+        $GLOBALS['wpas_test_options'][PackResolver::BINDINGS_OPTION] = [
+            'wc:1' => 'woo-default-agent',
+        ];
+
+        $resolver = new PackResolver([
+            new Pack(name: 'woo-default-agent', allow: ['woocommerce/*']),
+        ]);
+
+        $this->assertSame('wc:1', $resolver->principal());
+        $this->assertSame('woo-default-agent', $resolver->resolve()->name);
+    }
+
+    public function testPrincipalFallsBackToTheFirstTokenWhenNothingIsBound(): void
+    {
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: ['user:2', 'role:shop_manager', 'wc:1']),
+        ]));
+
+        $resolver = new PackResolver();
+
+        $this->assertSame('user:2', $resolver->principal());
+        $this->assertSame('default-agent', $resolver->resolve()->name);
+    }
+
+    public function testPrincipalIsNullWhenThereAreNoCurrentTokens(): void
+    {
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: []),
+        ]));
+
+        $resolver = new PackResolver();
+
+        $this->assertNull($resolver->principal());
+    }
+
+    public function testRequestContextTokenIdUsesTheConfiguredPrincipalResolver(): void
+    {
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: ['user:2', 'role:shop_manager', 'wc:1']),
+        ]));
+        $GLOBALS['wpas_test_options'][PackResolver::BINDINGS_OPTION] = [
+            'wc:1' => 'woo-default-agent',
+        ];
+
+        $resolver = new PackResolver([
+            new Pack(name: 'woo-default-agent', allow: ['woocommerce/*']),
+        ]);
+        RequestContext::configurePrincipalResolver([$resolver, 'principal']);
+
+        $this->assertSame('wc:1', RequestContext::tokenId());
+    }
+
+    public function testRequestContextTokenIdFallsBackToFirstTokenWithoutAConfiguredResolver(): void
+    {
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: ['user:2', 'role:shop_manager', 'wc:1']),
+        ]));
+
+        $this->assertSame('user:2', RequestContext::tokenId());
+    }
+
+    public function testRequestContextTokenIdIsNullWithNoTokensAndNoResolver(): void
+    {
+        RequestContext::configure(new IdentityChain([
+            new FakeIdentityProvider(currentTokens: []),
+        ]));
+
+        $this->assertNull(RequestContext::tokenId());
+    }
 }

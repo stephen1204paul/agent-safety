@@ -42,16 +42,48 @@ final class PackResolver
      */
     public function resolve(): Pack
     {
-        $registry = $this->registry();
-        $bindings = $registry->bindings();
+        return $this->boundToken() !== null
+            ? $this->registry()->resolve($this->boundToken())
+            : $this->registry()->resolve(null);
+    }
+
+    /**
+     * The request's PRINCIPAL: whichever token {@see resolve()} actually
+     * bound the pack from, or the first current token when nothing is
+     * bound, or null when there are no current tokens at all. Wired into
+     * {@see RequestContext::configurePrincipalResolver()} at bootstrap so
+     * the audit actor, rate limits, tripwires, argument caps, grant subject
+     * and the approval's `key_id` all name the SAME credential the pack
+     * decision was made on — never a different, earlier-in-chain token that
+     * merely happened to authenticate first (e.g. WooCommerce's
+     * `wp_set_current_user()` side effect ranking `user:<id>` ahead of the
+     * bound `wc:<key_id>` in provider order). Deliberately does NOT change
+     * which pack is resolved; it only names the token that earned it.
+     */
+    public function principal(): ?string
+    {
+        $bound = $this->boundToken();
+        if ($bound !== null) {
+            return $bound;
+        }
+
+        $tokens = RequestContext::currentTokens();
+
+        return $tokens[0] ?? null;
+    }
+
+    /** The first current token with a stored binding, or null when none has one. */
+    private function boundToken(): ?string
+    {
+        $bindings = $this->registry()->bindings();
 
         foreach (RequestContext::currentTokens() as $token) {
             if (isset($bindings[$token])) {
-                return $registry->resolve($token);
+                return $token;
             }
         }
 
-        return $registry->resolve(null);
+        return null;
     }
 
     /**
