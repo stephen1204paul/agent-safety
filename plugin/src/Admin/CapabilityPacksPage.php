@@ -8,6 +8,7 @@ use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Identity\IdentityProvider;
 use Specflux\AgentSafety\Plugin\Support\AdminChangeRecorder;
+use Specflux\AgentSafety\Plugin\Support\EnvironmentGuard;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\PauseSwitch;
 use Specflux\AgentSafety\Plugin\Support\ShadowMode;
@@ -46,6 +47,8 @@ final class CapabilityPacksPage
     private const SHADOW = 'agsafe_save_shadow_packs';
     private const PAUSE = 'agsafe_pause';
     private const RESUME = 'agsafe_resume';
+    private const REBIND = 'agsafe_rebind_environment';
+    private const RENEW_SHADOW = 'agsafe_renew_shadow_pack';
 
     /** Observation windows offered on the shadow form, in days; the last is the default. */
     private const SHADOW_DAYS = [1, 3, 7];
@@ -56,6 +59,7 @@ final class CapabilityPacksPage
         private readonly ShadowMode $shadow = new ShadowMode(),
         private readonly AdminChangeRecorder $changes = new AdminChangeRecorder(),
         private readonly PauseSwitch $pause = new PauseSwitch(),
+        private readonly ?EnvironmentGuard $environment = null,
     ) {
     }
 
@@ -66,6 +70,8 @@ final class CapabilityPacksPage
         add_action('admin_post_' . self::SHADOW, [$this, 'saveShadow']);
         add_action('admin_post_' . self::PAUSE, [$this, 'pauseAction']);
         add_action('admin_post_' . self::RESUME, [$this, 'resumeAction']);
+        add_action('admin_post_' . self::REBIND, [$this, 'rebindAction']);
+        add_action('admin_post_' . self::RENEW_SHADOW, [$this, 'renewShadowAction']);
         add_action('admin_notices', [$this, 'pausedNotice']);
     }
 
@@ -97,6 +103,7 @@ final class CapabilityPacksPage
         }
 
         $this->renderEmergencyStop();
+        $this->renderEnvironment();
         $this->renderCatalog($registry->names());
         $this->renderBindings($registry->names(), $registry->defaultPack(), $registry->bindings());
 
@@ -151,6 +158,85 @@ final class CapabilityPacksPage
             echo '<p><button type="submit" class="button button-primary">' . esc_html__('Resume agent actions', 'agent-safety') . '</button></p>';
             echo '</form>';
         }
+    }
+
+    /**
+     * AS-7 §3.4 items 7, 12: the environment type label, always shown, and —
+     * only while a site-binding mismatch is in effect — the Rebind button.
+     * `manage_options` + nonce (checked in {@see rebindAction()}); no filter,
+     * constant or ability can rebind (item 7). Restores nothing.
+     */
+    private function renderEnvironment(): void
+    {
+        if ($this->environment === null) {
+            return;
+        }
+
+        echo '<h2>' . esc_html__('Environment', 'agent-safety') . '</h2>';
+        echo '<p>' . esc_html(sprintf(
+            /* translators: %s the WordPress environment type (production, staging, ...) */
+            __('Environment type: %s', 'agent-safety'),
+            $this->shadow->isProduction() ? __('production', 'agent-safety') : __('non-production', 'agent-safety')
+        )) . '</p>';
+
+        if (!$this->environment->isMismatched()) {
+            return;
+        }
+
+        echo '<div class="notice notice-error inline"><p>' . esc_html__(
+            "This site's address changed since its shadow windows, grants and approved-but-unclaimed approvals were authorised. Those relaxations have been permanently voided.",
+            'agent-safety'
+        ) . '</p></div>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="' . esc_attr(self::REBIND) . '">';
+        echo wp_nonce_field(self::REBIND, '_wpnonce', true, false); // phpcs:ignore WordPress.Security.EscapeOutput -- core-built hidden fields.
+        echo '<p><button type="submit" class="button button-primary">' . esc_html__('Rebind to this address', 'agent-safety') . '</button></p>';
+        echo '</form>';
+    }
+
+    public function rebindAction(): void
+    {
+        if (!current_user_can(self::CAP)) {
+            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
+        }
+        check_admin_referer(self::REBIND);
+
+        $this->environment?->rebind();
+
+        wp_safe_redirect(add_query_arg(['page' => self::SLUG], admin_url('tools.php')));
+        exit;
+    }
+
+    /** AS-7 §3.4 item 9: the production "Renew for 24h" re-confirmation — no typed name needed, unlike first enabling it. */
+    public function renewShadowAction(): void
+    {
+        if (!current_user_can(self::CAP)) {
+            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
+        }
+        check_admin_referer(self::RENEW_SHADOW);
+
+        $pack = isset($_POST['pack']) && is_scalar($_POST['pack'])
+            ? sanitize_text_field((string) wp_unslash($_POST['pack']))
+            : '';
+
+        $this->applyRenewShadow($pack);
+
+        wp_safe_redirect(add_query_arg(
+            ['page' => self::SLUG, 'agsafe_saved' => '1'],
+            admin_url('tools.php')
+        ));
+        exit;
+    }
+
+    /** Split from {@see renewShadowAction()} for the same reason as {@see applyShadow()}: exercisable without a nonce/redirect/exit. */
+    public function applyRenewShadow(string $pack): void
+    {
+        if (!in_array($pack, $this->packs->registry()->names(), true)) {
+            return;
+        }
+
+        $expiresAt = $this->shadow->renew($pack);
+        $this->changes->shadowEnabled($pack, $expiresAt);
     }
 
     /** The banner on every wp-admin screen while paused, for administrators, linking back here. */
@@ -223,13 +309,21 @@ final class CapabilityPacksPage
         // window the administrator never chose.
         $stored = $this->shadow->storedExpiries();
         $effective = $this->shadow->expiries();
+        $isProduction = $this->shadow->isProduction();
 
         echo '<h2>' . esc_html__('Pack catalog', 'agent-safety') . '</h2>';
+        if ($isProduction) {
+            echo '<p><em>' . esc_html__('This site is production: shadow windows are capped at 24 hours, and enabling one requires typing the pack name to confirm.', 'agent-safety') . '</em></p>';
+        }
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         echo '<input type="hidden" name="action" value="' . esc_attr(self::SHADOW) . '">';
         echo wp_nonce_field(self::SHADOW, '_wpnonce', true, false); // phpcs:ignore WordPress.Security.EscapeOutput -- core-built hidden fields.
         echo '<table class="widefat striped"><thead><tr>';
-        foreach (['Pack', 'Allows', 'Hard-denied (deny_class)', 'Approval-gated', 'PII', 'Shadow (log only)'] as $col) {
+        $columns = ['Pack', 'Allows', 'Hard-denied (deny_class)', 'Approval-gated', 'PII', 'Shadow (log only)'];
+        if ($isProduction) {
+            $columns[] = '';
+        }
+        foreach ($columns as $col) {
             echo '<th>' . esc_html($col) . '</th>';
         }
         echo '</tr></thead><tbody>';
@@ -247,12 +341,24 @@ final class CapabilityPacksPage
             echo '<td>' . esc_html($pack->pii) . '</td>';
             $expiresAt = $stored[$pack->name] ?? null;
             printf(
-                '<td><label><input type="checkbox" name="shadow[]" value="%s"%s> %s</label>%s</td>',
+                '<td><label><input type="checkbox" name="shadow[]" value="%s"%s> %s</label>%s',
                 esc_attr($pack->name),
                 checked($expiresAt !== null, true, false),
                 esc_html__('audit only, enforce nothing', 'agent-safety'),
                 $this->expiryNote($expiresAt, $effective[$pack->name] ?? null), // phpcs:ignore WordPress.Security.EscapeOutput -- esc_html in helper.
             );
+            if ($isProduction && $expiresAt === null) {
+                printf(
+                    '<br><small>%s <input type="text" name="shadow_confirm[%s]" placeholder="%s"></small>',
+                    esc_html__('type the pack name to enable in production:', 'agent-safety'),
+                    esc_attr($pack->name),
+                    esc_attr($pack->name),
+                );
+            }
+            echo '</td>';
+            if ($isProduction) {
+                echo '<td>' . ($expiresAt !== null ? $this->renewShadowButton($pack->name) : '') . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- esc_* in helper.
+            }
             echo '</tr>';
         }
 
@@ -287,8 +393,11 @@ final class CapabilityPacksPage
         $days = isset($_POST['shadow_days']) && is_scalar($_POST['shadow_days'])
             ? (int) wp_unslash($_POST['shadow_days'])
             : self::defaultShadowDays();
+        $confirmations = isset($_POST['shadow_confirm']) && is_array($_POST['shadow_confirm'])
+            ? wp_unslash($_POST['shadow_confirm'])
+            : [];
 
-        $this->applyShadow($posted, $days);
+        $this->applyShadow($posted, $days, $confirmations);
 
         wp_safe_redirect(add_query_arg(
             ['page' => self::SLUG, 'agsafe_saved' => '1'],
@@ -308,18 +417,35 @@ final class CapabilityPacksPage
      * not the default: shadow mode loosens enforcement, so a malformed choice
      * buys the least of it.
      *
-     * @param array<mixed> $posted The raw `shadow[]` values.
+     * AS-7 §3.4 item 9: on a production site, a pack NOT already validly
+     * shadowed is only enabled when $confirmations[pack] is typed back
+     * exactly — an already-shadowed pack being re-saved needs no retyping
+     * (that is what the separate "Renew for 24h" button is for).
+     *
+     * @param array<mixed> $posted        The raw `shadow[]` values.
+     * @param array<mixed> $confirmations The raw `shadow_confirm[pack]` values.
      */
-    public function applyShadow(array $posted, int $days): void
+    public function applyShadow(array $posted, int $days, array $confirmations = []): void
     {
         $valid = $this->packs->registry()->names();
+        $isProduction = $this->shadow->isProduction();
+        $alreadyShadowed = $this->shadow->storedExpiries();
 
         $clean = [];
         foreach ($posted as $pack) {
             $pack = sanitize_text_field((string) $pack);
-            if ($pack !== '' && in_array($pack, $valid, true) && !in_array($pack, $clean, true)) {
-                $clean[] = $pack;
+            if ($pack === '' || !in_array($pack, $valid, true) || in_array($pack, $clean, true)) {
+                continue;
             }
+            if ($isProduction && !isset($alreadyShadowed[$pack])) {
+                $typed = isset($confirmations[$pack]) && is_scalar($confirmations[$pack])
+                    ? sanitize_text_field((string) $confirmations[$pack])
+                    : '';
+                if ($typed !== $pack) {
+                    continue;
+                }
+            }
+            $clean[] = $pack;
         }
         if (!in_array($days, self::SHADOW_DAYS, true)) {
             $days = min(self::SHADOW_DAYS);
@@ -364,6 +490,19 @@ final class CapabilityPacksPage
         }
 
         return '<br><small>' . esc_html($note) . '</small>';
+    }
+
+    /** AS-7 §3.4 item 9: the production "Renew for 24h" re-confirmation button for an already-shadowed pack. */
+    private function renewShadowButton(string $pack): string
+    {
+        $out = '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        $out .= '<input type="hidden" name="action" value="' . esc_attr(self::RENEW_SHADOW) . '">';
+        $out .= '<input type="hidden" name="pack" value="' . esc_attr($pack) . '">';
+        $out .= wp_nonce_field(self::RENEW_SHADOW, '_wpnonce', true, false);
+        $out .= '<button type="submit" class="button button-small">' . esc_html__('Renew for 24h', 'agent-safety') . '</button>';
+        $out .= '</form>';
+
+        return $out;
     }
 
     /**

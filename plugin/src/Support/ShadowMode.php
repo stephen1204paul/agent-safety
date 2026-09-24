@@ -46,6 +46,39 @@ final class ShadowMode
      */
     public const MAX_TTL = 7 * 24 * 60 * 60;
 
+    /**
+     * The production ceiling (AS-7 §3.4 item 9): packs never default to
+     * shadow, and when an admin does enable it on a production site the
+     * window is much shorter than {@see MAX_TTL} — 24 hours, not 7 days. This
+     * bounds EVERY read of the shadow set on a production site: the stored
+     * option, the `agent_safety_shadow_packs` filter's output, and a fresh
+     * toggle from the admin form alike. An environment flip (production =>
+     * not, or back) changes which ceiling the very next read uses; nothing is
+     * re-written, so an entry that is now beyond the new ceiling simply stops
+     * validating (see {@see validate()}) and the sweep audits its removal
+     * with cause `environment` rather than a lapsed TTL.
+     */
+    public const PRODUCTION_MAX_TTL = 24 * 60 * 60;
+
+    /** A dropped entry's cause, for the sweep's audit row: `environment` (item 10) vs an ordinary TTL lapse. */
+    public const CAUSE_ENVIRONMENT = 'environment';
+
+    /**
+     * `wp_get_environment_type() === 'production'` — WordPress's own default
+     * when the constant is unset, per item 8, so a site that never configured
+     * `WP_ENVIRONMENT_TYPE` is treated as production. No hostname guessing.
+     */
+    public function isProduction(): bool
+    {
+        return function_exists('wp_get_environment_type') && wp_get_environment_type() === 'production';
+    }
+
+    /** The TTL ceiling for THIS request's environment: {@see PRODUCTION_MAX_TTL} on production, {@see MAX_TTL} elsewhere. */
+    public function ceiling(): int
+    {
+        return $this->isProduction() ? self::PRODUCTION_MAX_TTL : self::MAX_TTL;
+    }
+
     public function isShadow(string $packName): bool
     {
         return array_key_exists($packName, $this->expiries());
@@ -104,7 +137,7 @@ final class ShadowMode
         $now = time();
         $raw = get_option(self::OPTION, []);
         $before = $this->validate(is_array($raw) ? $raw : [], $now);
-        $expiry = $now + min($ttl, self::MAX_TTL);
+        $expiry = $now + min($ttl, $this->ceiling());
 
         $after = [];
         $enabled = [];
@@ -141,7 +174,8 @@ final class ShadowMode
             return;
         }
 
-        $valid = $this->validate($raw, time());
+        $now = time();
+        $valid = $this->validate($raw, $now);
         $lapsed = $this->lapsed($raw, $valid);
         if ($lapsed === [] && count($raw) === count($valid)) {
             return;
@@ -150,8 +184,56 @@ final class ShadowMode
         update_option(self::OPTION, $valid, false);
 
         foreach ($lapsed as $name => $stamp) {
-            $changes->shadowExpired($name, $stamp);
+            // Item 10: an entry whose stamp is STILL in the future is not a
+            // TTL lapse at all — it dropped only because an environment flip
+            // (e.g. this site is now production) lowered the ceiling below
+            // it. Anything else (no stamp, or one already in the past) is an
+            // ordinary lapse, cause left null.
+            $cause = (is_int($stamp) && $stamp > $now) ? self::CAUSE_ENVIRONMENT : null;
+            $changes->shadowExpired($name, $stamp, $cause);
         }
+    }
+
+    /**
+     * Persist the shadow set with $name renewed for another full ceiling
+     * window from now (AS-7 §3.4 item 9's "Renew for 24h" re-confirmation),
+     * whether or not it was already shadowed. Returns the new expiry, or null
+     * if $name is not a known pack name — the caller validates that; this is
+     * pure persistence.
+     */
+    public function renew(string $name): int
+    {
+        $now = time();
+        $raw = get_option(self::OPTION, []);
+        $valid = $this->validate(is_array($raw) ? $raw : [], $now);
+
+        $expiry = $now + $this->ceiling();
+        $valid[$name] = $expiry;
+        update_option(self::OPTION, $valid, false);
+
+        return $expiry;
+    }
+
+    /**
+     * AS-7 §3.4 item 5: wipe every stored shadow window outright on a
+     * site-binding mismatch (a Relaxation) — not a sweep of lapsed entries,
+     * an unconditional clear. Returns the pack names that were validly
+     * shadowed at the moment of the wipe, for the caller to audit one row
+     * each; a filter-only shadow is never stored and so is unaffected (its
+     * own validation already re-clamps it on every read).
+     *
+     * @return list<string>
+     */
+    public function voidAll(): array
+    {
+        $names = array_keys($this->storedExpiries());
+        if ($names === []) {
+            return [];
+        }
+
+        update_option(self::OPTION, [], false);
+
+        return $names;
     }
 
     /**
@@ -194,21 +276,25 @@ final class ShadowMode
 
     /**
      * Keep only name => int entries whose expiry is in the future and within
-     * {@see MAX_TTL} of now. Everything else is dropped, never coerced: a
-     * legacy list entry, a numeric string, a lapsed or far-future stamp all
-     * mean "not shadowed".
+     * {@see ceiling()} of now (item 10: ALWAYS the current environment's
+     * ceiling, live — never the one in effect when the entry was written).
+     * Everything else is dropped, never coerced or shortened: a legacy list
+     * entry, a numeric string, a lapsed stamp, or one beyond the ceiling
+     * (whether that's a stale entry or a fresh environment flip) all mean
+     * "not shadowed".
      *
      * @param array<mixed> $entries
      * @return array<string, int>
      */
     private function validate(array $entries, int $now): array
     {
+        $ceiling = $this->ceiling();
         $clean = [];
         foreach ($entries as $name => $expiry) {
             if (!is_string($name) || $name === '' || !is_int($expiry)) {
                 continue;
             }
-            if ($expiry > $now && $expiry <= $now + self::MAX_TTL) {
+            if ($expiry > $now && $expiry <= $now + $ceiling) {
                 $clean[$name] = $expiry;
             }
         }

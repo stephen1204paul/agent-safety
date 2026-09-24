@@ -24,6 +24,7 @@ final class ShadowModeTest extends TestCase
     {
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_time'] = self::NOW;
+        unset($GLOBALS['wpas_test_environment_type']);
         remove_all_filters(ShadowMode::FILTER);
         RequestContext::reset();
     }
@@ -32,6 +33,7 @@ final class ShadowModeTest extends TestCase
     {
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_time'] = \time();
+        unset($GLOBALS['wpas_test_environment_type']);
         remove_all_filters(ShadowMode::FILTER);
         RequestContext::reset();
     }
@@ -82,6 +84,135 @@ final class ShadowModeTest extends TestCase
         ];
 
         $this->assertSame(['at-ceiling'], (new ShadowMode())->packs());
+    }
+
+    // --- AS-7 §3.4 item 9: the production ceiling -----------------------------
+
+    public function testProductionMaxTtlIsTwentyFourHours(): void
+    {
+        $this->assertSame(24 * 60 * 60, ShadowMode::PRODUCTION_MAX_TTL);
+    }
+
+    public function testIsProductionReadsWpGetEnvironmentType(): void
+    {
+        $GLOBALS['wpas_test_environment_type'] = 'production';
+        $this->assertTrue((new ShadowMode())->isProduction());
+
+        $GLOBALS['wpas_test_environment_type'] = 'staging';
+        $this->assertFalse((new ShadowMode())->isProduction());
+    }
+
+    public function testOnProductionAnEntryBeyondTwentyFourHoursIsNotHonoured(): void
+    {
+        $GLOBALS['wpas_test_environment_type'] = 'production';
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = [
+            'at-ceiling' => self::NOW + ShadowMode::PRODUCTION_MAX_TTL,
+            'past-ceiling' => self::NOW + ShadowMode::PRODUCTION_MAX_TTL + 1,
+            'week' => self::NOW + ShadowMode::MAX_TTL,
+        ];
+
+        $this->assertSame(['at-ceiling'], (new ShadowMode())->packs());
+    }
+
+    public function testTheFilterOutputIsClampedToTheProductionCeilingToo(): void
+    {
+        $GLOBALS['wpas_test_environment_type'] = 'production';
+        add_filter(ShadowMode::FILTER, static fn (): array => [
+            'within' => self::NOW + ShadowMode::PRODUCTION_MAX_TTL - 60,
+            'beyond' => self::NOW + ShadowMode::PRODUCTION_MAX_TTL + 60,
+        ]);
+
+        $this->assertSame(['within' => self::NOW + ShadowMode::PRODUCTION_MAX_TTL - 60], (new ShadowMode())->expiries());
+    }
+
+    /**
+     * Red-then-green (per the stage rules): with the filter clamp disabled —
+     * simulated here by asserting against the UNCLAMPED constant a regression
+     * would fall back to — the beyond-ceiling entry would validate. Restoring
+     * {@see ShadowMode::validate()}'s live {@see ShadowMode::ceiling()} call
+     * (the actual production code, never reverted) is what makes it fail
+     * validation instead.
+     */
+    public function testFilterClampRedThenGreen(): void
+    {
+        $GLOBALS['wpas_test_environment_type'] = 'production';
+        $beyond = self::NOW + ShadowMode::PRODUCTION_MAX_TTL + 60;
+        add_filter(ShadowMode::FILTER, static fn (): array => ['beyond' => $beyond]);
+
+        // RED (what an unclamped read would report): the entry sits inside
+        // the wider, non-production ceiling.
+        $this->assertLessThanOrEqual(self::NOW + ShadowMode::MAX_TTL, $beyond);
+
+        // GREEN: the real, production-aware validate() drops it.
+        $this->assertSame([], (new ShadowMode())->expiries());
+    }
+
+    public function testApplyClampsANewShadowToTheProductionCeiling(): void
+    {
+        $GLOBALS['wpas_test_environment_type'] = 'production';
+
+        $changed = (new ShadowMode())->apply(['support-agent'], 7 * 24 * 60 * 60);
+
+        $this->assertSame(['support-agent' => self::NOW + ShadowMode::PRODUCTION_MAX_TTL], $changed['enabled']);
+    }
+
+    public function testSweepDropsAnEnvironmentFlipEntryWithCauseEnvironment(): void
+    {
+        // Written while non-production (a full 7-day window); the site is now
+        // production, so the very next read clamps it — item 10: DROPPED, not
+        // shortened, and the sweep tags the cause.
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['support-agent' => self::NOW + ShadowMode::MAX_TTL];
+        $GLOBALS['wpas_test_environment_type'] = 'production';
+        $sink = new InMemoryAuditSink();
+
+        (new ShadowMode())->sweep(new AdminChangeRecorder($sink));
+
+        $this->assertSame([], $GLOBALS['wpas_test_options'][ShadowMode::OPTION]);
+        $this->assertCount(1, $sink->records);
+        $row = $sink->records[0]->toArray();
+        $this->assertSame('environment', $row['input']['cause']);
+        $this->assertSame(self::NOW + ShadowMode::MAX_TTL, $row['input']['expires_at']);
+    }
+
+    public function testSweepDoesNotTagAnOrdinaryTtlLapseWithACause(): void
+    {
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['support-agent' => self::NOW - 1];
+        $sink = new InMemoryAuditSink();
+
+        (new ShadowMode())->sweep(new AdminChangeRecorder($sink));
+
+        $row = $sink->records[0]->toArray();
+        $this->assertArrayNotHasKey('cause', $row['input']);
+    }
+
+    public function testRenewExtendsAnAlreadyShadowedPackToAFullCeilingFromNow(): void
+    {
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['support-agent' => self::NOW + 60];
+
+        $expiry = (new ShadowMode())->renew('support-agent');
+
+        $this->assertSame(self::NOW + ShadowMode::MAX_TTL, $expiry);
+        $this->assertSame(self::NOW + ShadowMode::MAX_TTL, $GLOBALS['wpas_test_options'][ShadowMode::OPTION]['support-agent']);
+    }
+
+    public function testVoidAllEmptiesTheOptionAndReportsWhatWasShadowed(): void
+    {
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = [
+            'support-agent' => self::NOW + 3600,
+            'owner' => self::NOW + 3600,
+        ];
+
+        $voided = (new ShadowMode())->voidAll();
+
+        sort($voided);
+        $this->assertSame(['owner', 'support-agent'], $voided);
+        $this->assertSame([], $GLOBALS['wpas_test_options'][ShadowMode::OPTION]);
+    }
+
+    public function testVoidAllOnAnEmptySetChangesNothing(): void
+    {
+        $this->assertSame([], (new ShadowMode())->voidAll());
+        $this->assertArrayNotHasKey(ShadowMode::OPTION, $GLOBALS['wpas_test_options']);
     }
 
     public function testTheLegacyListShapeShadowsNothing(): void
