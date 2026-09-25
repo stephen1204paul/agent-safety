@@ -9,7 +9,9 @@ use Specflux\AgentSafety\Approval\ApprovalBinding;
 use Specflux\AgentSafety\Gate\Decision;
 use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Plugin\Support\DecisionRecorder;
+use Specflux\AgentSafety\Plugin\Support\EnvironmentGuard;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Plugin\Support\SiteBinding;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\FakeApprovalStore;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\InMemoryAuditSink;
 use Specflux\AgentSafety\Policy\Tier;
@@ -27,9 +29,61 @@ use Specflux\AgentSafety\Policy\Tier;
  */
 final class DecisionRecorderTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        $GLOBALS['wpas_test_options'] = [];
+        unset($GLOBALS['wpas_test_home_url'], $GLOBALS['wpas_test_environment_type']);
+    }
+
     protected function tearDown(): void
     {
         RequestContext::reset();
+        $GLOBALS['wpas_test_options'] = [];
+        unset($GLOBALS['wpas_test_home_url'], $GLOBALS['wpas_test_environment_type']);
+    }
+
+    /**
+     * AS-7 §3.4 item 11 (stage-7's coverage gap, closed here): a row written
+     * through the REAL recording path — DecisionRecorder::auditDecision(),
+     * which pulls `actor` straight from {@see RequestContext::actor()} — must
+     * carry the environment type and mismatch flag, not just the token/user
+     * fields DecisionRecorderTest already covered above. Proven red-then-green
+     * by temporarily deleting those two keys from `actor()`'s return (see the
+     * stage report); this test alone catches that regression.
+     */
+    public function testAuditedRecordCarriesTheEnvironmentTypeAndNoMismatchByDefault(): void
+    {
+        $GLOBALS['wpas_test_environment_type'] = 'staging';
+        $GLOBALS['wpas_test_home_url'] = 'https://example.com';
+        // No site binding stored yet -- RequestContext::environmentMismatch() treats an unbound
+        // site as "nothing to mismatch against", per EnvironmentGuard's own first-bind contract.
+
+        $sink = new InMemoryAuditSink();
+        $recorder = new DecisionRecorder($sink, null);
+        $pack = new Pack(name: 'support', allow: ['*']);
+
+        $recorder->auditDecision('evt_1', 'orders/refund', ['id' => 1], $pack, Decision::deny('denied_by_pack', Tier::Irreversible));
+
+        $actor = $sink->records[0]->toArray()['actor'];
+        $this->assertSame('staging', $actor['env_type']);
+        $this->assertFalse($actor['env_mismatch']);
+    }
+
+    public function testAuditedRecordFlagsAnEnvironmentMismatch(): void
+    {
+        $GLOBALS['wpas_test_environment_type'] = 'production';
+        $GLOBALS['wpas_test_home_url'] = 'https://example.com';
+        $GLOBALS['wpas_test_options'][EnvironmentGuard::OPTION] = SiteBinding::normalize('https://old-host.example');
+
+        $sink = new InMemoryAuditSink();
+        $recorder = new DecisionRecorder($sink, null);
+        $pack = new Pack(name: 'support', allow: ['*']);
+
+        $recorder->auditDecision('evt_1', 'orders/refund', ['id' => 1], $pack, Decision::deny('denied_by_pack', Tier::Irreversible));
+
+        $actor = $sink->records[0]->toArray()['actor'];
+        $this->assertSame('production', $actor['env_type']);
+        $this->assertTrue($actor['env_mismatch']);
     }
 
     public function testDeniedDecisionIsAuditedWithPiiRedactedPerPack(): void
