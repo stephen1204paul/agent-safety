@@ -193,6 +193,17 @@ final class ApprovalSummaryTest extends TestCase
         $this->assertStringNotContainsString('onclick', $out);
     }
 
+    /** AS-7 §3.4 item 12: the environment type label, shared with the other AS admin screens. */
+    public function testRenderShowsTheEnvironmentTypeLabel(): void
+    {
+        $GLOBALS['wpas_test_environment_type'] = 'production';
+        $out = $this->renderWithSummary('pages/publish { id=42 }');
+        unset($GLOBALS['wpas_test_environment_type']);
+
+        $this->assertStringContainsString('Environment type:', $out);
+        $this->assertStringContainsString('production', $out);
+    }
+
     /** Render the real Pending Actions screen over a single row with this summary. */
     private function renderWithSummary(string $summary): string
     {

@@ -388,7 +388,7 @@ add_action('plugins_loaded', static function (): void {
         (new AbilityAuditLog($agsafe_sink, $agsafe_classifier, $agsafe_packs, $agsafe_governed_namespaces))->register();
 
         // wp-admin viewer + CSV export (Tools → Agent Audit Log).
-        (new AuditLogPage(new AuditReader($wpdb)))->register();
+        (new AuditLogPage(new AuditReader($wpdb), $agsafe_shadow))->register();
 
         // Privacy tools (§3.6 item 2): personal-data export/erase for Tools →
         // Export/Erase Personal Data, plus suggested privacy-policy text.
@@ -424,7 +424,7 @@ add_action('plugins_loaded', static function (): void {
         // audit reconciliation and lifecycle actions can never diverge.
         $agsafe_api_approvals = new Approvals($agsafe_approvals, $agsafe_sink, $agsafe_packs, $agsafe_state_probes);
 
-        (new PendingActionsPage($agsafe_approvals, $agsafe_api_approvals))->register();
+        (new PendingActionsPage($agsafe_approvals, $agsafe_api_approvals, $agsafe_shadow))->register();
 
         // Backlog control for the table above: hourly sweep of expired/orphaned
         // approval rows (see WpdbApprovalStore::deleteExpired()). The schedule

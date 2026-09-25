@@ -172,12 +172,7 @@ final class CapabilityPacksPage
             return;
         }
 
-        echo '<h2>' . esc_html__('Environment', 'agent-safety') . '</h2>';
-        echo '<p>' . esc_html(sprintf(
-            /* translators: %s the WordPress environment type (production, staging, ...) */
-            __('Environment type: %s', 'agent-safety'),
-            $this->shadow->isProduction() ? __('production', 'agent-safety') : __('non-production', 'agent-safety')
-        )) . '</p>';
+        EnvironmentLabel::render($this->shadow);
 
         if (!$this->environment->isMismatched()) {
             return;

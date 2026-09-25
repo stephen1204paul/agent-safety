@@ -7,6 +7,7 @@ namespace Specflux\AgentSafety\Plugin\Admin;
 use Specflux\AgentSafety\Plugin\Api\Approvals;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 use Specflux\AgentSafety\Plugin\Support\ApprovalNotifier;
+use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 use Specflux\AgentSafety\Plugin\Support\SummaryMarkup;
 
 /**
@@ -39,6 +40,7 @@ final class PendingActionsPage
     public function __construct(
         private readonly WpdbApprovalStore $store,
         private readonly Approvals $approvals,
+        private readonly ShadowMode $shadow = new ShadowMode(),
     ) {
     }
 
@@ -73,11 +75,13 @@ final class PendingActionsPage
         echo '<h1>' . esc_html__('Pending Agent Actions', 'agent-safety') . '</h1>';
         echo '<p>' . esc_html__('Irreversible agent actions blocked pending human approval. Approving mints a single-use token bound to the exact verb + arguments.', 'agent-safety') . '</p>';
 
+        EnvironmentLabel::render($this->shadow);
+
         $this->maybeShowMintedToken();
         $this->maybeShowStaleNotice();
 
         echo '<table class="widefat striped"><thead><tr>';
-        foreach (['Requested (UTC)', 'Expires (UTC)', 'Correlation', 'Verb', 'Summary', 'State', 'Approval ID', 'Action'] as $col) {
+        foreach (self::columnHeaders() as $col) {
             echo '<th>' . esc_html($col) . '</th>';
         }
         echo '</tr></thead><tbody>';
@@ -227,6 +231,21 @@ final class PendingActionsPage
         );
     }
 
+    /** @return list<string> Translated column headers, in display order. */
+    private static function columnHeaders(): array
+    {
+        return [
+            __('Requested (UTC)', 'agent-safety'),
+            __('Expires (UTC)', 'agent-safety'),
+            __('Correlation', 'agent-safety'),
+            __('Verb', 'agent-safety'),
+            __('Summary', 'agent-safety'),
+            __('State', 'agent-safety'),
+            __('Approval ID', 'agent-safety'),
+            __('Action', 'agent-safety'),
+        ];
+    }
+
     /**
      * The Summary cell, escaped by provenance.
      *
@@ -256,14 +275,25 @@ final class PendingActionsPage
     private function actionButtons(string $approvalId): string
     {
         $out = '';
-        foreach ([self::APPROVE => ['Approve', 'primary'], self::REJECT => ['Reject', 'secondary']] as $action => [$label, $style]) {
-            $out .= '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline-block;margin-right:6px;">';
-            $out .= '<input type="hidden" name="action" value="' . esc_attr($action) . '">';
-            $out .= '<input type="hidden" name="approval_id" value="' . esc_attr($approvalId) . '">';
-            $out .= wp_nonce_field($action . $approvalId, '_wpnonce', true, false);
-            $out .= '<button type="submit" class="button button-' . esc_attr($style) . '">' . esc_html__($label, 'agent-safety') . '</button>';
-            $out .= '</form>';
-        }
+        $out .= $this->actionButton($approvalId, self::APPROVE, 'primary', __('Approve', 'agent-safety'));
+        $out .= $this->actionButton($approvalId, self::REJECT, 'secondary', __('Reject', 'agent-safety'));
+
+        return $out;
+    }
+
+    /**
+     * One Approve/Reject form. Plugin Check flags a translation function
+     * called with a variable label, so each caller passes its own LITERAL
+     * `__()` call rather than this method building one from a lookup table.
+     */
+    private function actionButton(string $approvalId, string $action, string $style, string $label): string
+    {
+        $out = '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline-block;margin-right:6px;">';
+        $out .= '<input type="hidden" name="action" value="' . esc_attr($action) . '">';
+        $out .= '<input type="hidden" name="approval_id" value="' . esc_attr($approvalId) . '">';
+        $out .= wp_nonce_field($action . $approvalId, '_wpnonce', true, false);
+        $out .= '<button type="submit" class="button button-' . esc_attr($style) . '">' . esc_html($label) . '</button>';
+        $out .= '</form>';
 
         return $out;
     }

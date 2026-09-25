@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Admin;
 
 use Specflux\AgentSafety\Plugin\Audit\AuditReader;
+use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 
 /**
  * Tools → "Agent Audit Log": a read-only wp-admin viewer for the append-only audit
@@ -18,8 +19,10 @@ final class AuditLogPage
     private const CAP = 'manage_options';
     private const EXPORT_ACTION = 'agsafe_export_audit';
 
-    public function __construct(private readonly AuditReader $reader)
-    {
+    public function __construct(
+        private readonly AuditReader $reader,
+        private readonly ShadowMode $shadow = new ShadowMode(),
+    ) {
     }
 
     public function register(): void
@@ -45,6 +48,7 @@ final class AuditLogPage
             return;
         }
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only pagination, no state change; the page's own links build this value.
         $paged = isset($_GET['paged']) ? max(1, (int) $_GET['paged']) : 1;
         $total = $this->reader->total();
         $rows = $this->reader->latest(self::PER_PAGE, ($paged - 1) * self::PER_PAGE);
@@ -53,6 +57,8 @@ final class AuditLogPage
 
         echo '<div class="wrap">';
         echo '<h1>' . esc_html__('Agent Audit Log', 'agent-safety') . '</h1>';
+
+        EnvironmentLabel::render($this->shadow);
 
         // Tamper-evidence banner.
         if ($intact) {
@@ -78,7 +84,7 @@ final class AuditLogPage
 
         // Table.
         echo '<table class="widefat striped"><thead><tr>';
-        foreach (['ID', 'Time (UTC)', 'Correlation', 'Ability', 'Tier', 'Decision', 'Reason', 'Result', 'Token', 'IP', 'Input'] as $col) {
+        foreach (self::columnHeaders() as $col) {
             echo '<th>' . esc_html($col) . '</th>';
         }
         echo '</tr></thead><tbody>';
@@ -100,7 +106,7 @@ final class AuditLogPage
             echo '<td><code>' . esc_html((string) $r['ability']) . '</code></td>';
             echo '<td>' . esc_html($r['tier'] === null ? '—' : (string) $r['tier']) . '</td>';
             echo '<td>' . self::badge((string) $r['decision']) . '</td>';
-            echo '<td><code>' . esc_html($reason ?: '—') . '</code></td>';
+            echo '<td><code>' . esc_html($reason === '' ? '—' : ReasonLabels::label($reason)) . '</code></td>';
             echo '<td>' . esc_html((string) ($r['result'] ?? '—')) . '</td>';
             echo '<td>' . esc_html($token ?: '—') . '</td>';
             echo '<td>' . esc_html((string) ($r['ip'] ?? '—')) . '</td>';
@@ -148,6 +154,24 @@ final class AuditLogPage
         }
         fclose($out);
         exit;
+    }
+
+    /** @return list<string> Translated column headers, in display order. */
+    private static function columnHeaders(): array
+    {
+        return [
+            __('ID', 'agent-safety'),
+            __('Time (UTC)', 'agent-safety'),
+            __('Correlation', 'agent-safety'),
+            __('Ability', 'agent-safety'),
+            __('Tier', 'agent-safety'),
+            __('Decision', 'agent-safety'),
+            __('Reason', 'agent-safety'),
+            __('Result', 'agent-safety'),
+            __('Token', 'agent-safety'),
+            __('IP', 'agent-safety'),
+            __('Input', 'agent-safety'),
+        ];
     }
 
     private static function badge(string $decision): string
