@@ -23,11 +23,10 @@ WORK=/tmp/agsafe-release-0.4-proof
 # this harness begins from a guaranteed-fresh site — this is the harness
 # destroying its OWN throwaway instance at the START of a fresh run, not the
 # "never destroy" rule about leaving the environment for a human to poke at
-# once the run finishes (see the trap below, still `stop` only).
-if [ -f "$WORK/.wp-env.json" ]; then
-    echo "[release-0.4] == destroying a leftover instance from a previous run =="
-    (cd "$WORK" && npx @wordpress/env destroy <<<'y') || true
-fi
+# once the run finishes (see the trap below, still `stop` only). The destroy
+# runs after the config is written (below), not on the config's presence:
+# wp-env keys its Docker volumes by the config path, so the volumes outlive a
+# wiped /tmp and a missing config file proves nothing.
 mkdir -p "$WORK"
 
 # shellcheck source=./release-0.4/lib.sh
@@ -126,6 +125,8 @@ cat > "$WORK/.wp-env.json" <<EOF
     }
 }
 EOF
+log "== destroying any leftover instance from a previous run =="
+(cd "$WORK" && npx @wordpress/env destroy <<<'y') || true
 # NOTE: if wordpress.org/wordpress-7.1.2.zip 404s (a WP release that has been
 # pulled or renamed), fall back by editing "core" above to
 # "WordPress/WordPress#7.1.2" (wp-env's GitHub-tag syntax). Not automated

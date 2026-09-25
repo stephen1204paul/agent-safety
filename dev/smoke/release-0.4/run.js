@@ -470,7 +470,8 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
     const noticePage = await getAuthed(adminJar2, '/wp-admin/tools.php?page=agent-safety-packs');
     check(
       'P4 mismatch notice text appears',
-      noticePage.body.includes("this site's address changed since its shadow windows, grants and approved-but-unclaimed approvals were authorised"),
+      // esc_html__() encodes the apostrophe in "site's" as &#039;.
+      noticePage.body.replace(/&#039;/g, "'").includes("this site's address changed since its shadow windows, grants and approved-but-unclaimed approvals were authorised"),
       noticePage.body.slice(0, 300)
     );
 
@@ -568,11 +569,11 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
 
     if (realApprovalId) {
       const pollPending = await executeAbility(authA, sessA, 'agent-safety/check-approval', { approval_id: realApprovalId });
-      check('P5 poll while pending: status pending', pollPending.parsed?.data?.status === 'pending', JSON.stringify(pollPending.parsed).slice(0, 300));
+      check('P5 poll while pending: status pending', pollPending.parsed?.data?.status === 'pending', pollPending.text.slice(0, 300));
       check(
         'P5 poll while pending: next_action matches §3.11',
         pollPending.parsed?.data?.next_action === 'Waiting for a human. Check again in 30 seconds or more, and stop at pending_expires_at.',
-        JSON.stringify(pollPending.parsed).slice(0, 300)
+        pollPending.text.slice(0, 300)
       );
 
       const pendingPage = await getAuthed(adminJar1, '/wp-admin/tools.php?page=agent-safety-pending');
@@ -580,11 +581,11 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
       await postAuthed(adminJar1, '/wp-admin/admin-post.php', { action: 'agsafe_approve_action', approval_id: realApprovalId, _wpnonce: nonce });
 
       const pollApproved = await executeAbility(authA, sessA, 'agent-safety/check-approval', { approval_id: realApprovalId });
-      check('P5 poll after approve: status approved', pollApproved.parsed?.data?.status === 'approved', JSON.stringify(pollApproved.parsed).slice(0, 300));
+      check('P5 poll after approve: status approved', pollApproved.parsed?.data?.status === 'approved', pollApproved.text.slice(0, 300));
       check(
         'P5 poll after approve: next_action matches §3.11',
         pollApproved.parsed?.data?.next_action === 'Retry the original call now, with exactly the same arguments.',
-        JSON.stringify(pollApproved.parsed).slice(0, 300)
+        pollApproved.text.slice(0, 300)
       );
 
       // Retry the ORIGINAL delete through the SAME transport/verb that
@@ -594,11 +595,11 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
       await executeAbility(authA, sessA, 'woocommerce/product-delete', { id: p5.product_id, force: true });
 
       const pollUsed = await executeAbility(authA, sessA, 'agent-safety/check-approval', { approval_id: realApprovalId });
-      check('P5 poll after retry: status used', pollUsed.parsed?.data?.status === 'used', JSON.stringify(pollUsed.parsed).slice(0, 300));
+      check('P5 poll after retry: status used', pollUsed.parsed?.data?.status === 'used', pollUsed.text.slice(0, 300));
       check(
         'P5 poll after retry: next_action matches §3.11',
         pollUsed.parsed?.data?.next_action === 'This approval has already been used. Another call needs a new approval.',
-        JSON.stringify(pollUsed.parsed).slice(0, 300)
+        pollUsed.text.slice(0, 300)
       );
     } else {
       console.log('SKIP: P5 pending/approved/used poll assertions (no pending approval id obtained).');
@@ -637,8 +638,8 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
     for (let i = 0; i < 11; i++) {
       lastRate = await executeAbility(authA, sessA, 'agent-safety/check-approval', { approval_id: unknownId1 });
     }
-    check('P5 11th poll in a minute is rate_limited', lastRate?.parsed?.data?.status === 'rate_limited', JSON.stringify(lastRate?.parsed).slice(0, 300));
-    check('P5 rate_limited response carries retry_after', typeof lastRate?.parsed?.data?.retry_after !== 'undefined', JSON.stringify(lastRate?.parsed).slice(0, 300));
+    check('P5 11th poll in a minute is rate_limited', lastRate?.parsed?.data?.status === 'rate_limited', String(lastRate?.text).slice(0, 300));
+    check('P5 rate_limited response carries retry_after', typeof lastRate?.parsed?.data?.retry_after !== 'undefined', String(lastRate?.text).slice(0, 300));
   } catch (e) {
     check('P5 section completed without throwing', false, String(e && e.stack || e));
   }
