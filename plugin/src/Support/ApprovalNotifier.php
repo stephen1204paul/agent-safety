@@ -87,11 +87,19 @@ final class ApprovalNotifier
 
         wp_mail(
             $to,
-            sprintf('[Agent Safety] Approval requested: %s', $verb),
             sprintf(
-                "An agent action is awaiting human approval.\n\n"
-                . "Action: %s\nApproval id: %s\n\n"
-                . "Review, then approve or reject (requires login):\n%s\n",
+                /* translators: %s the verb (ability id) the agent tried to call */
+                __('[Agent Safety] Approval requested: %s', 'agent-safety'),
+                $verb
+            ),
+            sprintf(
+                /* translators: 1: action summary, 2: approval id, 3: review URL */
+                __(
+                    "An agent action is awaiting human approval.\n\n"
+                    . "Action: %1\$s\nApproval id: %2\$s\n\n"
+                    . "Review, then approve or reject (requires login):\n%3\$s\n",
+                    'agent-safety'
+                ),
                 SummaryMarkup::unwrap($summary),
                 $approvalId,
                 $this->reviewUrl(),

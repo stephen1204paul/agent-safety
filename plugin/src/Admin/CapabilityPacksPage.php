@@ -329,7 +329,14 @@ final class CapabilityPacksPage
         echo '<input type="hidden" name="action" value="' . esc_attr(self::SHADOW) . '">';
         echo wp_nonce_field(self::SHADOW, '_wpnonce', true, false); // phpcs:ignore WordPress.Security.EscapeOutput -- core-built hidden fields.
         echo '<table class="widefat striped"><thead><tr>';
-        $columns = ['Pack', 'Allows', 'Hard-denied (deny_class)', 'Approval-gated', 'PII', 'Shadow (log only)'];
+        $columns = [
+            __('Pack', 'agent-safety'),
+            __('Allows', 'agent-safety'),
+            __('Hard-denied (deny_class)', 'agent-safety'),
+            __('Approval-gated', 'agent-safety'),
+            __('PII', 'agent-safety'),
+            __('Shadow (log only)', 'agent-safety'),
+        ];
         if ($isProduction) {
             $columns[] = '';
         }
@@ -561,7 +568,7 @@ final class CapabilityPacksPage
 
         echo '<h3>' . esc_html($provider->label()) . '</h3>';
         echo '<table class="widefat striped"><thead><tr>';
-        foreach (['Token', 'Description', 'Pack'] as $col) {
+        foreach ([__('Token', 'agent-safety'), __('Description', 'agent-safety'), __('Pack', 'agent-safety')] as $col) {
             echo '<th>' . esc_html($col) . '</th>';
         }
         echo '</tr></thead><tbody>';

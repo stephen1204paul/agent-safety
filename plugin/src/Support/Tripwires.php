@@ -173,12 +173,21 @@ final class Tripwires
         ]);
 
         $this->notifier?->alert(
-            sprintf('Credential locked out after %d denials: %s', $denials, $identity),
             sprintf(
-                "Agent Safety has locked out an agent credential.\n\n"
-                . "Token: %s\nDenials in the last minute: %d\nLocked out for: %d seconds\n\n"
-                . "Every call it makes is denied until the lockout lapses. "
-                . "Review what it was refused (requires login):\n%s\n",
+                /* translators: 1: denial count, 2: the locked-out credential/token identity */
+                __('Credential locked out after %1$d denials: %2$s', 'agent-safety'),
+                $denials,
+                $identity
+            ),
+            sprintf(
+                /* translators: 1: token identity, 2: denials in the last minute, 3: lockout seconds, 4: the review URL */
+                __(
+                    "Agent Safety has locked out an agent credential.\n\n"
+                    . "Token: %1\$s\nDenials in the last minute: %2\$d\nLocked out for: %3\$d seconds\n\n"
+                    . "Every call it makes is denied until the lockout lapses. "
+                    . "Review what it was refused (requires login):\n%4\$s\n",
+                    'agent-safety'
+                ),
                 $identity,
                 $denials,
                 $lockoutSeconds,
