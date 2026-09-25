@@ -1,0 +1,8 @@
+{
+    "name": "agent-safety-release-0.4-proof",
+    "private": true,
+    "description": "End-to-end proof harness for the built 0.4.0 plugin ZIP, proving spec rows P1-P8. See README.md.",
+    "dependencies": {
+        "@wordpress/env": "^10.0.0"
+    }
+}
