@@ -388,8 +388,18 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
   let p4Start = debugLogLineCount();
   let originalHome = null, originalSiteurl = null;
   try {
-    originalHome = wp('option get home').trim();
-    originalSiteurl = wp('option get siteurl').trim();
+    // BUG FOUND AND FIXED (post-review): wp-env's own wp-config.php defines
+    // WP_HOME/WP_SITEURL as PHP constants (confirmed: `wp config list`
+    // shows both as `constant`). WordPress wires `pre_option_home`/
+    // `pre_option_siteurl` filters whenever those constants are defined, so
+    // `home_url()` — what EnvironmentGuard::currentHost() actually reads —
+    // returns the CONSTANT regardless of the `home`/`siteurl` DB options.
+    // `wp option update home/siteurl` therefore had NO EFFECT on what the
+    // plugin saw (confirmed empirically: home_url() kept returning the
+    // ORIGINAL address after updating the option), so no mismatch was ever
+    // detected. Fixed to move the site via the constants themselves.
+    originalHome = wp('config get WP_HOME').trim();
+    originalSiteurl = wp('config get WP_SITEURL').trim();
     assertPackNotShadowed('woo-default-agent', tablePrefix);
 
     const p4 = await provisionFreshProduct(`agsafe-p4-${Date.now()}`);
@@ -423,9 +433,10 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
     const shadowBefore = dbRows(`SELECT option_value FROM ${tablePrefix}options WHERE option_name='agsafe_shadow_packs'`)[0];
     check('P4 shadow window seeded', !!shadowBefore && String(shadowBefore.option_value).includes('readonly-analyst'), JSON.stringify(shadowBefore));
 
-    // Move the site.
-    wp(`option update home 'http://127.0.0.1:8970'`);
-    wp(`option update siteurl 'http://127.0.0.1:8970'`);
+    // Move the site (via the constants home_url()/site_url() actually
+    // honour on this env, not the DB options — see the note above).
+    wp(`config set WP_HOME 'http://127.0.0.1:8970' --type=constant`);
+    wp(`config set WP_SITEURL 'http://127.0.0.1:8970' --type=constant`);
 
     // One governed call to trigger EnvironmentGuard::ensureCurrent()'s mismatch path.
     // Note: WOO_MCP/BASE still point at localhost:8970 — the request's HOST
@@ -473,8 +484,8 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
   } catch (e) {
     check('P4 section completed without throwing', false, String(e && e.stack || e));
   } finally {
-    if (originalHome) wp(`option update home '${originalHome}'`);
-    if (originalSiteurl) wp(`option update siteurl '${originalSiteurl}'`);
+    if (originalHome) wp(`config set WP_HOME '${originalHome}' --type=constant`);
+    if (originalSiteurl) wp(`config set WP_SITEURL '${originalSiteurl}' --type=constant`);
   }
   check('P4 debug.log clean', agsafeIssuesSince(p4Start).length === 0, agsafeIssuesSince(p4Start).slice(0, 5).join(' | '));
 
@@ -519,11 +530,23 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
       return { res, text, parsed };
     }
 
+    // BUG FOUND AND FIXED (post-review): the pinned mcp-adapter default
+    // server's `execute-ability` reads from WordPress core's OWN Abilities
+    // API registry (`wp_get_abilities()`), which WooCommerce 11.1 populates
+    // under SINGULAR ids (`woocommerce/product-delete`) — a DIFFERENT
+    // registry from the PLURAL ids (`woocommerce/products-delete`) Woo's
+    // own deprecated `/wp-json/woocommerce/mcp` transport exposes (verified
+    // live: `wp_get_abilities()` lists `product-delete`/`product-update`,
+    // never `products-delete`; calling execute-ability with the plural name
+    // returned "Ability 'woocommerce/products-delete' not found"). P3/P4
+    // correctly keep the plural name (they go through Woo's OWN transport);
+    // this row must use the singular one everywhere it talks to
+    // execute-ability, including the retry below.
     const p5 = await provisionFreshProduct(`agsafe-p5-${Date.now()}`);
-    const del = await executeAbility(authA, sessA, 'woocommerce/products-delete', { id: p5.product_id, force: true });
+    const del = await executeAbility(authA, sessA, 'woocommerce/product-delete', { id: p5.product_id, force: true });
     check('P5 delete via execute-ability filed a pending approval (success:false)', del.parsed?.success === false, JSON.stringify(del.parsed || del.text).slice(0, 300));
 
-    const pendingRow = dbRows(`SELECT approval_id FROM ${approvalsTable} WHERE verb='woocommerce/products-delete' AND status='pending' ORDER BY id DESC LIMIT 1`)[0];
+    const pendingRow = dbRows(`SELECT approval_id FROM ${approvalsTable} WHERE verb='woocommerce/product-delete' AND status='pending' ORDER BY id DESC LIMIT 1`)[0];
     const realApprovalId = pendingRow?.approval_id;
     check('P5 pending approval id obtained', !!realApprovalId, JSON.stringify(pendingRow));
 
@@ -548,12 +571,11 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
         JSON.stringify(pollApproved.parsed).slice(0, 300)
       );
 
-      // Retry the ORIGINAL delete over Woo's own endpoint (same wc:<key_id>
-      // principal that requested it) to consume/claim the approval.
-      await mcp(WOO_MCP, wooAuth(state.wc_consumer_key, state.wc_consumer_secret), {
-        jsonrpc: '2.0', id: 6, method: 'tools/call',
-        params: { name: toolFor('woocommerce/products-delete'), arguments: { id: p5.product_id, force: true } },
-      });
+      // Retry the ORIGINAL delete through the SAME transport/verb that
+      // created the approval (execute-ability + the singular ability id) —
+      // retrying via Woo's own plural-named endpoint would check/consume a
+      // DIFFERENT verb's approval row entirely.
+      await executeAbility(authA, sessA, 'woocommerce/product-delete', { id: p5.product_id, force: true });
 
       const pollUsed = await executeAbility(authA, sessA, 'agent-safety/check-approval', { approval_id: realApprovalId });
       check('P5 poll after retry: status used', pollUsed.parsed?.data?.status === 'used', JSON.stringify(pollUsed.parsed).slice(0, 300));

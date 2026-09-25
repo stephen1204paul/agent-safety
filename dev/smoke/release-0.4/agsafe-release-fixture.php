@@ -20,3 +20,18 @@ add_filter('agent_safety_enable_grants', '__return_true');
  * dev/smoke/woo-native-mcp leg's fixture already uses — never ship this.
  */
 add_filter('woocommerce_mcp_allow_insecure_transport', '__return_true');
+
+/**
+ * BUG FOUND AND FIXED (post-review): `wp_is_application_passwords_supported()`
+ * is `is_ssl() || 'local' === wp_get_environment_type()` (wp-includes/user.php).
+ * wp-env has no TLS, and this harness deliberately removes
+ * WP_ENVIRONMENT_TYPE (P6 needs the site to genuinely read as 'production'),
+ * so application passwords were UNAVAILABLE for the entire run — P5's
+ * `basic_auth(admin app password)` calls against the default mcp-adapter
+ * server were silently getting `401 rest_forbidden`, before ever reaching
+ * Agent Safety's own gate. Confirmed empirically (curl against
+ * /wp-json/mcp/mcp-adapter-default-server: 401 without this filter, 200
+ * with it). Dev-only override, same class as the insecure-transport filter
+ * above — never ship.
+ */
+add_filter('wp_is_application_passwords_available', '__return_true');
