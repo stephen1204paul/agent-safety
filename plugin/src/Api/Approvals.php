@@ -9,7 +9,6 @@ use Specflux\AgentSafety\Audit\AuditRecord;
 use Specflux\AgentSafety\Audit\AuditSink;
 use Specflux\AgentSafety\Plugin\Approval\StateFingerprint;
 use Specflux\AgentSafety\Plugin\Approval\StateProbe;
-use Specflux\AgentSafety\Plugin\Approval\SummaryArgs;
 use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
@@ -115,15 +114,24 @@ final class Approvals
     /**
      * AS-6 §3.3 item 8: re-probe a fingerprinted pending row right before a
      * human's approval takes effect. True only when the row declared a probe
-     * (`fingerprint_kind === 'probe'`), the target's id could be recovered from
-     * the summary ({@see SummaryArgs}), the verb's probe is registered on THIS
-     * request, and the freshly probed fingerprint disagrees with the one
-     * captured at request time. Anything else (no probe kind, id unrecoverable,
-     * probe now throws/returns null, no probe registered) is NOT treated as
-     * stale here — {@see SummaryArgs} explains why extraction failure fails
-     * open; a probe that now throws or returns null is a DIFFERENT failure mode
-     * (`state_unverifiable`) that this narrow admin-side check does not attempt
-     * to reproduce, since approve() has no pipeline to route a deny through.
+     * (`fingerprint_kind === 'probe'`) and either the target args cannot be
+     * safely recovered (FAIL CLOSED — see below) or the freshly probed
+     * fingerprint disagrees with the one captured at request time.
+     *
+     * Security fix: this used to recover the target id by parsing it back out
+     * of the human-readable `summary` column, which is built from raw,
+     * unescaped agent arguments — an attacker could plant a look-alike
+     * `id=<n>` in an unrelated free-text argument and steer the re-probe onto
+     * a different object than the one actually being approved. It now decodes
+     * `probe_args`, the exact argument subset the probe itself declared via
+     * {@see StateProbe::targetArgs()} at request time. A `probe`-kind row
+     * whose `probe_args` is missing or undecodable is treated as STALE rather
+     * than skipped: there is no safe way to re-probe it, and this check must
+     * never fail open. `fingerprint_kind !== 'probe'`, no probe registered for
+     * the verb on this request, or a probe that now throws/returns null are
+     * unrelated failure modes, left exactly as before (the last is
+     * `state_unverifiable`, which this narrow admin-side check has no
+     * pipeline to route a deny through).
      */
     private function isNowStale(string $id): bool
     {
@@ -139,13 +147,15 @@ final class Approvals
             return false;
         }
 
-        $objectId = SummaryArgs::extractId((string) ($row['summary'] ?? ''));
-        if ($objectId === null) {
-            return false;
+        $raw = $row['probe_args'] ?? null;
+        $targetArgs = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+        if (!is_array($targetArgs)) {
+            // Fail closed: no trustworthy target args to re-probe with.
+            return true;
         }
 
         try {
-            $result = $probe->read($verb, ['id' => $objectId]);
+            $result = $probe->read($verb, $targetArgs);
         } catch (\Throwable) {
             return false;
         }

@@ -17,6 +17,7 @@ final class ProbeOutcome
         public readonly bool $failed,
         public readonly string $kind,
         public readonly ?string $fingerprint,
+        public readonly ?string $probeArgs = null,
     ) {
     }
 
@@ -25,9 +26,10 @@ final class ProbeOutcome
         return new self(false, 'none', null);
     }
 
-    public static function ok(string $fingerprint): self
+    /** $probeArgs is the canonical-JSON encoding of the probe's {@see \Specflux\AgentSafety\Plugin\Approval\StateProbe::targetArgs()}. */
+    public static function ok(string $fingerprint, string $probeArgs): self
     {
-        return new self(false, 'probe', $fingerprint);
+        return new self(false, 'probe', $fingerprint, $probeArgs);
     }
 
     public static function failed(): self

@@ -33,6 +33,11 @@ final class StateProbesTest extends TestCase
             {
                 return ['ok' => true];
             }
+
+            public function targetArgs(string $verb, array $args): array
+            {
+                return [];
+            }
         };
     }
 

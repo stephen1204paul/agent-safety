@@ -248,6 +248,7 @@ final class ApprovalsServiceTest extends TestCase
             'status' => 'pending',
             'fingerprint' => $oldFingerprint,
             'fingerprint_kind' => 'probe',
+            'probe_args' => '{"id":42}',
             'created_ts' => '2026-08-23 10:00:00',
             'pending_expires_ts' => '2026-08-23 11:00:00',
         ];
@@ -256,6 +257,11 @@ final class ApprovalsServiceTest extends TestCase
             {
                 // A DIFFERENT result than the one that produced $oldFingerprint.
                 return ['modified' => 999, 'status' => 'published'];
+            }
+
+            public function targetArgs(string $verb, array $args): array
+            {
+                return isset($args['id']) ? ['id' => $args['id']] : [];
             }
         };
         $service = new Approvals(new WpdbApprovalStore($this->db), $this->sink, null, ['woocommerce/product-update' => $probe]);
@@ -287,6 +293,7 @@ final class ApprovalsServiceTest extends TestCase
             'status' => 'pending',
             'fingerprint' => $fingerprint,
             'fingerprint_kind' => 'probe',
+            'probe_args' => '{"id":42}',
             'created_ts' => '2026-08-23 10:00:00',
             'pending_expires_ts' => '2026-08-23 11:00:00',
         ];
@@ -296,6 +303,11 @@ final class ApprovalsServiceTest extends TestCase
                 // The SAME result that produced $fingerprint.
                 return ['modified' => 1, 'status' => 'draft'];
             }
+
+            public function targetArgs(string $verb, array $args): array
+            {
+                return isset($args['id']) ? ['id' => $args['id']] : [];
+            }
         };
         $service = new Approvals(new WpdbApprovalStore($this->db), $this->sink, null, ['woocommerce/product-update' => $probe]);
 
@@ -304,35 +316,111 @@ final class ApprovalsServiceTest extends TestCase
         $this->assertNotNull($token, 'an unchanged target must still be approvable');
     }
 
-    public function testApproveIsInconclusiveWhenTheIdCannotBeRecoveredFromTheSummary(): void
+    /**
+     * Security fix regression: the re-probe used to recover its target id by
+     * parsing the human-readable `summary` (built from raw, unescaped agent
+     * arguments), so an attacker-controlled free-text argument containing an
+     * `id=` look-alike could steer approve()'s re-probe onto the WRONG
+     * object. The stored `probe_args` (captured from the probe's own
+     * {@see StateProbe::targetArgs()} at request time, never from the
+     * summary) must be what gets re-probed: object 42, not object 1.
+     */
+    public function testApproveTimeReprobesTheStoredProbeArgsNotAnIdLookalikeInTheSummary(): void
     {
-        // A host-authored summary (agent_safety_approval_summary filter) can't
-        // be trusted to contain the raw id -- SummaryArgs fails OPEN here, so
-        // approve() proceeds exactly as it did before AS-6.
         $GLOBALS['wpas_test_user_caps']['manage_options'] = true;
-        $this->db->queryReturn = 1;
+        $oldFingerprint = StateFingerprint::compute(['modified' => 1, 'status' => 'draft']);
         $this->db->rowReturn = [
             'approval_id' => 'apr_abc',
             'verb' => 'woocommerce/product-update',
             'args_hash' => 'hash_123',
-            'summary' => "\x02agent-safety:html\x03<a href=\"https://example.com\">Custom summary</a>",
+            // Attacker-controlled free text containing an `id=` look-alike
+            // for object 1 -- the REAL target, bound in probe_args, is 42.
+            'summary' => 'woocommerce/product-update { note=x, id=1, id=42 }',
             'correlation_id' => 'sess_corr',
             'status' => 'pending',
-            'fingerprint' => StateFingerprint::compute(['modified' => 1, 'status' => 'draft']),
+            'fingerprint' => $oldFingerprint,
             'fingerprint_kind' => 'probe',
+            'probe_args' => '{"id":42}',
             'created_ts' => '2026-08-23 10:00:00',
             'pending_expires_ts' => '2026-08-23 11:00:00',
         ];
-        $probe = new class implements StateProbe {
+        $seenArgs = null;
+        $probe = new class ($seenArgs) implements StateProbe {
+            public function __construct(private mixed &$seenArgs)
+            {
+            }
+
             public function read(string $verb, array $args): ?array
             {
-                return ['modified' => 999, 'status' => 'published'];
+                $this->seenArgs = $args;
+
+                // Object 42 (the REAL target) changed since the request was
+                // filed; object 1 (the attacker's look-alike) did not -- so a
+                // re-probe steered onto id=1 would wrongly see no mismatch.
+                return ($args['id'] ?? null) === 42
+                    ? ['modified' => 999, 'status' => 'published']
+                    : ['modified' => 1, 'status' => 'draft'];
+            }
+
+            public function targetArgs(string $verb, array $args): array
+            {
+                return isset($args['id']) ? ['id' => $args['id']] : [];
             }
         };
         $service = new Approvals(new WpdbApprovalStore($this->db), $this->sink, null, ['woocommerce/product-update' => $probe]);
 
         $token = $service->approveReturningToken('apr_abc', 7);
 
-        $this->assertNotNull($token, 'extraction failure must fail open, not block the approval');
+        $this->assertNull($token, 'a stale target (per the REAL id, 42) must never be approved');
+        $this->assertSame(['id' => 42], $seenArgs, 'the probe must be re-run against the stored probe_args, never a value parsed from the summary');
+        $updates = array_values(array_filter($this->db->queries, static fn (string $q): bool => str_starts_with(trim($q), 'UPDATE')));
+        $this->assertNotEmpty($updates, 'markStale() must issue an UPDATE');
+        $this->assertStringContainsString("SET status = 'stale'", (string) end($updates));
+    }
+
+    /** Security fix: a `probe`-kind row with no recoverable probe_args must fail CLOSED, never skip the check. */
+    public function testApproveFailsClosedWhenProbeArgsIsMissing(): void
+    {
+        $GLOBALS['wpas_test_user_caps']['manage_options'] = true;
+        $this->db->rowReturn = [
+            'approval_id' => 'apr_abc',
+            'verb' => 'woocommerce/product-update',
+            'args_hash' => 'hash_123',
+            'summary' => 'woocommerce/product-update { id=42, regular_price=19.99 }',
+            'correlation_id' => 'sess_corr',
+            'status' => 'pending',
+            'fingerprint' => StateFingerprint::compute(['modified' => 1, 'status' => 'draft']),
+            'fingerprint_kind' => 'probe',
+            'probe_args' => null,
+            'created_ts' => '2026-08-23 10:00:00',
+            'pending_expires_ts' => '2026-08-23 11:00:00',
+        ];
+        $wasRead = false;
+        $probe = new class ($wasRead) implements StateProbe {
+            public function __construct(private bool &$wasRead)
+            {
+            }
+
+            public function read(string $verb, array $args): ?array
+            {
+                $this->wasRead = true;
+
+                return ['modified' => 1, 'status' => 'draft'];
+            }
+
+            public function targetArgs(string $verb, array $args): array
+            {
+                return [];
+            }
+        };
+        $service = new Approvals(new WpdbApprovalStore($this->db), $this->sink, null, ['woocommerce/product-update' => $probe]);
+
+        $token = $service->approveReturningToken('apr_abc', 7);
+
+        $this->assertNull($token, 'missing probe_args must fail closed, not skip the check');
+        $this->assertFalse($wasRead, 'a probe with no recoverable target args must never be re-run');
+        $updates = array_values(array_filter($this->db->queries, static fn (string $q): bool => str_starts_with(trim($q), 'UPDATE')));
+        $this->assertNotEmpty($updates, 'markStale() must issue an UPDATE');
+        $this->assertStringContainsString("SET status = 'stale'", (string) end($updates));
     }
 }

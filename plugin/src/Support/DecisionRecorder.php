@@ -109,10 +109,13 @@ final class DecisionRecorder
      * AS-6: $fingerprint/$fingerprintKind carry the state-probe result (or its
      * absence) through to the store, which uses them for the pending-dedupe
      * staleness check (see {@see \Specflux\AgentSafety\Approval\ApprovalStore::request()}).
+     * $probeArgs (security fix) is the canonical-JSON encoding of the probe's
+     * {@see \Specflux\AgentSafety\Plugin\Approval\StateProbe::targetArgs()},
+     * stored so the approve-time re-probe never has to parse the summary.
      *
      * @param array<string, mixed> $input
      */
-    public function requestApproval(string $verb, array $input, string $auditEventId, ?string $fingerprint = null, string $fingerprintKind = 'none'): ?string
+    public function requestApproval(string $verb, array $input, string $auditEventId, ?string $fingerprint = null, string $fingerprintKind = 'none', ?string $probeArgs = null): ?string
     {
         if ($this->approvals === null) {
             return null;
@@ -127,6 +130,7 @@ final class DecisionRecorder
             RequestContext::tokenId(),
             $fingerprint,
             $fingerprintKind,
+            $probeArgs,
         );
     }
 

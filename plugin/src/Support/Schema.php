@@ -38,7 +38,12 @@ final class Schema
      * 3: `agsafe_shadow_packs` became pack name => expiry ({@see ShadowMode}).
      * 4: approvals gained `fingerprint`/`fingerprint_kind` (AS-6); the grants
      *    table was renamed `agent_safety_grants` => `agsafe_grants`
-     *    ({@see grantsTable()}, {@see renameLegacyGrantsTable()}).
+     *    ({@see grantsTable()}, {@see renameLegacyGrantsTable()}). Still
+     *    unreleased at the time `probe_args TEXT NULL` was added (security
+     *    fix: the approve-time re-probe now re-runs against the probe's own
+     *    captured {@see \Specflux\AgentSafety\Plugin\Approval\StateProbe::targetArgs()}
+     *    instead of parsing them back out of the free-text summary), so this
+     *    is a v4 addition, not a new version bump.
      */
     public const VERSION = '4';
 
@@ -121,6 +126,13 @@ final class Schema
      * nullable: a row written before v4, or for a Verb with no declared
      * state probe, has `fingerprint_kind = NULL`, read as `none`; the other
      * values are `probe` and `grant`. No backfill.
+     *
+     * `probe_args` (security fix, still v4): canonical JSON of the probe's
+     * {@see \Specflux\AgentSafety\Plugin\Approval\StateProbe::targetArgs()},
+     * captured only alongside a `probe`-kind fingerprint. NULL for every
+     * other kind and for rows written before this column existed; a
+     * `probe`-kind row with a NULL/undecodable value is treated as stale by
+     * the approve-time re-probe rather than skipped (fail closed).
      */
     public static function approvalsColumns(): string
     {
@@ -140,6 +152,7 @@ final class Schema
                 grant_id VARCHAR(64) NULL,
                 fingerprint CHAR(64) NULL,
                 fingerprint_kind VARCHAR(10) NULL,
+                probe_args TEXT NULL,
                 created_ts DATETIME NOT NULL,
                 pending_expires_ts DATETIME NULL,
                 expires_ts DATETIME NULL,

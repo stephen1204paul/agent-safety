@@ -60,6 +60,7 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
         ?string $subject,
         ?string $fingerprint = null,
         string $fingerprintKind = 'none',
+        ?string $probeArgs = null,
     ): string {
         $this->ensureTable();
         $table = $this->table();
@@ -115,10 +116,14 @@ final class WpdbApprovalStore implements ApprovalStore, ApprovalMinter
                 // Schema's column doc comment.
                 'fingerprint' => $fingerprint,
                 'fingerprint_kind' => $fingerprint !== null ? $fingerprintKind : null,
+                // Only meaningful alongside a probe-kind fingerprint; NULL
+                // otherwise so a non-probe row can never be mistaken for one
+                // with an empty-but-present probe_args value.
+                'probe_args' => $fingerprint !== null && $fingerprintKind === 'probe' ? $probeArgs : null,
                 'created_ts' => gmdate('Y-m-d H:i:s'),
                 'pending_expires_ts' => gmdate('Y-m-d H:i:s', time() + self::PENDING_TTL_SECONDS),
             ],
-            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'],
         );
 
         // Fires only for a genuinely NEW pending approval — the idempotent

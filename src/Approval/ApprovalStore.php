@@ -39,7 +39,8 @@ namespace Specflux\AgentSafety\Approval;
  * Record shape (associative array) returned by the host's pending()/get():
  *   approval_id, verb, args_hash, summary, correlation_id, audit_event_id, key_id,
  *   status (pending|approved|in_flight|consumed|rejected|expired|stale|void_environment), approver (?int),
- *   fingerprint (?string), fingerprint_kind (probe|none|grant|null),
+ *   fingerprint (?string), fingerprint_kind (probe|none|grant|null), probe_args (?string,
+ *   canonical JSON — see $probeArgs below),
  *   created_ts, pending_expires_ts, expires_ts, consumed_ts.
  */
 interface ApprovalStore
@@ -59,6 +60,15 @@ interface ApprovalStore
      * fresh pending row instead of reusing it (the "pending dedupe" rule,
      * AS-6 §3.3 item 7).
      *
+     * Security fix (post-AS-6): $probeArgs is the canonical-JSON encoding of
+     * {@see \Specflux\AgentSafety\Plugin\Approval\StateProbe::targetArgs()}'s
+     * return value — the EXACT subset of the real call arguments the probe
+     * reads — captured only when $fingerprintKind is `probe`. The approve-time
+     * re-probe decodes this instead of parsing the human-readable summary, so
+     * an attacker can no longer steer which object gets re-probed by planting
+     * an `id=` look-alike in a free-text argument the summary happens to
+     * interpolate.
+     *
      * @param ?string $subject The authenticated principal that requested the action
      *                         (host: a namespaced identity-provider token id, e.g.
      *                         "app:{uuid}" or "wc:key_7"). Bound to the record so a
@@ -74,6 +84,7 @@ interface ApprovalStore
         ?string $subject,
         ?string $fingerprint = null,
         string $fingerprintKind = 'none',
+        ?string $probeArgs = null,
     ): string;
 
     /**

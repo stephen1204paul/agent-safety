@@ -66,6 +66,11 @@ final class VerdictPipelineFingerprintTest extends TestCase
 
                 return $this->result;
             }
+
+            public function targetArgs(string $verb, array $args): array
+            {
+                return isset($args['id']) ? ['id' => $args['id']] : [];
+            }
         };
     }
 

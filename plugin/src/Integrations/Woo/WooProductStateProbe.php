@@ -36,4 +36,10 @@ final class WooProductStateProbe implements StateProbe
             'status' => $product->get_status(),
         ];
     }
+
+    /** @param array<string, mixed> $args */
+    public function targetArgs(string $verb, array $args): array
+    {
+        return isset($args['id']) && is_numeric($args['id']) ? ['id' => (int) $args['id']] : [];
+    }
 }

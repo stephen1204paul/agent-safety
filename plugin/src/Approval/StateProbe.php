@@ -23,4 +23,18 @@ interface StateProbe
      * @return array<string, mixed>|null Probe facts, or null if the target is gone.
      */
     public function read(string $verb, array $args): ?array;
+
+    /**
+     * The exact subset of $args this probe actually reads to identify its
+     * target — never the full call arguments. Persisted (as canonical JSON)
+     * alongside the fingerprint at request time so the approve-time re-probe
+     * (`Api\Approvals::approve()`) can re-run {@see read()} against the REAL
+     * target instead of trusting anything parsed out of the human-readable
+     * summary, which is built from unescaped agent arguments and is
+     * therefore attacker-steerable.
+     *
+     * @param array<string, mixed> $args The verb's call arguments.
+     * @return array<string, mixed> Empty when the identifying argument is missing.
+     */
+    public function targetArgs(string $verb, array $args): array;
 }

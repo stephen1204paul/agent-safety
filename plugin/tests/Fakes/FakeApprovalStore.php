@@ -19,10 +19,10 @@ use Specflux\AgentSafety\Plugin\Approval\ApprovalMinter;
  */
 final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
 {
-    /** @var array<string, array{verb: string, args_hash: string, summary: string, correlation_id: string, audit_event_id: string, subject: ?string, status: string, fingerprint: ?string, fingerprint_kind: ?string}> */
+    /** @var array<string, array{verb: string, args_hash: string, summary: string, correlation_id: string, audit_event_id: string, subject: ?string, status: string, fingerprint: ?string, fingerprint_kind: ?string, probe_args?: ?string}> */
     public array $rows = [];
 
-    /** @var list<array{verb: string, args_hash: string, summary: string, correlation_id: string, audit_event_id: string, subject: ?string, fingerprint: ?string, fingerprint_kind: string}> */
+    /** @var list<array{verb: string, args_hash: string, summary: string, correlation_id: string, audit_event_id: string, subject: ?string, fingerprint: ?string, fingerprint_kind: string, probe_args: ?string}> */
     public array $requestCalls = [];
 
     /** @var list<array{verb: string, args_hash: string, summary: string, subject: ?string, approver: ?int, grant_id: ?string}> */
@@ -87,6 +87,7 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
         ?string $subject,
         ?string $fingerprint = null,
         string $fingerprintKind = 'none',
+        ?string $probeArgs = null,
     ): string {
         $this->requestCalls[] = [
             'verb' => $verb,
@@ -97,6 +98,7 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
             'subject' => $subject,
             'fingerprint' => $fingerprint,
             'fingerprint_kind' => $fingerprintKind,
+            'probe_args' => $probeArgs,
         ];
 
         $id = $this->nextId ?? $this->mintId();
@@ -110,6 +112,7 @@ final class FakeApprovalStore implements ApprovalStore, ApprovalMinter
             'status' => 'pending',
             'fingerprint' => $fingerprint,
             'fingerprint_kind' => $fingerprint !== null ? $fingerprintKind : null,
+            'probe_args' => $fingerprint !== null && $fingerprintKind === 'probe' ? $probeArgs : null,
         ];
 
         return $id;

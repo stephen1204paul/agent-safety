@@ -191,7 +191,7 @@ final class VerdictPipeline
         }
 
         $approvalId = Outcome::ApprovalRequired === $decision->outcome
-            ? $this->recorder->requestApproval($verb, $args, $eventId, $probe->fingerprint, $probe->kind)
+            ? $this->recorder->requestApproval($verb, $args, $eventId, $probe->fingerprint, $probe->kind, $probe->probeArgs)
             : null;
         $this->recorder->auditDecision($eventId, $verb, $args, $pack, $decision, $approvalId);
 
@@ -245,7 +245,16 @@ final class VerdictPipeline
             return ProbeOutcome::failed();
         }
 
-        return $result === null ? ProbeOutcome::failed() : ProbeOutcome::ok(StateFingerprint::compute($result));
+        if ($result === null) {
+            return ProbeOutcome::failed();
+        }
+
+        $probeArgs = (string) json_encode(
+            ApprovalBinding::canonicalize($probe->targetArgs($verb, $args)),
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        );
+
+        return ProbeOutcome::ok(StateFingerprint::compute($result), $probeArgs);
     }
 
     /**
