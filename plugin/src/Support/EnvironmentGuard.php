@@ -15,24 +15,56 @@ use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
  * untouched, because they were never host-bound to begin with.
  *
  * Wired at two points (item 4): {@see ensureCurrent()} runs on every governed
- * call (one option read and a string compare, cheap) and on `admin_init`; the
- * void itself is guarded by {@see LOCK_OPTION}, an `add_option()` that only
- * the first request to see a NEW mismatch wins, so two concurrent requests
- * can never both run {@see voidRelaxations()} for the same move. The lock
- * persists until {@see rebind()} clears it, so the admin notice — and the
- * refusal to re-run the void — both hold until a human explicitly rebinds.
+ * call (cheap in the common case: one or two option reads and a string
+ * compare) and on `admin_init`.
+ *
+ * Security fix: the void used to be gated by a {@see LOCK_OPTION} that was
+ * taken BEFORE the void ran and never cleared except by {@see rebind()}. That
+ * stranded the site fail-OPEN two ways: a request that died mid-void left the
+ * lock set with the void never retried, and a host that moved away and back
+ * (A → B → A) kept the lock from the A→B move, so a LATER real move (A → C)
+ * found `add_option()` already occupied and silently skipped the void —
+ * Relaxations granted at A would survive a genuine move to C. Completion is
+ * now tracked explicitly by {@see VOIDED_FOR_OPTION} (which host the void has
+ * actually finished for) and the lock is short-lived: acquired only while a
+ * void is in flight, released the moment it completes, and treated as stale
+ * (and retaken) after {@see LOCK_TTL_SECONDS} if a crashed request left it
+ * behind. Two concurrent requests can still never both run
+ * {@see voidRelaxations()} for the same move — see {@see acquireLock()}.
  */
 final class EnvironmentGuard
 {
     public const OPTION = 'agsafe_site_binding';
 
     /**
-     * Set (never autoloaded) the moment a mismatch is first detected;
-     * cleared only by {@see rebind()}. Its VALUE is the mismatched host that
-     * triggered it, kept only for diagnostics — the lock's presence, not its
-     * value, is what matters.
+     * Held only while a void is actually running: `add_option()`'s
+     * atomicity lets only the first of any concurrent callers acquire it
+     * (see {@see acquireLock()}). Its value is the unix timestamp it was
+     * acquired at, used only to decide whether a lock left behind by a
+     * crashed request has gone stale. Deleted the moment the void
+     * completes — see {@see ensureCurrent()} — and also by {@see rebind()}.
      */
     public const LOCK_OPTION = 'agsafe_env_mismatch_lock';
+
+    /**
+     * A lock older than this is assumed abandoned by a request that died
+     * mid-void (never reached the `delete_option()` at the end) rather than
+     * one still genuinely in flight, and is retaken rather than honoured
+     * forever.
+     */
+    private const LOCK_TTL_SECONDS = 60;
+
+    /**
+     * The host the void has ACTUALLY COMPLETED for (never autoloaded) —
+     * distinct from {@see OPTION} (the bound host itself, which only ever
+     * changes on {@see rebind()}). While the current host still equals this
+     * value, {@see ensureCurrent()} returns immediately without touching the
+     * lock at all: the void for THIS mismatch is done. Cleared whenever the
+     * current host again matches the binding (a later move to the SAME
+     * mismatched host must void again, since Relaxations may have been
+     * granted in the meantime) and by {@see rebind()}.
+     */
+    public const VOIDED_FOR_OPTION = 'agsafe_site_binding_voided_for';
 
     public function __construct(
         private readonly ShadowMode $shadow,
@@ -81,9 +113,22 @@ final class EnvironmentGuard
     }
 
     /**
-     * The cheap check every governed call and `admin_init` make (item 4): one
-     * option read, one string compare. A genuinely new mismatch runs the void
-     * exactly once, race-free, via the {@see LOCK_OPTION} atomic add.
+     * The check every governed call and `admin_init` make (item 4).
+     *
+     * Match path (current === bound): cheap — one extra `get_option()` for
+     * {@see VOIDED_FOR_OPTION}, deleted if set so a LATER move to the same
+     * mismatched host voids again (Relaxations may have been granted at the
+     * bound host meanwhile).
+     *
+     * Mismatch path: a no-op the moment {@see VOIDED_FOR_OPTION} already
+     * equals the current host — the void for THIS exact mismatch is done.
+     * Otherwise {@see acquireLock()} decides whether THIS request runs the
+     * void; on success it does, records completion, and releases the lock —
+     * all three voids ({@see ShadowMode::voidAll()},
+     * {@see \Specflux\AgentSafety\Plugin\Approval\WpdbGrantStore::revokeAllActive()},
+     * {@see \Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore::voidUnclaimedApprovals()})
+     * are idempotent, so re-running one that partially completed on a
+     * crashed request is safe.
      */
     public function ensureCurrent(): void
     {
@@ -96,26 +141,32 @@ final class EnvironmentGuard
 
         $current = $this->currentHost();
         if ($current === $bound) {
+            if (get_option(self::VOIDED_FOR_OPTION, null) !== null) {
+                delete_option(self::VOIDED_FOR_OPTION);
+            }
+
             return;
         }
 
-        // add_option() only succeeds the FIRST time this option name is
-        // written; every later call on the same mismatch (this request's
-        // re-entries, and every subsequent request until rebind) loses the
-        // race harmlessly and returns without touching anything further.
-        if (!function_exists('add_option') || !add_option(self::LOCK_OPTION, $current, '', false)) {
+        if ($this->voidedFor() === $current) {
+            return;
+        }
+
+        if (!$this->acquireLock()) {
             return;
         }
 
         $this->voidRelaxations($bound, $current);
+        update_option(self::VOIDED_FOR_OPTION, $current, false);
+        delete_option(self::LOCK_OPTION);
     }
 
     /**
      * An administrator rebinding on the settings page (item 7): capability
      * and nonce are the CALLER's job (CapabilityPacksPage), never this
-     * class's. Binds to the current host and clears the mismatch lock so a
-     * FUTURE move can void again; restores NOTHING that the earlier void
-     * took away.
+     * class's. Binds to the current host and clears both the lock and the
+     * voided-for marker so a FUTURE move can void again; restores NOTHING
+     * that the earlier void took away.
      */
     public function rebind(): void
     {
@@ -124,8 +175,51 @@ final class EnvironmentGuard
 
         update_option(self::OPTION, $new, false);
         delete_option(self::LOCK_OPTION);
+        delete_option(self::VOIDED_FOR_OPTION);
 
         $this->changes->environmentRebound($old, $new);
+    }
+
+    /** The host {@see VOIDED_FOR_OPTION} currently records, or null if unset. */
+    private function voidedFor(): ?string
+    {
+        $stored = get_option(self::VOIDED_FOR_OPTION, null);
+
+        return is_string($stored) && $stored !== '' ? $stored : null;
+    }
+
+    /**
+     * Atomic, race-free, and self-healing against a crashed holder.
+     * `add_option()` only succeeds the FIRST time an option name is written,
+     * so of any concurrently-racing callers exactly one wins outright. A
+     * caller that loses checks the lock's age: younger than
+     * {@see LOCK_TTL_SECONDS} means another request is genuinely voiding
+     * right now (return false, do nothing); older means the request that
+     * took it died before reaching {@see ensureCurrent()}'s
+     * `delete_option()`, so it is deleted and retaken in one more attempt.
+     * That second attempt can itself lose to another late-arriving racer —
+     * this is a best-effort self-heal, not a re-entrant retry loop, so a
+     * loss there is just treated as "someone else has it".
+     */
+    private function acquireLock(): bool
+    {
+        if (!function_exists('add_option')) {
+            return false;
+        }
+
+        if (add_option(self::LOCK_OPTION, time(), '', false)) {
+            return true;
+        }
+
+        $held = get_option(self::LOCK_OPTION, null);
+        $age = is_numeric($held) ? time() - (int) $held : PHP_INT_MAX;
+        if ($age < self::LOCK_TTL_SECONDS) {
+            return false;
+        }
+
+        delete_option(self::LOCK_OPTION);
+
+        return add_option(self::LOCK_OPTION, time(), '', false);
     }
 
     /** The banner shown until rebound (item 5's "admin notice"), for wp-admin only. */

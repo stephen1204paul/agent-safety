@@ -224,4 +224,98 @@ final class EnvironmentGuardTest extends TestCase
 
         $this->assertSame([], $GLOBALS['wpas_test_options'][ShadowMode::OPTION], 'rebind must not restore a voided shadow set');
     }
+
+    // --- security fix: stranded lock / A-B-A-C / concurrency --------------
+
+    /**
+     * A lock left behind by a request that died mid-void (past its TTL) with
+     * {@see EnvironmentGuard::VOIDED_FOR_OPTION} never written must not
+     * strand the site fail-open: the next call retakes the lock and runs the
+     * void.
+     */
+    public function testAStaleLockWithNoRecordedCompletionIsRetakenAndTheVoidRuns(): void
+    {
+        $GLOBALS['wpas_test_options'][EnvironmentGuard::OPTION] = 'old-host.example';
+        $GLOBALS['wpas_test_home_url'] = 'https://new-host.example';
+        // A lock from a request that died before it could delete_option() it,
+        // well past the TTL.
+        $GLOBALS['wpas_test_options'][EnvironmentGuard::LOCK_OPTION] = self::NOW - 3600;
+        $GLOBALS['wpas_test_time'] = self::NOW;
+
+        $sink = new InMemoryAuditSink();
+        $guard = $this->guard($sink);
+
+        $guard->ensureCurrent();
+
+        $reasons = array_map(static fn ($r) => $r->reason, $sink->records);
+        $this->assertContains(AdminChangeRecorder::EVENT_ENVIRONMENT_MISMATCH, $reasons, 'a stale lock must not block the void');
+        $this->assertSame('new-host.example', $GLOBALS['wpas_test_options'][EnvironmentGuard::VOIDED_FOR_OPTION] ?? null);
+        $this->assertArrayNotHasKey(EnvironmentGuard::LOCK_OPTION, $GLOBALS['wpas_test_options'], 'the lock must be released once the void completes');
+    }
+
+    /**
+     * A → B (void), back to A (no-op: current === bound), then A → C: the
+     * earlier A→B void must never suppress a genuinely new move to C. This is
+     * the exact fail-open this fix closes: the old design kept the A→B lock
+     * set forever, so add_option() at C found it already occupied and skipped
+     * the void entirely.
+     */
+    public function testAMoveBackAndThenToADifferentHostVoidsAgainWithASecondMismatchEvent(): void
+    {
+        $GLOBALS['wpas_test_options'][EnvironmentGuard::OPTION] = 'host-a.example';
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['support-agent' => self::NOW + 3600];
+        $GLOBALS['wpas_test_time'] = self::NOW;
+
+        $db = new wpdb();
+        $db->resultsReturn = [];
+        $approvals = new WpdbApprovalStore($db);
+        $grants = new WpdbGrantStore($db);
+        $sink = new InMemoryAuditSink();
+        $guard = $this->guard($sink, $approvals, $grants);
+
+        // A -> B: void runs once.
+        $GLOBALS['wpas_test_home_url'] = 'https://host-b.example';
+        $guard->ensureCurrent();
+        $this->assertSame(
+            1,
+            count(array_filter(array_map(static fn ($r) => $r->reason, $sink->records), static fn ($r) => $r === AdminChangeRecorder::EVENT_ENVIRONMENT_MISMATCH)),
+        );
+
+        // Back to A: current === bound, a no-op that clears voided-for.
+        $GLOBALS['wpas_test_home_url'] = 'https://host-a.example';
+        $guard->ensureCurrent();
+        $this->assertArrayNotHasKey(EnvironmentGuard::VOIDED_FOR_OPTION, $GLOBALS['wpas_test_options']);
+
+        // A (still bound) -> C: a GENUINELY new move must void again, even
+        // though the A->B lock cycle already happened once this "session".
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = ['support-agent' => self::NOW + 3600];
+        $GLOBALS['wpas_test_home_url'] = 'https://host-c.example';
+        $guard->ensureCurrent();
+
+        $reasons = array_map(static fn ($r) => $r->reason, $sink->records);
+        $this->assertSame(
+            2,
+            count(array_filter($reasons, static fn ($r) => $r === AdminChangeRecorder::EVENT_ENVIRONMENT_MISMATCH)),
+            'the move to C must produce a SECOND mismatch event, not be silently skipped',
+        );
+        $this->assertSame('host-c.example', $GLOBALS['wpas_test_options'][EnvironmentGuard::VOIDED_FOR_OPTION] ?? null);
+    }
+
+    /** A fresh (young) lock held by another in-flight request means this caller does nothing at all. */
+    public function testAFreshLockHeldByAnotherRequestMeansThisCallerDoesNothing(): void
+    {
+        $GLOBALS['wpas_test_options'][EnvironmentGuard::OPTION] = 'old-host.example';
+        $GLOBALS['wpas_test_home_url'] = 'https://new-host.example';
+        $GLOBALS['wpas_test_time'] = self::NOW;
+        $GLOBALS['wpas_test_options'][EnvironmentGuard::LOCK_OPTION] = self::NOW - 1; // 1 second old, well under the TTL
+
+        $sink = new InMemoryAuditSink();
+        $guard = $this->guard($sink);
+
+        $guard->ensureCurrent();
+
+        $this->assertSame([], $sink->records, 'another request holds a fresh lock, so this call must audit nothing');
+        $this->assertSame(self::NOW - 1, $GLOBALS['wpas_test_options'][EnvironmentGuard::LOCK_OPTION], 'the fresh lock must be left exactly as found');
+        $this->assertArrayNotHasKey(EnvironmentGuard::VOIDED_FOR_OPTION, $GLOBALS['wpas_test_options']);
+    }
 }

@@ -45,6 +45,7 @@ final class UninstallManifest
         ShadowMode::OPTION,
         EnvironmentGuard::OPTION,
         EnvironmentGuard::LOCK_OPTION,
+        EnvironmentGuard::VOIDED_FOR_OPTION,
         ApprovalNotifier::EMAIL_OPTION,
         ApprovalNotifier::WEBHOOK_OPTION,
     ];
