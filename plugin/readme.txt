@@ -1,111 +1,226 @@
 === Agent Safety ===
-Contributors: specflux, stephen1204paul
-Requires at least: 6.9
-Tested up to: 7.0
+Contributors: stephen1204paul
+Tags: security, ai, mcp, audit-log, woocommerce
+Requires at least: 7.0
+Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.1.0
+Stable tag: 0.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-A governed safety and audit layer for AI agent tool calls: verb-tier gating, capability packs, human approval, and a compliance-grade audit trail.
+Governs other plugins' agent tool calls, with human approval and a tamper-evident audit log.
 
 == Description ==
 
-Agent Safety sits between AI agents (via the WordPress Abilities API, and the
-[mcp-adapter](https://github.com/WordPress/mcp-adapter)-based MCP integration WooCommerce and
-other plugins use to expose one) and the actions those agents can take on your site. It is a
-WordPress-general governance engine: on its own it classifies and audits `core/*` abilities, and
-each supported plugin adds its verb knowledge through a capability-pack **integration module**.
-WooCommerce ships as the flagship integration, not a requirement — the plugin activates and
-runs on any WordPress 6.9+ site, WooCommerce or not.
+Agent Safety governs other plugins' agent tool calls, not just its own. It sits between AI
+agents (through the WordPress Abilities API, and through MCP servers built on
+[mcp-adapter](https://github.com/WordPress/mcp-adapter), as WooCommerce's is) and the actions
+those agents can take on your site. Every governed call is classified by tier, checked against a
+capability pack bound to the calling identity, and written to a tamper-evident, hash-chained
+audit log, before it runs.
 
-**What it does:**
+The plugin is WordPress-general. It ships a `core/*` module that runs on every site, and a
+WooCommerce module that wires in automatically when WooCommerce is active. Neither one trusts a
+tool's own "read-only" or "safe" label; classification comes from the plugin's own policy map.
 
-* **Verb-tier gating.** Every governed ability is classified into a tier — read/reversible,
-  side-effecting, or irreversible — using the plugin's own policy map, not a plugin's
-  self-reported annotations. An ability that reports itself read-only but is classified as a
-  write is refused rather than trusted.
-* **Capability Packs.** A pack is a named, scoped view of the verb catalog (an allow-list, a
-  hard-denied tier class, an approval requirement per tier, a PII-redaction policy, and optional
-  rate limits) bound to an identity — a WordPress application password, a specific user or role,
-  or, when WooCommerce is active, a WooCommerce REST API key. An unbound credential falls back to
-  a safe default pack.
-* **Human approval for irreversible actions.** An agent call classified as irreversible (and not
-  hard-denied by its pack) is blocked and queued under **Tools → Pending Agent Actions**, where a
-  human can approve (minting a single-use, time-limited token the agent must present to proceed)
-  or reject it.
-* **Hash-chained audit log.** Every gate decision and executed action is written to an
-  append-only, hash-chained log, viewable and CSV-exportable under **Tools → Agent Audit Log**,
-  with a tamper-evidence check that re-verifies the chain on load.
-* **Rate limits.** A pack can cap calls per minute and per hour per identity; a denied call never
-  consumes quota.
-* **Spend limits.** A pack can also cap what a call's *arguments* say: a per-call value ceiling,
-  a per-day spend total, a bulk item-count cap, or a value threshold above which the call needs
-  human approval. A call that hides the governed value is denied, and denials never consume
-  budget.
-* **Approval notifications.** Each new pending action emails a link to the review screen, and an
-  optional webhook (identifiers only — no call arguments leave the site) can route to Slack or
-  anything else.
-* **Shadow mode.** Toggle any pack to "log only": every decision is still audited (marked
-  dry-run) but nothing is enforced — observe a week of would-be denials before turning
-  enforcement on.
-* **Starter packs.** Bind a credential to a preset instead of authoring policy: a read-only
-  analyst, a fulfillment bot that can never refund, a refund desk that is approval-gated and
-  spend-bounded.
-* **PII redaction.** Known PII fields (email, phone, name, address, etc.) are masked both in what
-  is written to the audit log and, for packs that request it, in the data returned to the agent.
-* **MCP (mcp-adapter) integration.** Where a site runs an MCP server built on the WordPress
-  `mcp-adapter` project (as WooCommerce's does), Agent Safety also audits denied and blocked tool
-  calls at the MCP layer, using the adapter's public observability API — no adapter changes
-  required.
+**Capability packs and tiers**
 
-WooCommerce support (verb classification for products/orders, order-fulfillment and bulk-delete
-elevation rules, and WooCommerce REST API key identity) lives entirely in a self-contained
-integration module and is wired up automatically only when WooCommerce is active.
+Every governed ability maps to a tier: reversible (read), side-effecting (write), or
+irreversible (delete, refund, cancel). A capability pack is a named, scoped view of the verb
+catalog for one identity — a WordPress application password, a user or role, or a WooCommerce
+REST API key — with an allow list, a hard-denied tier class, a per-tier approval requirement, and
+optional rate and spend limits. A credential with no explicit binding falls back to a safe
+default pack rather than inheriting full access.
 
-= Data policy =
+**Human approval**
 
-By default, uninstalling the plugin keeps the audit log and approval data intact — it is a
-compliance record, and removing it silently on uninstall would defeat its purpose. A site
-operator who wants the tables and settings dropped can opt in explicitly (see the FAQ).
+A call classified as irreversible (and not already hard-denied by its pack) doesn't execute. It
+is queued under **Tools → Pending Agent Actions** for a human to approve or reject. When an
+Approval is requested, Agent Safety captures a fingerprint of the target's current state; when
+the approval is claimed, it re-checks that fingerprint. A mismatch means the target changed
+between request and claim, so the old approval is marked stale and a fresh request is filed. This
+narrows the gap between a human's approval and the write — it does not close it, because the
+short window between claiming an approval and executing the call still exists.
 
-WordPress multisite is not supported; activation is refused on a multisite install, network-wide
+**Self-service approval status**
+
+An agent can call `agent-safety/check-approval` with an `approval_id` to poll its own request
+without a human in the loop. It reports a reduced, public status (pending, approved, rejected,
+expired, used, or superseded) and a plain-English `next_action`, and never returns the approver's
+identity, the original arguments, or any token.
+
+**Hash-chained audit log**
+
+Every gate decision and executed action is appended to an append-only, hash-chained log under
+**Tools → Agent Audit Log**, with a tamper-evidence check that re-verifies the chain on load.
+
+**Core coverage**
+
+Governs the three abilities WordPress core registers today. Any other `core/*` ability is denied
+until Agent Safety maps it, so future core write abilities fail closed rather than run
+ungoverned.
+
+**WooCommerce coverage**
+
+When WooCommerce is active, Agent Safety governs exactly these 16 abilities:
+
+* `woocommerce/products-list`
+* `woocommerce/products-get`
+* `woocommerce/products-create`
+* `woocommerce/products-update`
+* `woocommerce/products-delete`
+* `woocommerce/products-query`
+* `woocommerce/product-create`
+* `woocommerce/product-update`
+* `woocommerce/product-delete`
+* `woocommerce/orders-list`
+* `woocommerce/orders-get`
+* `woocommerce/orders-create`
+* `woocommerce/orders-update`
+* `woocommerce/orders-query`
+* `woocommerce/order-add-note`
+* `woocommerce/order-update-status`
+
+Everything else under `woocommerce/` is refused as an unknown verb. Deleting a product with
+`force: true` is irreversible and requires approval; a plain delete (trash) is side-effecting.
+
+**Which MCP endpoint to use**
+
+WooCommerce's own MCP endpoint (`/wp-json/woocommerce/mcp`) is deprecated by WooCommerce itself,
+which points clients at the shared `mcp-adapter` server instead. Agent Safety governs both the
+same way, through the ability permission check, but the two endpoints don't expose the same
+information to an agent:
+
+* On the shared `mcp-adapter` server, an agent that hits `approval_required` gets the full error
+  data, including `approval_id`, and can call `agent-safety/check-approval` to poll it.
+* On WooCommerce's own endpoint, the bundled `mcp-adapter` 0.3.0 only forwards the error message
+  text to the client, not the structured error data. An agent sees the words "requires human
+  approval" but not the `approval_id`, and `agent-safety/check-approval` isn't reachable on that
+  transport at all — the approval still exists and is visible on the Pending Actions page, but
+  the agent can't self-serve it.
+
+We recommend running agents against the shared mcp-adapter server. WooCommerce's own endpoint is
+supported for as long as WooCommerce ships it, with the limitation above.
+
+**Environment awareness**
+
+Agent Safety notices when a site's address changes (a migration, a staging clone) and treats it
+as a new environment: shadow-mode windows, active grants, and approved-but-unclaimed approvals
+are all voided rather than carried over silently, and an admin notice stays up until someone
+rebinds the site from the settings page. Production sites (`wp_get_environment_type() ===
+'production'`, WordPress's own default) never default to shadow mode and cap any shadow window at
+24 hours.
+
+**Multisite**
+
+WordPress multisite is not supported. Activation is refused on a multisite install, network-wide
 or per site.
+
+== Installation ==
+
+1. Upload the plugin to `/wp-content/plugins/agent-safety`, or install it through the Plugins
+   screen.
+2. Activate **Agent Safety**.
+3. Visit **Tools → Agent Capability Packs** to bind identities (application passwords, users or
+   roles, WooCommerce REST API keys) to a pack. Unbound credentials get a safe default pack.
+4. Review pending actions under **Tools → Pending Agent Actions** and the log under **Tools →
+   Agent Audit Log**.
+
+WooCommerce support activates automatically when WooCommerce is active; there is nothing else to
+configure for it to be safe by default.
 
 == Frequently Asked Questions ==
 
 = Does this require WooCommerce? =
 
 No. The plugin is WordPress-general and governs the core Abilities API on any site. WooCommerce
-is supported as a capability-pack integration module that is only loaded when WooCommerce is
-active; without it, the plugin still installs, gates `core/*` abilities you choose to govern via
-the `agent_safety_governed_namespaces` filter, and provides the audit log and approval queue.
+support is a self-contained module that loads only when WooCommerce is active.
+
+= Does it work on multisite? =
+
+No. Activation is refused on a multisite install, both network-wide and per site.
+
+= What about WooCommerce's own MCP endpoint? =
+
+It's governed the same way as the shared mcp-adapter server, but WooCommerce's bundled
+mcp-adapter version doesn't forward the structured `approval_required` error data to the client,
+so an agent on that endpoint can see the approval message but not the `approval_id`, and can't
+reach `agent-safety/check-approval`. See the Description for details. We recommend the shared
+mcp-adapter server; WooCommerce's own endpoint is supported while WooCommerce continues to ship
+it.
 
 = What happens to my data on uninstall? =
 
-Nothing, by default. Deleting the plugin from the Plugins screen leaves the audit log and
-approvals tables and plugin options in place. To have uninstall remove them, define
-`AGSAFE_REMOVE_DATA` as `true` (for example in `wp-config.php`) before deleting the plugin.
-
-= Does it work with the WordPress MCP adapter? =
-
-Yes. Where a site's MCP server is built on the `mcp-adapter` project (as WooCommerce's MCP
-integration is), Agent Safety registers as that adapter's observability handler and records an
-audit entry for every tool call outcome, including calls denied or blocked before execution — in
-addition to gating and auditing ability calls directly through the WordPress Abilities API.
+Nothing, by default. Deleting the plugin from the Plugins screen leaves the audit log, approval
+tables, and plugin options in place, because the audit log is a tamper-evident security record.
+To have uninstall remove everything (all three tables, every option, every scheduled cron event),
+define `AGSAFE_REMOVE_DATA` as `true` (for example in `wp-config.php`) before deleting the
+plugin.
 
 = How are AI agents identified? =
 
 By whichever credential authenticated the request: a WordPress application password, a logged-in
 user or their role, or — when WooCommerce is active — the WooCommerce REST API key used to
 authenticate the request. Each is bound to a capability pack independently under **Tools → Agent
-Capability Packs**; an unbound credential gets a safe default pack rather than full access.
+Capability Packs**.
+
+== External services ==
+
+This plugin can send data to two kinds of external service, both off by default.
+
+**Email.** When a new agent action needs approval, Agent Safety sends an email through
+`wp_mail()` to the site's administrators (or a configured recipient), linking to the login-
+protected review screen. This uses your site's own mail delivery and doesn't send data to
+Agent Safety or Specflux.
+
+**Webhook (opt-in).** An administrator can set a webhook URL under the plugin's settings. When
+set, every new pending approval sends an HTTP POST to that URL with a JSON body containing the
+event name, the approval id, the verb (ability) that was called, and a link to the review screen.
+No call arguments are sent. The webhook is disabled until an administrator enters a URL, and the
+destination is entirely the site operator's choice — nothing is sent to Agent Safety or Specflux.
+
+== Privacy ==
+
+Agent Safety keeps a hash-chained audit log of gate decisions and executed agent actions,
+including the identity that made the call. A personal-data export for a WordPress user includes
+their matching audit rows. An erasure request does not delete them: they are reported as
+retained, with a note that they're kept as a tamper-evident security record, because rewriting a
+row would break the hash chain that proves the log hasn't been tampered with. Matching is done by
+resolving the requester's email to a WordPress user and matching rows on that user only; recorded
+tool inputs are never searched for personal data, but they may contain it, since they can include
+data handled by other plugins (customer records, order details) that the calling agent's tool
+touched.
+
+== Upgrade Notice ==
+
+= 0.4.0 =
+Schema change: the grants table is renamed and the approvals table gains new columns. Back up
+your database before upgrading. There is no downgrade path back to a pre-0.4.0 build once this
+runs.
 
 == Changelog ==
 
-= 0.1.0 =
-* Initial release: verb-tier gating over the WordPress Abilities API, capability packs with
-  per-identity binding and rate limits, human approval queue for irreversible actions,
-  hash-chained audit log with wp-admin viewer and CSV export, read-path PII redaction, MCP
-  (mcp-adapter) observability-based audit consumer, and a WooCommerce capability-pack
-  integration module.
+= 0.4.0 =
+* `core/*` module narrowed to the three abilities WordPress core actually registers
+  (`get-site-info`, `get-user-info`, `get-environment-info`); any other `core/*` ability is now
+  refused as an unknown verb instead of matching a speculative merge-proposal verb.
+* WooCommerce module narrowed to the 16 abilities WooCommerce 11 ships; forward-compatibility
+  entries for abilities WooCommerce hasn't shipped yet are removed, and anything else under
+  `woocommerce/` is refused.
+* `woocommerce/product-delete` with `force: true` is now irreversible and requires approval,
+  matching the existing behaviour of `products-delete`.
+* Added a state fingerprint on Approvals: the target's revision marker is captured at request
+  time and re-checked at claim time. A mismatch marks the old approval stale and files a fresh
+  one. This narrows the window between a human's approval and the write; it does not close it.
+* Added environment awareness: a site-address change voids shadow windows, grants, and
+  unclaimed approvals rather than carrying them over silently, with an admin notice until the
+  site is rebound.
+* Added a self-service approval check: `agent-safety/check-approval` lets an agent poll the
+  status of its own pending request.
+* Directory-compliance pass: i18n on every user-facing string, an opt-in uninstall that now
+  covers every option and cron event, disclosed audit-row retention through erasure requests
+  documented in the exporter and privacy policy, and the grants table renamed to
+  `agsafe_grants`.
+* Bumped minimum requirements to WordPress 7.0 and PHP 8.1.
+* No downgrade path: the grants table was renamed as part of this release's schema change, so a
+  0.3.x build cannot read a 0.4.0 database.
