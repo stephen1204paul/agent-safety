@@ -45,11 +45,13 @@ final class Schema
     public const VERSION_OPTION = 'agsafe_schema_version';
 
     /**
-     * Legacy grants table name, pre-v4. Named ONLY here and in
-     * {@see renameLegacyGrantsTable()} — every other reference in the plugin
-     * goes through {@see grantsTable()}.
+     * Legacy grants table name, pre-v4. Named here, in
+     * {@see renameLegacyGrantsTable()}, and by the opted-in uninstall path
+     * ({@see \Specflux\AgentSafety\Plugin\Support\UninstallManifest}), which
+     * must also drop it when a crashed v4 upgrade left it behind — every
+     * other reference in the plugin goes through {@see grantsTable()}.
      */
-    private const LEGACY_GRANTS_TABLE = 'agent_safety_grants';
+    public const LEGACY_GRANTS_TABLE = 'agent_safety_grants';
 
     /**
      * Set (never autoloaded) when {@see renameLegacyGrantsTable()} finds BOTH
@@ -60,14 +62,24 @@ final class Schema
      */
     public const GRANTS_RENAME_CONFLICT_OPTION = 'agsafe_grants_rename_conflict';
 
+    /**
+     * Table base names (without the `$wpdb` prefix), named here so the
+     * opted-in uninstall path ({@see \Specflux\AgentSafety\Plugin\Support\UninstallManifest})
+     * can drop the same three tables this class installs without guessing
+     * at their names a second time.
+     */
+    public const AUDIT_LOG_TABLE = 'agsafe_audit_log';
+    public const APPROVALS_TABLE = 'agsafe_approvals';
+    public const GRANTS_TABLE = 'agsafe_grants';
+
     public static function auditLogTable(wpdb $db): string
     {
-        return $db->prefix . 'agsafe_audit_log';
+        return $db->prefix . self::AUDIT_LOG_TABLE;
     }
 
     public static function approvalsTable(wpdb $db): string
     {
-        return $db->prefix . 'agsafe_approvals';
+        return $db->prefix . self::APPROVALS_TABLE;
     }
 
     /**
@@ -78,7 +90,7 @@ final class Schema
      */
     public static function grantsTable(wpdb $db): string
     {
-        return $db->prefix . 'agsafe_grants';
+        return $db->prefix . self::GRANTS_TABLE;
     }
 
     /** Column/key body (no surrounding `CREATE TABLE ... ( )`) for the audit log table. */

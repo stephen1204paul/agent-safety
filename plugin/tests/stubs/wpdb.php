@@ -27,6 +27,9 @@ if (!class_exists('wpdb', false)) {
     {
         public string $prefix = 'wp_';
 
+        /** Mirrors real wpdb's options-table property, used by uninstall.php's transient sweep. */
+        public string $options;
+
         /** @var list<string> Every SQL string passed to any of the methods below, in call order. */
         public array $queries = [];
 
@@ -55,6 +58,11 @@ if (!class_exists('wpdb', false)) {
         /** @var array{table: string, data: array<string, mixed>}|null Captured payload from the last insert(). */
         public ?array $lastInsert = null;
 
+        public function __construct()
+        {
+            $this->options = $this->prefix . 'options';
+        }
+
         public function get_charset_collate(): string
         {
             return 'DEFAULT CHARACTER SET utf8mb4';
@@ -62,8 +70,9 @@ if (!class_exists('wpdb', false)) {
 
         /**
          * Approximates real wpdb::prepare()'s placeholder substitution (%s
-         * quoted, %d left bare) closely enough to produce readable, assertable
-         * SQL — it is not SQL-injection-safe and must never be used outside tests.
+         * quoted, %d left bare, %i backtick-quoted as WP 6.2+'s identifier
+         * placeholder) closely enough to produce readable, assertable SQL —
+         * it is not SQL-injection-safe and must never be used outside tests.
          *
          * @param mixed ...$args
          */
@@ -74,8 +83,15 @@ if (!class_exists('wpdb', false)) {
             }
 
             $quoted = (string) preg_replace('/(?<!%)%s/', "'%s'", $query);
+            $quoted = (string) preg_replace('/(?<!%)%i/', '`%s`', $quoted);
 
             return vsprintf($quoted, $args);
+        }
+
+        /** Approximates real wpdb::esc_like() (escapes `_`, `%`, `\`) closely enough for LIKE assertions in tests. */
+        public function esc_like(string $text): string
+        {
+            return addcslashes($text, '_%\\');
         }
 
         public function query(string $query): int|bool

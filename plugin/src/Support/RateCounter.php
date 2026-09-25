@@ -28,6 +28,11 @@ namespace Specflux\AgentSafety\Plugin\Support;
  */
 final class RateCounter
 {
+    // Public: named by {@see UninstallManifest} as the transient-key prefix
+    // an opted-in uninstall must sweep (this key is per pack/identity/window,
+    // so no fixed list of full names exists).
+    public const PREFIX = 'agsafe_rl_';
+
     private const MINUTE_WINDOW = 60;
     private const HOUR_WINDOW = 3600;
 
@@ -73,12 +78,12 @@ final class RateCounter
 
     private function minuteKey(string $pack, string $token): string
     {
-        return 'agsafe_rl_' . $this->bucketId($pack, $token, 'm', self::MINUTE_WINDOW);
+        return self::PREFIX . $this->bucketId($pack, $token, 'm', self::MINUTE_WINDOW);
     }
 
     private function hourKey(string $pack, string $token): string
     {
-        return 'agsafe_rl_' . $this->bucketId($pack, $token, 'h', self::HOUR_WINDOW);
+        return self::PREFIX . $this->bucketId($pack, $token, 'h', self::HOUR_WINDOW);
     }
 
     /**

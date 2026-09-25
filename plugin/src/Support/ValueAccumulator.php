@@ -24,6 +24,11 @@ namespace Specflux\AgentSafety\Plugin\Support;
  */
 final class ValueAccumulator
 {
+    // Public: named by {@see UninstallManifest} as the transient-key prefix
+    // an opted-in uninstall must sweep (this key is per pack/identity/cap/day,
+    // so no fixed list of full names exists).
+    public const PREFIX = 'agsafe_vc_';
+
     private const DAY_WINDOW = 86400;
 
     // TTL headroom beyond the window itself: the bucket must outlive the day
@@ -76,7 +81,7 @@ final class ValueAccumulator
      */
     private function key(string $pack, string $token, string $capId): string
     {
-        return 'agsafe_vc_' . substr(md5($pack . '|' . $token . '|' . $capId), 0, 20)
+        return self::PREFIX . substr(md5($pack . '|' . $token . '|' . $capId), 0, 20)
             . '_d_' . intdiv(time(), self::DAY_WINDOW);
     }
 }

@@ -59,6 +59,11 @@ final class Tripwires
     /** Bucket used for a call with no resolvable identity token. */
     private const ANONYMOUS_TOKEN = '(anonymous)';
 
+    // Public: named by {@see UninstallManifest} as the transient-key prefix
+    // an opted-in uninstall must sweep (this key is per identity, so no
+    // fixed list of full names exists).
+    public const LOCKOUT_PREFIX = 'agsafe_lock_';
+
     /** @var array<string, true> identity|verb|args already counted as a denial in THIS request. */
     private array $countedDenials = [];
 
@@ -184,6 +189,6 @@ final class Tripwires
 
     private function lockoutKey(string $identity): string
     {
-        return 'agsafe_lock_' . substr(md5($identity), 0, 20);
+        return self::LOCKOUT_PREFIX . substr(md5($identity), 0, 20);
     }
 }

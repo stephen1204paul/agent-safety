@@ -19,7 +19,10 @@ namespace Specflux\AgentSafety\Plugin\Support;
  */
 final class WindowCounter
 {
-    private const PREFIX = 'agsafe_win_';
+    // Public: named by {@see UninstallManifest} as the transient-key prefix
+    // an opted-in uninstall must sweep (this key is per-subject, so no fixed
+    // list of full names exists).
+    public const PREFIX = 'agsafe_win_';
 
     /** Events already recorded for $subject in the current window. */
     public function count(string $subject, int $windowSeconds): int

@@ -30,8 +30,11 @@ final class PendingActionsPage
     private const APPROVE = 'agsafe_approve_action';
     private const REJECT = 'agsafe_reject_action';
     private const NOTIFY = 'agsafe_save_notifications';
-    private const FLASH = 'agsafe_minted_token_';
-    private const STALE_FLASH = 'agsafe_stale_notice_';
+    // Public: named by {@see \Specflux\AgentSafety\Plugin\Support\UninstallManifest}
+    // as the transient-key prefixes an opted-in uninstall must sweep — these
+    // transients are keyed per-approver, so no fixed list of full names exists.
+    public const FLASH = 'agsafe_minted_token_';
+    public const STALE_FLASH = 'agsafe_stale_notice_';
 
     public function __construct(
         private readonly WpdbApprovalStore $store,
