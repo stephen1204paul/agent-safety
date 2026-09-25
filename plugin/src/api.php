@@ -19,6 +19,10 @@ declare(strict_types=1);
 
 use Specflux\AgentSafety\Plugin\Container;
 
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 if (!function_exists('agent_safety')) {
     /**
      * The Agent Safety service container, or null before `plugins_loaded` —

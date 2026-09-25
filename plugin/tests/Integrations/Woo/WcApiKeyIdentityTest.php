@@ -50,4 +50,14 @@ final class WcApiKeyIdentityTest extends TestCase
         $this->db->rowReturn = null;
         $this->assertSame([], (new WcApiKeyIdentity($this->db))->currentTokens());
     }
+
+    /** The sanitiser must not corrupt the `ck_...:cs_...` credential shape it runs on. */
+    public function testSlashedHeaderIsUnslashedAndSanitisedWithoutCorruptingTheCredential(): void
+    {
+        // wp_unslash() undoes wp_magic_quotes(); simulate a magic-quoted superglobal value.
+        $_SERVER['HTTP_X_MCP_API_KEY'] = addslashes('ck_public:cs_secret');
+
+        $this->assertSame(['wc:7'], (new WcApiKeyIdentity($this->db))->currentTokens());
+        $this->assertStringContainsString("consumer_key = 'hashed:ck_public'", $this->db->queries[0]);
+    }
 }

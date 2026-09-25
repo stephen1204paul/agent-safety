@@ -21,6 +21,12 @@ if (!is_readable($wpasPluginAutoload)) {
 }
 require_once $wpasPluginAutoload;
 
+// Real WordPress defines this before loading any plugin file; api.php (like
+// agent-safety.php) exits immediately without it.
+if (!defined('ABSPATH')) {
+    define('ABSPATH', __DIR__ . '/');
+}
+
 // The global agent_safety() service locator — function_exists-guarded, and
 // require-once idempotent with the real plugin main file's own load of it.
 require_once __DIR__ . '/../src/api.php';

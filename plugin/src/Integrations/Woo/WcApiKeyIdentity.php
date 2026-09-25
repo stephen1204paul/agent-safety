@@ -28,8 +28,10 @@ final class WcApiKeyIdentity implements IdentityProvider
      */
     public function currentTokens(): array
     {
-        $header = $_SERVER['HTTP_X_MCP_API_KEY'] ?? '';
-        if (!is_string($header) || !str_contains($header, ':') || !function_exists('wc_api_hash')) {
+        $header = isset($_SERVER['HTTP_X_MCP_API_KEY']) && is_string($_SERVER['HTTP_X_MCP_API_KEY'])
+            ? sanitize_text_field(wp_unslash($_SERVER['HTTP_X_MCP_API_KEY']))
+            : '';
+        if (!str_contains($header, ':') || !function_exists('wc_api_hash')) {
             return [];
         }
 
