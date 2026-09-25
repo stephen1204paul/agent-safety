@@ -170,6 +170,27 @@ final class McpRequestAuditHandlerTest extends TestCase
         $this->assertSame('error: Custom permission denial message', $record['result']);
     }
 
+    /**
+     * §3.6.9 STAGE 10 DECISION, pinned: this handler classifies denials for
+     * EVERY tool mcp-adapter routes, not only abilities
+     * {@see \Specflux\AgentSafety\Plugin\Hooks\AbilityPermissionGate::wrap()}
+     * wrapped (it only wraps governed namespaces). An ability named outside
+     * any AS namespace -- so `wrap()` never touched it and no per-request AS
+     * record could possibly exist for it -- still gets its permission denial
+     * correctly classified here, purely from the translated-string match.
+     * This is exactly why the string match was KEPT rather than replaced by
+     * reading a wrap-side record: switching would leave tools like this one
+     * unclassifiable.
+     */
+    public function testUngovernedAbilitysPermissionDenialIsStillClassifiedByStringMatch(): void
+    {
+        $tags = self::commonTags('unrelated-plugin/list-widgets', 'unrelated-plugin/list-widgets', 108, 'error', 'Permission denied');
+        $this->handler->record_event('mcp.request', $tags, 1.0);
+
+        $this->assertCount(1, $this->sink->records);
+        $this->assertSame('denied', $this->sink->records[0]->toArray()['decision']);
+    }
+
     public function testBlockedByPreToolCallFilterProducesFailedExecutionRecordWithRawArgs(): void
     {
         $rawArgs = ['api_key' => 'sekret', 'note' => 'blocked call'];

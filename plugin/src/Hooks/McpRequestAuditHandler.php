@@ -296,9 +296,22 @@ final class McpRequestAuditHandler implements McpObservabilityHandlerInterface
      * through to the generic failed-execution branch instead of being audited
      * as a denial. This is the single biggest "wall" hit building this handler;
      * see UPSTREAM_ISSUE_audit_hook.md.
+     *
+     * STAGE 10 DECISION (§3.6.9): kept, not replaced by classifying from
+     * {@see AbilityPermissionGate}'s own wrap record. That would work ONLY if
+     * every tool this method ever classifies as denied passed through the
+     * wrap — it does not: `record_event()` above runs for EVERY `tools/call`
+     * of `component_type === 'tool'` mcp-adapter routes, on ANY ability from
+     * ANY plugin, while `AbilityPermissionGate::wrap()` only wraps abilities
+     * under a governed namespace (`isGoverned()`). A tool outside those
+     * namespaces is never wrapped, so it could never leave a wrap record —
+     * switching to "classify from AS's own record" would silently
+     * misclassify every ungoverned tool's permission denial as a plain failed
+     * execution. See {@see McpRequestAuditHandlerTest::testUngovernedAbilitysPermissionDenialIsStillClassifiedByStringMatch()}.
      */
     private static function isPermissionDenied(?string $failureReason): bool
     {
+        // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- deliberately mirrors upstream mcp-adapter's own translation call to compare against its translated output; see the docblock above.
         return $failureReason !== null && $failureReason === __('Permission denied', 'mcp-adapter');
     }
 
