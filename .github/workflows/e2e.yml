@@ -27,10 +27,11 @@ jobs:
       matrix:
         include:
           # Blocking: the exact current WordPress release, per spec §3.7.7.
-          - core: '7.1.2'
+          # wp-env takes a zip URL or owner/repo#ref; a bare version is rejected.
+          - core: 'https://wordpress.org/wordpress-7.1.2.zip'
             woo: true
             trunk: false
-          - core: '7.1.2'
+          - core: 'https://wordpress.org/wordpress-7.1.2.zip'
             woo: false
             trunk: false
           # Non-blocking: trunk is a moving target.

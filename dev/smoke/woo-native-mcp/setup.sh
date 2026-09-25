@@ -25,7 +25,10 @@ if [ -z "$CLI_NAME" ]; then
     echo "Could not find the wp-env cli container." >&2
     exit 1
 fi
-CLI=(docker exec --user www-data "$CLI_NAME" wp)
+# The container's default user, not www-data: on a Linux host the bind-mounted
+# WordPress files belong to the host user, and www-data can't write the
+# .htaccess the permalink flush below needs (every /wp-json/ route 404s).
+CLI=(docker exec "$CLI_NAME" wp)
 
 echo "== activating plugins =="
 "${CLI[@]}" plugin activate woocommerce agent-safety

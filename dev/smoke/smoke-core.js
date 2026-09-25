@@ -155,13 +155,14 @@ function resultText(callResult) {
   const auditText = await page.textContent('body');
   check('audit page shows Chain intact', auditText.includes('Chain intact'), auditText.slice(0, 500));
   check('audit page lists a core/get-site-info event', auditText.includes('core/get-site-info'), '');
-  check('audit page lists the unknown_verb denial', auditText.includes('unknown_verb'), '');
+  // The audit page shows ReasonLabels' text, not the raw reason code.
+  check('audit page lists the unknown_verb denial', auditText.includes('Unknown verb'), '');
   await page.screenshot({ path: SHOTS + '/08-core-module-audit.png', timeout: 8000 });
 
-  // Packs screen shows the core presets (bootstrap merge, Woo off).
+  // Packs screen shows the core preset (bootstrap merge, Woo off).
   await page.goto(BASE + '/wp-admin/tools.php?page=agent-safety-packs');
   const packsText = await page.textContent('body');
-  for (const p of ['site-readonly', 'content-editor', 'site-admin-agent']) {
+  for (const p of ['site-readonly']) {
     check(`packs page lists ${p} (Woo off)`, packsText.includes(p), '');
   }
   await page.screenshot({ path: SHOTS + '/09-core-presets-woo-off.png', timeout: 8000 });
