@@ -49,6 +49,7 @@ final class ElevationRules
         }
 
         /** @var mixed $filtered */
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- self::FILTER is the literal, prefixed 'agent_safety_elevation_rules' constant; PHPCS can't resolve a class constant statically.
         $filtered = apply_filters(self::FILTER, $moduleRules);
         if (!is_array($filtered)) {
             return $moduleRules;

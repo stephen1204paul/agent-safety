@@ -21,6 +21,7 @@ final class SiteBinding
      */
     public static function normalize(string $homeUrl): string
     {
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- deliberately WP-free (see the class docblock); wp_parse_url() would pull a WordPress dependency into the one caller's-supplied-string pure function this class exists to be.
         $parts = parse_url(trim($homeUrl));
         if (!is_array($parts)) {
             // Unparseable input normalises to itself, lowercased: still

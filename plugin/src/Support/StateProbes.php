@@ -44,6 +44,7 @@ final class StateProbes
         }
 
         /** @var mixed $filtered */
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- self::FILTER is the literal, prefixed 'agent_safety_state_probes' constant; PHPCS can't resolve a class constant statically.
         $filtered = apply_filters(self::FILTER, $moduleProbes);
         if (!is_array($filtered)) {
             return $moduleProbes;

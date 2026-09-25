@@ -56,7 +56,7 @@ $agsafeTableBasenames = $agsafeManifestLoaded
     : ['agsafe_audit_log', 'agsafe_approvals', 'agsafe_grants', 'agent_safety_grants'];
 
 foreach ($agsafeTableBasenames as $agsafeTableBasename) {
-    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange -- opt-in uninstall dropping a table this plugin owns exclusively; %i is the WP 6.2+ identifier placeholder, the name is a hard-coded constant, never request input.
+    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.DirectDatabaseQuery.NoCaching -- opt-in uninstall dropping a table this plugin owns exclusively; %i is the WP 6.2+ identifier placeholder, the name is a hard-coded constant, never request input; nothing to cache for a table being dropped.
     $wpdb->query($wpdb->prepare('DROP TABLE IF EXISTS %i', $wpdb->prefix . $agsafeTableBasename));
 }
 

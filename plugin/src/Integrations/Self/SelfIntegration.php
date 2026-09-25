@@ -75,9 +75,7 @@ final class SelfIntegration
             wp_register_ability(VerdictPipeline::CHECK_APPROVAL_VERB, [
                 'label' => __('Check Approval', 'agent-safety'),
                 'description' => __(
-                    'Check the status of an approval_required request by its approval_id. '
-                    . 'Returns the current status, what to do next, and (once resolved) whether '
-                    . 'a human or a standing grant resolved it.',
+                    'Check the status of an approval_required request by its approval_id. Returns the current status, what to do next, and (once resolved) whether a human or a standing grant resolved it.',
                     'agent-safety'
                 ),
                 'category' => self::CATEGORY,
@@ -98,10 +96,7 @@ final class SelfIntegration
                     'annotations' => [
                         'readonly' => true,
                         'instructions' => __(
-                            'Poll no faster than every 30 seconds; back off to every 5 minutes; '
-                            . 'stop polling at pending_expires_at. Only status "approved" means '
-                            . 'retry the original call, with exactly the original arguments. Do not '
-                            . 'tell the user the action was approved before that.',
+                            'Poll no faster than every 30 seconds; back off to every 5 minutes; stop polling at pending_expires_at. Only status "approved" means retry the original call, with exactly the original arguments. Do not tell the user the action was approved before that.',
                             'agent-safety'
                         ),
                     ],

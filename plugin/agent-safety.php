@@ -21,6 +21,14 @@ declare(strict_types=1);
 
 namespace Specflux\AgentSafety\Plugin;
 
+// Kept immediately after the namespace declaration (not after the `use` block
+// below): Plugin Check's direct-file-access scanner falls back to a
+// first-50-line regex when its AST pass doesn't recognise the pattern, and
+// this file's `use` list alone is longer than that.
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 use Specflux\AgentSafety\Gate\Gate;
 use Specflux\AgentSafety\Policy\Tier;
 use Specflux\AgentSafety\Policy\TierClassifier;
@@ -68,10 +76,6 @@ use Specflux\AgentSafety\Plugin\Support\ShadowMode;
 use Specflux\AgentSafety\Plugin\Support\StateProbes;
 use Specflux\AgentSafety\Plugin\Support\Tripwires;
 use Specflux\AgentSafety\Plugin\Support\WindowCounter;
-
-if (!defined('ABSPATH')) {
-    exit;
-}
 
 // Bundled autoloader: `composer install` in this dir copies the core package
 // into vendor/ and wires PSR-4 for both the core and the plugin's own classes.

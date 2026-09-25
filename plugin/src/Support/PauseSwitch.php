@@ -41,6 +41,7 @@ final class PauseSwitch
 
     public function isPaused(): bool
     {
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- self::FILTER is the literal, prefixed 'agent_safety_paused' constant; PHPCS can't resolve a class constant statically.
         return $this->state() !== null || apply_filters(self::FILTER, false) === true;
     }
 

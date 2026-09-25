@@ -757,6 +757,14 @@ if (!function_exists('wp_json_encode')) {
     }
 }
 
+if (!function_exists('absint')) {
+    /** @param mixed $value */
+    function absint($value): int
+    {
+        return abs((int) $value);
+    }
+}
+
 if (!function_exists('sanitize_text_field')) {
     /** Enough of core's behaviour for form-value tests: tags and surrounding whitespace go. */
     function sanitize_text_field(string $str): string

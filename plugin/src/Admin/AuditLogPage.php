@@ -105,7 +105,7 @@ final class AuditLogPage
             echo '<td><code>' . esc_html((string) $r['correlation_id']) . '</code></td>';
             echo '<td><code>' . esc_html((string) $r['ability']) . '</code></td>';
             echo '<td>' . esc_html($r['tier'] === null ? '—' : (string) $r['tier']) . '</td>';
-            echo '<td>' . self::badge((string) $r['decision']) . '</td>';
+            echo '<td>' . self::badge((string) $r['decision']) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- badge() escapes internally (esc_attr()/esc_html()); see its docblock.
             echo '<td><code>' . esc_html($reason === '' ? '—' : ReasonLabels::label($reason)) . '</code></td>';
             echo '<td>' . esc_html((string) ($r['result'] ?? '—')) . '</td>';
             echo '<td>' . esc_html($token ?: '—') . '</td>';

@@ -142,6 +142,7 @@ final class Tripwires
      */
     public function limits(): array
     {
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- self::FILTER is the literal, prefixed 'agent_safety_tripwire_limits' constant; PHPCS can't resolve a class constant statically.
         $filtered = apply_filters(self::FILTER, self::DEFAULTS);
 
         return [
@@ -165,6 +166,7 @@ final class Tripwires
 
         $this->changes->tripwireLocked($identity, $denials, $lockoutSeconds);
 
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- self::ACTION is the literal, prefixed 'agent_safety_tripwire_tripped' constant; PHPCS can't resolve a class constant statically.
         do_action(self::ACTION, $identity, self::LOCKOUT, [
             'token' => $identity,
             'denials' => $denials,
@@ -181,13 +183,7 @@ final class Tripwires
             ),
             sprintf(
                 /* translators: 1: token identity, 2: denials in the last minute, 3: lockout seconds, 4: the review URL */
-                __(
-                    "Agent Safety has locked out an agent credential.\n\n"
-                    . "Token: %1\$s\nDenials in the last minute: %2\$d\nLocked out for: %3\$d seconds\n\n"
-                    . "Every call it makes is denied until the lockout lapses. "
-                    . "Review what it was refused (requires login):\n%4\$s\n",
-                    'agent-safety'
-                ),
+                __("Agent Safety has locked out an agent credential.\n\nToken: %1\$s\nDenials in the last minute: %2\$d\nLocked out for: %3\$d seconds\n\nEvery call it makes is denied until the lockout lapses. Review what it was refused (requires login):\n%4\$s\n", 'agent-safety'),
                 $identity,
                 $denials,
                 $lockoutSeconds,

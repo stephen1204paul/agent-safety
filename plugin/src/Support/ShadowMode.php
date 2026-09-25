@@ -104,6 +104,7 @@ final class ShadowMode
     public function expiries(): array
     {
         $now = time();
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- self::FILTER is the literal, prefixed 'agent_safety_shadow_packs' constant; PHPCS can't resolve a class constant statically.
         $filtered = apply_filters(self::FILTER, $this->stored($now));
 
         return $this->validate(is_array($filtered) ? $filtered : [], $now);

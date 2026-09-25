@@ -113,17 +113,18 @@ final class RequestContext
     public static function withCorrelation(string $id, callable $fn)
     {
         if ($id === '') {
-            // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment, WordPress.WP.I18n.NonSingularStringLiteralText -- a developer-facing exception message, never echoed to a site visitor or admin screen.
+            // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- a developer-facing exception message, never echoed to a site visitor or admin screen.
             throw new CorrelationConflict('A correlation id must be a non-empty, host-derived string.');
         }
 
         if (self::$correlation !== null && self::$correlation !== $id) {
-            // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment, WordPress.WP.I18n.NonSingularStringLiteralText -- a developer-facing exception message, never echoed to a site visitor or admin screen.
+            // phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- a developer-facing exception message, never echoed to a site visitor or admin screen.
             throw new CorrelationConflict(sprintf(
                 'Correlation id "%s" is already in effect for this process; refusing to switch to "%s".',
                 self::$correlation,
                 $id,
             ));
+            // phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
         }
 
         $previous = self::$correlation;
@@ -148,9 +149,11 @@ final class RequestContext
 
     public static function ip(): ?string
     {
-        $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+        $ip = isset($_SERVER['REMOTE_ADDR']) && is_string($_SERVER['REMOTE_ADDR'])
+            ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR']))
+            : '';
 
-        return is_string($ip) && $ip !== '' ? substr($ip, 0, 45) : null;
+        return $ip !== '' ? substr($ip, 0, 45) : null;
     }
 
     /**

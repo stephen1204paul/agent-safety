@@ -94,12 +94,7 @@ final class ApprovalNotifier
             ),
             sprintf(
                 /* translators: 1: action summary, 2: approval id, 3: review URL */
-                __(
-                    "An agent action is awaiting human approval.\n\n"
-                    . "Action: %1\$s\nApproval id: %2\$s\n\n"
-                    . "Review, then approve or reject (requires login):\n%3\$s\n",
-                    'agent-safety'
-                ),
+                __("An agent action is awaiting human approval.\n\nAction: %1\$s\nApproval id: %2\$s\n\nReview, then approve or reject (requires login):\n%3\$s\n", 'agent-safety'),
                 SummaryMarkup::unwrap($summary),
                 $approvalId,
                 $this->reviewUrl(),

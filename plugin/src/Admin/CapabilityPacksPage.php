@@ -255,6 +255,7 @@ final class CapabilityPacksPage
         }
         check_admin_referer(self::PAUSE);
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitizePauseReason() unslashes and sanitizes the raw value itself; see its docblock.
         $this->applyPause(self::sanitizePauseReason($_POST['reason'] ?? null));
 
         wp_safe_redirect(add_query_arg(['page' => self::SLUG], admin_url('tools.php')));
@@ -385,7 +386,7 @@ final class CapabilityPacksPage
         foreach (self::SHADOW_DAYS as $days) {
             printf(
                 '<option value="%d"%s>%s</option>',
-                $days,
+                absint($days),
                 selected($days, self::defaultShadowDays(), false),
                 esc_html(sprintf(
                     /* translators: %d number of days */
@@ -406,10 +407,12 @@ final class CapabilityPacksPage
         }
         check_admin_referer(self::SHADOW);
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- applyShadow() below sanitizes and allow-list-validates every element (pack names, confirmation text) before use.
         $posted = isset($_POST['shadow']) && is_array($_POST['shadow']) ? wp_unslash($_POST['shadow']) : [];
         $days = isset($_POST['shadow_days']) && is_scalar($_POST['shadow_days'])
             ? (int) wp_unslash($_POST['shadow_days'])
             : self::defaultShadowDays();
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- applyShadow() below sanitizes each confirmation string before comparing it.
         $confirmations = isset($_POST['shadow_confirm']) && is_array($_POST['shadow_confirm'])
             ? wp_unslash($_POST['shadow_confirm'])
             : [];
@@ -607,6 +610,7 @@ final class CapabilityPacksPage
         }
         check_admin_referer(self::SAVE);
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- applyBindings() below sanitizes and allow-list-validates every subject/pack pair before use.
         $posted = isset($_POST['bindings']) && is_array($_POST['bindings']) ? wp_unslash($_POST['bindings']) : [];
 
         $this->applyBindings($posted);
