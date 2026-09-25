@@ -10,6 +10,7 @@ use Specflux\AgentSafety\Plugin\Hooks\AbilityAuditLog;
 use Specflux\AgentSafety\Plugin\Hooks\McpRequestAuditHandler;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Tests\Fakes\InMemoryAuditSink;
+use Specflux\AgentSafety\Plugin\Verdict\VerdictPipeline;
 
 /**
  * Exercises the governed-namespace gate behaviour on the
@@ -189,5 +190,35 @@ final class AbilityAuditLogTest extends TestCase
         $log->flushFailures();
 
         $this->assertCount(0, $sink->records);
+    }
+
+    /**
+     * AS-8 (§3.5 item 7): a successful `agent-safety/check-approval` poll
+     * writes NO hash-chained execution record, even though `agent-safety/` is
+     * itself a governed namespace here -- the exclusion is this one named
+     * verb, never the whole namespace (a hypothetical future
+     * `agent-safety/other-verb` is still audited normally).
+     */
+    public function testCheckApprovalVerbIsNeverAuditedHereEvenWhenItsNamespaceIsGoverned(): void
+    {
+        $sink = new InMemoryAuditSink();
+        $log = $this->log($sink, ['agent-safety/']);
+
+        $log->before(VerdictPipeline::CHECK_APPROVAL_VERB, ['approval_id' => 'apr_1']);
+        $log->after(VerdictPipeline::CHECK_APPROVAL_VERB, ['approval_id' => 'apr_1'], ['status' => 'pending']);
+        $log->flushFailures();
+
+        $this->assertCount(0, $sink->records);
+    }
+
+    public function testAnotherAgentSafetyVerbUnderTheSameNamespaceIsStillAudited(): void
+    {
+        $sink = new InMemoryAuditSink();
+        $log = $this->log($sink, ['agent-safety/']);
+
+        $log->before('agent-safety/other-verb', []);
+        $log->after('agent-safety/other-verb', [], ['status' => 'ok']);
+
+        $this->assertCount(1, $sink->records);
     }
 }
