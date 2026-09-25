@@ -113,10 +113,12 @@ final class RequestContext
     public static function withCorrelation(string $id, callable $fn)
     {
         if ($id === '') {
+            // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment, WordPress.WP.I18n.NonSingularStringLiteralText -- a developer-facing exception message, never echoed to a site visitor or admin screen.
             throw new CorrelationConflict('A correlation id must be a non-empty, host-derived string.');
         }
 
         if (self::$correlation !== null && self::$correlation !== $id) {
+            // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment, WordPress.WP.I18n.NonSingularStringLiteralText -- a developer-facing exception message, never echoed to a site visitor or admin screen.
             throw new CorrelationConflict(sprintf(
                 'Correlation id "%s" is already in effect for this process; refusing to switch to "%s".',
                 self::$correlation,

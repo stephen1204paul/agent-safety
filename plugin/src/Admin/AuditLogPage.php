@@ -143,7 +143,7 @@ final class AuditLogPage
         header('Content-Type: text/csv; charset=utf-8');
         header('Content-Disposition: attachment; filename=agent-audit-log.csv');
 
-        $out = fopen('php://output', 'w');
+        $out = fopen('php://output', 'w'); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- streaming a CSV download to the response body, not touching the filesystem; WP_Filesystem has no notion of php://output.
         if ($out === false) {
             wp_die(esc_html__('Unable to open output stream.', 'agent-safety'));
         }
@@ -152,7 +152,7 @@ final class AuditLogPage
         foreach ($rows as $r) {
             fputcsv($out, array_map(static fn ($c) => $r[$c] ?? '', $cols));
         }
-        fclose($out);
+        fclose($out); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closes the same php://output stream opened above, not a filesystem handle.
         exit;
     }
 
