@@ -85,3 +85,11 @@ _Avoid_: domain lock, host lock
 **Relaxation**:
 Any stored state that lets a call through that the Pack alone would stop or park: a shadow window, a Grant, an approved-but-unclaimed Approval.
 _Avoid_: loosening state, override
+
+**Public approval status**:
+The reduced status set check-approval reports to the requesting agent; maps internal statuses, never reveals reviewer or args.
+_Avoid_: (none)
+
+**Superseded**:
+An approval that can no longer be claimed because its target changed or the site moved; retrying files a fresh request.
+_Avoid_: invalidated
