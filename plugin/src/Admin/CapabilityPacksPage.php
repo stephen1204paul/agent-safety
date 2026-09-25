@@ -231,6 +231,9 @@ final class CapabilityPacksPage
         }
 
         $expiresAt = $this->shadow->renew($pack);
+        if ($expiresAt === null) {
+            return;
+        }
         $this->changes->shadowEnabled($pack, $expiresAt);
     }
 

@@ -192,4 +192,16 @@ final class CapabilityPacksPageEnvironmentTest extends TestCase
 
         $this->assertSame([], $this->sink->records);
     }
+
+    /** §3.4 item 9 / security fix: renew must not be usable to enable shadow on a never-shadowed pack. */
+    public function testApplyRenewShadowDoesNothingForAPackWithNoShadowEntry(): void
+    {
+        $GLOBALS['wpas_test_environment_type'] = 'production';
+        $GLOBALS['wpas_test_options'][ShadowMode::OPTION] = [];
+
+        $this->page->applyRenewShadow('default-agent');
+
+        $this->assertArrayNotHasKey('default-agent', $GLOBALS['wpas_test_options'][ShadowMode::OPTION]);
+        $this->assertSame([], $this->sink->records);
+    }
 }

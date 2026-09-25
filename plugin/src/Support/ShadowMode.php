@@ -197,16 +197,22 @@ final class ShadowMode
 
     /**
      * Persist the shadow set with $name renewed for another full ceiling
-     * window from now (AS-7 §3.4 item 9's "Renew for 24h" re-confirmation),
-     * whether or not it was already shadowed. Returns the new expiry, or null
-     * if $name is not a known pack name — the caller validates that; this is
-     * pure persistence.
+     * window from now (AS-7 §3.4 item 9's "Renew for 24h" re-confirmation) —
+     * but ONLY when $name currently has a valid, unexpired shadow entry.
+     * "Renew" cannot be used to newly enable shadowing (that still requires
+     * typing the pack name via {@see apply()}): a pack with no entry, or one
+     * whose entry already lapsed or fell outside the current ceiling, is left
+     * untouched and this returns null. Returns the new expiry on success.
      */
-    public function renew(string $name): int
+    public function renew(string $name): ?int
     {
         $now = time();
         $raw = get_option(self::OPTION, []);
         $valid = $this->validate(is_array($raw) ? $raw : [], $now);
+
+        if (!isset($valid[$name])) {
+            return null;
+        }
 
         $expiry = $now + $this->ceiling();
         $valid[$name] = $expiry;
