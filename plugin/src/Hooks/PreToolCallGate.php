@@ -17,8 +17,9 @@ use WP_Error;
  * WP_Error short-circuits the agent's tool call entirely — so the agent sees
  * the real `approval_required` error data, which `WP_Ability::execute()` would
  * otherwise mask to a generic `ability_invalid_permissions`; returning the
- * args array lets it proceed. Dormant on the shipping stack (WooCommerce 11
- * pins adapter ^0.3.0); the live seam is {@see AbilityPermissionGate}.
+ * args array lets it proceed. Live on the standalone mcp-adapter (0.5.0+);
+ * dormant on WooCommerce 11's own MCP endpoint, whose bundled adapter is
+ * 0.3.0. {@see AbilityPermissionGate} covers every adapter version.
  *
  * This is the PEEK-mode adapter of the shared {@see VerdictPipeline}: it feeds
  * the tool's self-reported annotations in as {@see Hints}, never claims a

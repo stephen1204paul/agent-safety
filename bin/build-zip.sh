@@ -97,6 +97,9 @@ ZIP_PATH="$REPO_ROOT/agent-safety-${VERSION}.zip"
 # ---------------------------------------------------------------------------
 log "composer install --no-dev in plugin/"
 (cd "$PLUGIN_DIR" && composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction)
+# `install` leaves an existing mirror alone, so a local checkout could ship a
+# stale copy of the core. Re-mirror it from the root every time.
+(cd "$PLUGIN_DIR" && composer reinstall specflux/agent-safety-core --no-interaction)
 
 # ---------------------------------------------------------------------------
 # 3. Stage the allowlist.
@@ -114,6 +117,18 @@ copy_required_file() {
 copy_required_file "agent-safety.php"
 copy_required_file "uninstall.php"
 copy_required_file "readme.txt"
+
+# The shipped composer.json names what is in vendor/. The plugin's own file
+# resolves the core through a `../` path repository that does not exist
+# outside this repo, so point it at the public GitHub repo and the release tag
+# the zip was built from.
+[ -f "$PLUGIN_DIR/composer.json" ] || fail "required plugin file missing: plugin/composer.json"
+php -r '
+	$json = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
+	$json["repositories"] = [["type" => "vcs", "url" => "https://github.com/stephen1204paul/agent-safety"]];
+	$json["require"]["specflux/agent-safety-core"] = $argv[3];
+	file_put_contents($argv[2], json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+' "$PLUGIN_DIR/composer.json" "$STAGE_DIR/composer.json" "$VERSION" || fail "could not write the shipped composer.json"
 
 [ -d "$PLUGIN_DIR/src" ] || fail "required plugin dir missing: plugin/src"
 cp -R "$PLUGIN_DIR/src" "$STAGE_DIR/src"
@@ -147,7 +162,7 @@ if [ -d "$CORE_VENDOR_DIR" ]; then
 	if [ -f "$CORE_VENDOR_DIR/LICENSE" ]; then
 		mv "$CORE_VENDOR_DIR/LICENSE" "$KEEP_TMP/LICENSE"
 	else
-		log "NOTE: no LICENSE file in specflux/agent-safety-core — none shipped in the zip (orchestrator: confirm whether one should exist before release)"
+		fail "vendor/specflux/agent-safety-core/LICENSE missing after composer install"
 	fi
 
 	rm -rf "$CORE_VENDOR_DIR"
@@ -171,10 +186,6 @@ fi
 # ---------------------------------------------------------------------------
 # 4. Zip it, top-level folder agent-safety/.
 # ---------------------------------------------------------------------------
-# Desktop metadata (Finder's .DS_Store, AppleDouble ._ files) can sit in any
-# local checkout; drop it rather than failing the allowlist check below.
-find "$STAGE_DIR" \( -name '.DS_Store' -o -name '._*' -o -name 'Thumbs.db' \) -type f -delete
-
 log "zipping $ZIP_PATH"
 (cd "$BUILD_DIR" && zip -rq -X -D "$ZIP_PATH" agent-safety)
 
@@ -189,6 +200,7 @@ ALLOW_RE='^agent-safety/$'
 ALLOW_RE="$ALLOW_RE|^agent-safety/agent-safety\.php$"
 ALLOW_RE="$ALLOW_RE|^agent-safety/uninstall\.php$"
 ALLOW_RE="$ALLOW_RE|^agent-safety/readme\.txt$"
+ALLOW_RE="$ALLOW_RE|^agent-safety/composer\.json$"
 ALLOW_RE="$ALLOW_RE|^agent-safety/src/([^./][^/]*/)*[^./][^/]*$"
 ALLOW_RE="$ALLOW_RE|^agent-safety/assets/([^./][^/]*/)*[^./][^/]*$"
 ALLOW_RE="$ALLOW_RE|^agent-safety/vendor/autoload\.php$"
