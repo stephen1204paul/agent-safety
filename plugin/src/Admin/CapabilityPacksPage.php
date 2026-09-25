@@ -260,14 +260,29 @@ final class CapabilityPacksPage
         }
         check_admin_referer(self::PAUSE);
 
-        $reason = isset($_POST['reason']) && is_scalar($_POST['reason'])
-            ? sanitize_text_field((string) wp_unslash($_POST['reason']))
-            : '';
-
-        $this->applyPause($reason);
+        $this->applyPause(self::sanitizePauseReason($_POST['reason'] ?? null));
 
         wp_safe_redirect(add_query_arg(['page' => self::SLUG], admin_url('tools.php')));
         exit;
+    }
+
+    /**
+     * The emergency-stop reason an admin typed: a slashed, unsanitised POST
+     * value on the way in, a plain human-readable string on the way out
+     * (stored raw in the `agsafe_pause` option and shown escaped wherever
+     * it's displayed). A non-scalar value (an array from a malformed
+     * request) has no meaningful text representation, so it becomes ''
+     * rather than a cast artifact like "Array".
+     *
+     * @param mixed $raw The raw `$_POST['reason']` value, or null if absent.
+     */
+    public static function sanitizePauseReason(mixed $raw): string
+    {
+        if (!is_scalar($raw)) {
+            return '';
+        }
+
+        return sanitize_text_field((string) wp_unslash($raw));
     }
 
     public function resumeAction(): void

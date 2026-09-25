@@ -117,6 +117,35 @@ final class CapabilityPacksPageEmergencyStopTest extends TestCase
         $this->assertSame([], $this->sink->records);
     }
 
+    // --- sanitizePauseReason(): §3.6.10 -----------------------------------------
+
+    public function testSanitizePauseReasonGivesEmptyStringForANonScalarValue(): void
+    {
+        $this->assertSame('', CapabilityPacksPage::sanitizePauseReason(['array' => 'is not scalar']));
+        $this->assertSame('', CapabilityPacksPage::sanitizePauseReason(null));
+    }
+
+    public function testSanitizePauseReasonKeepsAnOrdinaryString(): void
+    {
+        $this->assertSame('runaway bot', CapabilityPacksPage::sanitizePauseReason('runaway bot'));
+    }
+
+    public function testSanitizePauseReasonStripsTagsAndTrimsWhitespace(): void
+    {
+        $this->assertSame(
+            'alert(1)',
+            CapabilityPacksPage::sanitizePauseReason('  <script>alert(1)</script>  ')
+        );
+    }
+
+    public function testSanitizePauseReasonUnslashesBeforeSanitising(): void
+    {
+        $this->assertSame(
+            "it's stuck",
+            CapabilityPacksPage::sanitizePauseReason(addslashes("it's stuck"))
+        );
+    }
+
     // --- resumeAction() refusals: a stored pause stays in place ---------------
 
     public function testResumeActionWithoutTheCapabilityDiesAndLeavesTheStoredPauseInPlace(): void
