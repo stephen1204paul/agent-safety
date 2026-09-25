@@ -804,3 +804,57 @@ if (!function_exists('submit_button')) {
         echo '<button type="submit" name="' . esc_attr($name) . '">' . esc_html((string) $text) . '</button>';
     }
 }
+
+// --- Abilities API shims (AS-8) -------------------------------------------
+// No real WP Abilities API is available in this suite. These shims record
+// what production code registers, closely enough for SelfIntegrationTest to
+// assert the args shape and to invoke the recorded callbacks directly — the
+// same house style as add_action()/add_filter() above.
+
+if (!function_exists('doing_action')) {
+    $GLOBALS['wpas_test_doing_action'] = null;
+
+    /** Test control knob: set $GLOBALS['wpas_test_doing_action'] to the hook name currently "firing". */
+    function doing_action(?string $hook = null): bool
+    {
+        if ($hook === null) {
+            return $GLOBALS['wpas_test_doing_action'] !== null;
+        }
+
+        return $GLOBALS['wpas_test_doing_action'] === $hook;
+    }
+}
+
+if (!function_exists('wp_register_ability')) {
+    $GLOBALS['wpas_test_abilities'] = [];
+
+    /**
+     * Recording shim: $GLOBALS['wpas_test_abilities'][$name] = $args.
+     *
+     * @param array<string, mixed> $args
+     * @return array<string, mixed>
+     */
+    function wp_register_ability(string $name, array $args): array
+    {
+        $GLOBALS['wpas_test_abilities'][$name] = $args;
+
+        return $args;
+    }
+}
+
+if (!function_exists('wp_register_ability_category')) {
+    $GLOBALS['wpas_test_ability_categories'] = [];
+
+    /**
+     * Recording shim: $GLOBALS['wpas_test_ability_categories'][$slug] = $args.
+     *
+     * @param array<string, mixed> $args
+     * @return array<string, mixed>
+     */
+    function wp_register_ability_category(string $slug, array $args): array
+    {
+        $GLOBALS['wpas_test_ability_categories'][$slug] = $args;
+
+        return $args;
+    }
+}

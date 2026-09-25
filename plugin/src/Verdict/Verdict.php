@@ -38,6 +38,12 @@ final class Verdict
      *                                    {@see error()} emits (AS-6 §3.11): `Base` for an ordinary
      *                                    first-time park, `Stale` when this call's own claim attempt
      *                                    found the target had changed and re-filed a fresh request.
+     * @param bool    $paused             AS-8 (§3.5 item 3): the site is paused right now. Only ever
+     *                                    set on the `agent-safety/check-approval` exemption verdict
+     *                                    ({@see VerdictPipeline::judgeCheckApproval()}) — every other
+     *                                    verb is simply denied while paused, so it never reaches a
+     *                                    Verdict at all. Informational only: it never affects
+     *                                    {@see proceeds()} or {@see error()}.
      */
     public function __construct(
         public readonly string $verb,
@@ -50,6 +56,7 @@ final class Verdict
         public readonly ?string $eventId = null,
         public readonly ?string $grantId = null,
         public readonly ApprovalMessageVariant $approvalVariant = ApprovalMessageVariant::Base,
+        public readonly bool $paused = false,
     ) {
     }
 

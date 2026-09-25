@@ -67,6 +67,16 @@ use Specflux\AgentSafety\Policy\Tier;
  */
 final class VerdictPipeline
 {
+    /**
+     * AS-8 (§3.5 item 3): the one explicit, named exemption from the caller's
+     * Pack — this exact verb, never the whole `agent-safety/` namespace and
+     * never a glob. Every real Pack's allow list omits `agent-safety/*` and
+     * the fallback `default-agent` pack allows nothing, so without this
+     * exemption no agent could ever poll its own approval. See
+     * {@see judgeCheckApproval()}.
+     */
+    public const CHECK_APPROVAL_VERB = 'agent-safety/check-approval';
+
     /** @var array<string, true> verb|args_hash already claimed in THIS request (re-entrancy guard). */
     private array $reentry = [];
 
@@ -99,6 +109,10 @@ final class VerdictPipeline
         // (docs/adr/0001), so wiring it here covers them identically instead
         // of duplicating the check in each seam.
         $this->environment?->ensureCurrent();
+
+        if (self::CHECK_APPROVAL_VERB === $verb) {
+            return $this->judgeCheckApproval($pack);
+        }
 
         $peeked = VerdictMode::Peek === $mode && $this->recorder->hasApprovedGrant($verb, $args);
         $decision = $this->evaluate($verb, $args, $pack, $hints, $peeked);
@@ -182,6 +196,29 @@ final class VerdictPipeline
         $this->recorder->auditDecision($eventId, $verb, $args, $pack, $decision, $approvalId);
 
         return new Verdict($verb, $pack, $decision, $approvalId, $reservedId, $claimed, false, $eventId, $grantId, $variant);
+    }
+
+    /**
+     * AS-8 (§3.5 item 3): `agent-safety/check-approval` always answers Allow
+     * at tier 0 — no Pack allow-list, denyClass wall, approval rule or Pack
+     * rate/quota cap is even consulted, because {@see judge()} returns here
+     * before any of that machinery runs. It also answers while the site is
+     * paused or the caller is tripwire-locked: those stops are read here for
+     * INFORMATION ONLY (so the ability can report `paused: true`), never to
+     * deny — an agent stopped by a pause still needs to learn its own
+     * approval's fate, and retrying costs nothing. This is NOT exempt from
+     * authentication, its own fixed rate limit, or the audit rules the
+     * ability applies itself — none of those live in the pipeline; see
+     * {@see \Specflux\AgentSafety\Plugin\Integrations\Self\CheckApprovalAbility}.
+     */
+    private function judgeCheckApproval(Pack $pack): Verdict
+    {
+        return new Verdict(
+            self::CHECK_APPROVAL_VERB,
+            $pack,
+            Decision::allow(Tier::Reversible),
+            paused: $this->pause->isPaused(),
+        );
     }
 
     /**

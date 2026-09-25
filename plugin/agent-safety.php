@@ -46,6 +46,8 @@ use Specflux\AgentSafety\Plugin\Privacy\PrivacyIntegration;
 use Specflux\AgentSafety\Plugin\Identity\IdentityChain;
 use Specflux\AgentSafety\Plugin\Identity\UserRoleIdentity;
 use Specflux\AgentSafety\Plugin\Integrations\Core\CoreIntegration;
+use Specflux\AgentSafety\Plugin\Integrations\Self\CheckApprovalAbility;
+use Specflux\AgentSafety\Plugin\Integrations\Self\SelfIntegration;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\VerbMapper;
 use Specflux\AgentSafety\Plugin\Integrations\Woo\WooIntegration;
 use Specflux\AgentSafety\Plugin\Support\ApprovalNotifier;
@@ -198,12 +200,16 @@ add_action('plugins_loaded', static function (): void {
     $agsafe_governed_namespaces = [];
     $agsafe_state_probes = [];
 
-    // Core first (definitionally available on every site), then Woo.
+    // Core first (definitionally available on every site), then the plugin's
+    // own AS-8 check-approval ability, then Woo.
     $agsafe_core = CoreIntegration::register($agsafe_catalog, $agsafe_identity, isset($wpdb) ? $wpdb : null);
     $agsafe_elevation_rules = [...$agsafe_core['elevationRules']];
     $agsafe_extra_packs = [...$agsafe_core['packs']];
     $agsafe_governed_namespaces = [...$agsafe_core['governedNamespaces']];
     $agsafe_state_probes = [...$agsafe_core['stateProbes']];
+
+    $agsafe_self = SelfIntegration::register($agsafe_catalog);
+    $agsafe_governed_namespaces = [...$agsafe_governed_namespaces, ...$agsafe_self['governedNamespaces']];
 
     if (WooIntegration::available()) {
         $agsafe_woo = WooIntegration::register($agsafe_catalog, $agsafe_identity, isset($wpdb) ? $wpdb : null);
@@ -300,6 +306,12 @@ add_action('plugins_loaded', static function (): void {
     $agsafe_pause = new PauseSwitch($agsafe_changes);
     $agsafe_notifier = new ApprovalNotifier();
     $agsafe_tripwires = new Tripwires(new WindowCounter(), $agsafe_changes, $agsafe_notifier);
+
+    // AS-8 (§3.5): the self-service check-approval ability, always
+    // registered while the plugin is active (no disabling filter). Poll
+    // logic is null-safe without a database — every id then reads as
+    // not_found, the fail-closed answer on the pathological no-$wpdb path.
+    SelfIntegration::registerAbility($agsafe_approvals, $agsafe_sink, $agsafe_pause);
 
     // Pre-approval grants (AS-12), behind the default-false
     // `agent_safety_enable_grants` filter. Constructed whenever there is a

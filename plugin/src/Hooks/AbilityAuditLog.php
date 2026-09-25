@@ -11,6 +11,7 @@ use Specflux\AgentSafety\Policy\TierClassifier;
 use Specflux\AgentSafety\Plugin\Support\ExecutionResult;
 use Specflux\AgentSafety\Plugin\Support\PackResolver;
 use Specflux\AgentSafety\Plugin\Support\RequestContext;
+use Specflux\AgentSafety\Plugin\Verdict\VerdictPipeline;
 
 /**
  * Audits every ability that EXECUTES — both successes and failures,
@@ -158,9 +159,23 @@ final class AbilityAuditLog
         $this->inFlight = [];
     }
 
-    /** Is this ability name under one of the governed namespace prefixes? */
+    /**
+     * Is this ability name under one of the governed namespace prefixes?
+     *
+     * AS-8 (§3.5 item 7): `agent-safety/check-approval` is excluded here by
+     * name, even though `agent-safety/` is a governed namespace — a
+     * successful poll writes NO hash-chained execution record; the ability
+     * audits ITS OWN `approval.probe` row on a mismatch or rate-limit hit
+     * ({@see \Specflux\AgentSafety\Plugin\Integrations\Self\CheckApprovalAbility}).
+     * Named and exact, like the Verdict pipeline's exemption — never the
+     * whole namespace.
+     */
     private function isGoverned(string $name): bool
     {
+        if (VerdictPipeline::CHECK_APPROVAL_VERB === $name) {
+            return false;
+        }
+
         foreach ($this->governedNamespaces as $namespace) {
             if ($namespace !== '' && str_starts_with($name, $namespace)) {
                 return true;
