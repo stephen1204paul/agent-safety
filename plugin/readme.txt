@@ -34,8 +34,9 @@ default pack rather than inheriting full access.
 
 **Human approval**
 
-A call classified as irreversible (and not already hard-denied by its pack) doesn't execute. It
-is queued under **Tools → Pending Agent Actions** for a human to approve or reject. When an
+When a pack requires approval for a tier (the starter packs do for irreversible calls), a call
+at that tier doesn't execute. It is queued under **Tools → Pending Agent Actions** for a human
+to approve or reject. When an
 Approval is requested, Agent Safety captures a fingerprint of the target's current state; when
 the approval is claimed, it re-checks that fingerprint. A mismatch means the target changed
 between request and claim, so the old approval is marked stale and a fresh request is filed. This
@@ -82,7 +83,7 @@ When WooCommerce is active, Agent Safety governs exactly these 16 abilities:
 * `woocommerce/order-update-status`
 
 Everything else under `woocommerce/` is refused as an unknown verb. Deleting a product with
-`force: true` is irreversible and requires approval; a plain delete (trash) is side-effecting.
+`force: true` is classed irreversible; a plain delete (trash) is side-effecting.
 
 **Which MCP endpoint to use**
 
@@ -94,7 +95,7 @@ information to an agent:
 * On the shared `mcp-adapter` server, an agent that hits `approval_required` gets the full error
   data, including `approval_id`, and can call `agent-safety/check-approval` to poll it.
 * On WooCommerce's own endpoint, the bundled `mcp-adapter` 0.3.0 only forwards the error message
-  text to the client, not the structured error data. An agent sees the words "requires human
+  text to the client, not the structured error data. An agent sees the message "needs human
   approval" but not the `approval_id`, and `agent-safety/check-approval` isn't reachable on that
   transport at all — the approval still exists and is visible on the Pending Actions page, but
   the agent can't self-serve it.
@@ -166,18 +167,19 @@ Capability Packs**.
 
 == External services ==
 
-This plugin can send data to two kinds of external service, both off by default.
+This plugin can send data outside your site in two ways.
 
 **Email.** When a new agent action needs approval, Agent Safety sends an email through
-`wp_mail()` to the site's administrators (or a configured recipient), linking to the login-
-protected review screen. This uses your site's own mail delivery and doesn't send data to
-Agent Safety or Specflux.
+`wp_mail()` to the site's admin email address, or to a recipient set on the Pending Agent
+Actions screen, linking to the login-protected review screen. It goes through your site's own
+mail delivery.
 
-**Webhook (opt-in).** An administrator can set a webhook URL under the plugin's settings. When
+**Webhook (opt-in).** An administrator can set a webhook URL on the Pending Agent Actions
+screen. When
 set, every new pending approval sends an HTTP POST to that URL with a JSON body containing the
 event name, the approval id, the verb (ability) that was called, and a link to the review screen.
-No call arguments are sent. The webhook is disabled until an administrator enters a URL, and the
-destination is entirely the site operator's choice — nothing is sent to Agent Safety or Specflux.
+No call arguments are sent. The webhook is off until an administrator enters a URL, and the
+destination is the site operator's choice. Nothing is sent to the plugin's author.
 
 == Privacy ==
 
@@ -207,8 +209,8 @@ runs.
 * WooCommerce module narrowed to the 16 abilities WooCommerce 11 ships; forward-compatibility
   entries for abilities WooCommerce hasn't shipped yet are removed, and anything else under
   `woocommerce/` is refused.
-* `woocommerce/product-delete` with `force: true` is now irreversible and requires approval,
-  matching the existing behaviour of `products-delete`.
+* `woocommerce/product-delete` is now side-effecting, and irreversible only with `force: true`,
+  matching `products-delete`.
 * Added a state fingerprint on Approvals: the target's revision marker is captured at request
   time and re-checked at claim time. A mismatch marks the old approval stale and files a fresh
   one. This narrows the window between a human's approval and the write; it does not close it.

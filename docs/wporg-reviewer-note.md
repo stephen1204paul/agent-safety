@@ -9,8 +9,8 @@ The plugin creates three tables (prefix `{$wpdb->prefix}agsafe_`):
 * `agsafe_audit_log` — one row per gate decision or executed agent action.
 * `agsafe_approvals` — pending, approved, rejected, and terminal approval requests.
 * `agsafe_grants` — pre-approval grants (renamed from `agent_safety_grants` in this release; the
-  upgrade path renames the table in place, or falls back to create-copy-drop if the rename is
-  refused, and leaves an admin notice if both old and new tables somehow exist).
+  upgrade path renames the table in place with `RENAME TABLE`, and leaves an admin notice if
+  both old and new tables exist after an interrupted upgrade).
 
 Custom tables are used because the audit log has to be append-only and hash-chained, and options
 or post meta don't give us a place to enforce that.
@@ -52,8 +52,8 @@ deletes every option the plugin uses, and clears every cron event it scheduled.
 
 ## What the webhook sends, and when
 
-The plugin has one opt-in outbound webhook, disabled until an administrator enters a URL under
-the plugin's settings. When set, a new pending approval (a fresh request only — an agent retrying
+The plugin has one opt-in outbound webhook, disabled until an administrator enters a URL on
+the Pending Agent Actions screen. When set, a new pending approval (a fresh request only — an agent retrying
 a call that already has a pending row does not re-fire it) sends one HTTP POST to that URL with a
 JSON body:
 
@@ -69,5 +69,5 @@ JSON body:
 No call arguments, no customer data, and no PII are sent. The URL and payload are both filterable
 (`agent_safety_webhook_url`, `agent_safety_webhook_payload`) for a site that wants to route
 somewhere else or add fields, but the shipped default is exactly the four fields above. The
-plugin also sends one email, through `wp_mail()`, to the site's administrators (or a configured
-recipient) for the same event; that's WordPress's own mail delivery, not a third-party service.
+plugin also sends one email, through `wp_mail()`, to the site's admin email address (or a
+recipient set on the same screen) for the same event; that's WordPress's own mail delivery, not a third-party service.
