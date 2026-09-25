@@ -2,10 +2,13 @@
 
 /**
  * Plugin Name:       Agent Safety
- * Description:       Governed safety and audit layer for AI agent tool calls — verb-tier gating, capability packs, human approval for irreversible actions, and a compliance-grade audit trail. Ships a WordPress-core module plus a WooCommerce integration module.
- * Version:           0.3.0
+ * Plugin URI:        https://github.com/stephen1204paul/agent-safety
+ * Description:       Governs other plugins' agent tool calls: verb-tier gating, capability packs, human approval with a state-fingerprint check, and a tamper-evident audit log. Ships a WordPress-core module plus a WooCommerce integration module.
+ * Version:           0.4.0
  * Requires PHP:      8.1
- * Requires at least: 6.9
+ * Requires at least: 7.0
+ * Author:            Stephen Paul Samynathan
+ * Author URI:        https://profiles.wordpress.org/stephen1204paul/
  * License:           GPL-2.0-or-later
  * Text Domain:       agent-safety
  *
