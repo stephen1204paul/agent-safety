@@ -378,7 +378,7 @@ add_action('plugins_loaded', static function (): void {
     // WooCommerce's "namespace-resource-action" tool-naming convention, so this seam
     // is only meaningful (and only wired up) when WooCommerce is the active integration.
     if (WooIntegration::available()) {
-        (new PreToolCallGate($agsafe_pipeline, new VerbMapper(), $agsafe_packs))->register();
+        (new PreToolCallGate($agsafe_pipeline, new VerbMapper(), $agsafe_packs, $agsafe_governed_namespaces))->register();
     }
 
     // Read-path PII redaction (backlog #11): masks the payload RETURNED TO THE

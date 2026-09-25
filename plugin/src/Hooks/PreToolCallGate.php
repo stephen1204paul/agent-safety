@@ -30,10 +30,16 @@ use WP_Error;
  */
 final class PreToolCallGate
 {
+    /**
+     * @param list<string> $governedNamespaces The same prefixes {@see AbilityPermissionGate}
+     *                                          governs. A tool whose verb falls outside
+     *                                          them passes through untouched.
+     */
     public function __construct(
         private readonly VerdictPipeline $pipeline,
         private readonly VerbMapper $mapper,
         private readonly PackResolver $packs,
+        private readonly array $governedNamespaces,
     ) {
     }
 
@@ -50,8 +56,18 @@ final class PreToolCallGate
      */
     public function handle(array $args, string $toolName, $mcpTool = null, $server = null)
     {
+        $verb = $this->mapper->toVerb($toolName);
+
+        // mcp-adapter's own tools (execute-ability and friends) sit outside every
+        // governed namespace. The ability execute-ability runs has already been
+        // judged by the permission_callback wrap, in the adapter's permission
+        // check before this filter fires.
+        if (!$this->isGoverned($verb)) {
+            return $args;
+        }
+
         $verdict = $this->pipeline->judge(
-            $this->mapper->toVerb($toolName),
+            $verb,
             $args,
             $this->packs->resolve(),
             Hints::fromMcpTool($mcpTool),
@@ -59,5 +75,16 @@ final class PreToolCallGate
         );
 
         return $verdict->error() ?? $args;
+    }
+
+    private function isGoverned(string $verb): bool
+    {
+        foreach ($this->governedNamespaces as $namespace) {
+            if ($namespace !== '' && str_starts_with($verb, $namespace)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

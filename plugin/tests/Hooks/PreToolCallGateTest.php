@@ -76,6 +76,7 @@ final class PreToolCallGateTest extends TestCase
             new VerdictPipeline(new Gate(new TierClassifier($catalog)), $recorder ?? new DecisionRecorder(), $approvals),
             new VerbMapper(),
             new PackResolver([$pack]),
+            ['demo/'],
         );
     }
 
@@ -160,5 +161,29 @@ final class PreToolCallGateTest extends TestCase
 
         $this->assertSame($args, $result);
         $this->assertSame('approved', $approvals->rows[$id]['status']);
+    }
+
+    public function testAToolOutsideTheGovernedNamespacesPassesThrough(): void
+    {
+        // mcp-adapter's own execute-ability tool maps to `mcp/adapter-execute-ability`,
+        // which no integration governs. The ability it runs is judged by the
+        // permission_callback wrap during the adapter's permission check, which
+        // runs before this filter; denying the wrapper here as unknown_verb
+        // blocked every allowed call made through it.
+        $gate = $this->gateFor(['demo/write' => Tier::SideEffecting], new Pack(name: 'walled', allow: []));
+
+        $args = ['ability_name' => 'agent-safety/check-approval', 'parameters' => ['approval_id' => 'apr_x']];
+
+        $this->assertSame($args, $gate->handle($args, 'mcp-adapter-execute-ability'));
+    }
+
+    public function testAnUncataloguedToolInsideAGovernedNamespaceStillFailsClosed(): void
+    {
+        $gate = $this->gateFor(['demo/write' => Tier::SideEffecting], new Pack(name: 'owner', allow: ['*']));
+
+        $result = $gate->handle([], 'demo-unlisted');
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertStringContainsString('unknown_verb', $result->get_error_message());
     }
 }
