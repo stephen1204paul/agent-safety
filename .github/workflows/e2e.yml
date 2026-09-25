@@ -60,6 +60,7 @@ jobs:
 
       - name: Generate .wp-env.json (matrix core)
         run: |
+          # shellcheck disable=SC2016 # the JS is single-quoted on purpose; "$schema" is a JSON key
           node -e '
             const fs = require("fs");
             const config = {

@@ -68,7 +68,7 @@ jobs:
       - name: Locate the zip
         id: zip
         run: |
-          ZIP_PATH=$(ls agent-safety-*.zip | head -1)
+          ZIP_PATH=$(find . -maxdepth 1 -name 'agent-safety-*.zip' | head -1)
           echo "path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
           echo "name=$(basename "$ZIP_PATH" .zip)" >> "$GITHUB_OUTPUT"
 

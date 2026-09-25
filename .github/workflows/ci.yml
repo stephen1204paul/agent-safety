@@ -81,9 +81,9 @@ jobs:
         id: zip
         run: |
           if [ -n "${{ inputs.zip-artifact }}" ]; then
-            ZIP_PATH=$(ls build-artifact/*.zip | head -1)
+            ZIP_PATH=$(find build-artifact -maxdepth 1 -name '*.zip' | head -1)
           else
-            ZIP_PATH=$(ls agent-safety-*.zip | head -1)
+            ZIP_PATH=$(find . -maxdepth 1 -name 'agent-safety-*.zip' | head -1)
           fi
           echo "path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
           mkdir -p extracted
@@ -112,7 +112,7 @@ jobs:
 
       - name: Extract the zip
         run: |
-          ZIP_PATH=$(ls agent-safety-*.zip | head -1)
+          ZIP_PATH=$(find . -maxdepth 1 -name 'agent-safety-*.zip' | head -1)
           mkdir -p extracted
           unzip -q "$ZIP_PATH" -d extracted
 
