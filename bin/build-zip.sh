@@ -171,6 +171,10 @@ fi
 # ---------------------------------------------------------------------------
 # 4. Zip it, top-level folder agent-safety/.
 # ---------------------------------------------------------------------------
+# Desktop metadata (Finder's .DS_Store, AppleDouble ._ files) can sit in any
+# local checkout; drop it rather than failing the allowlist check below.
+find "$STAGE_DIR" \( -name '.DS_Store' -o -name '._*' -o -name 'Thumbs.db' \) -type f -delete
+
 log "zipping $ZIP_PATH"
 (cd "$BUILD_DIR" && zip -rq -X -D "$ZIP_PATH" agent-safety)
 
