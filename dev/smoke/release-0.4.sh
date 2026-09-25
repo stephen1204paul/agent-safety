@@ -297,7 +297,16 @@ sleep 2
 TABLE_PREFIX="$(cli_exec "$CLI_NAME" config get table_prefix)"
 P2_SECOND_PENDING_ID="$(docker exec -e AGSAFE_SQL="SELECT approval_id FROM ${TABLE_PREFIX}agsafe_approvals WHERE verb='woocommerce/products-delete' AND status='pending' ORDER BY id DESC LIMIT 1" --user www-data "$CLI_NAME" wp eval-file /tmp/agsafe-query.php | tail -1 | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{const r=JSON.parse(d);console.log(r[0]?r[0].approval_id:"");})')"
 
-APPROVE_SCRIPT="<?php defined('ABSPATH') || exit; \$ok = agent_safety()->approvals()->approve(getenv('AGSAFE_APPROVE_ID'), (int) getenv('AGSAFE_APPROVE_BY')); echo \$ok ? 'ok' : 'fail';"
+# BUG FOUND AND FIXED (post-review): `Api\Approvals::approve()`'s
+# `authorized()` gate checks `current_user_can('manage_options')` for
+# WHOEVER the request's CURRENT WordPress user is — never the $byUserId
+# argument. A bare `wp eval-file` has no current user at all (confirmed:
+# `wp eval 'var_dump(current_user_can("manage_options"));'` -> bool(false),
+# `get_current_user_id()` -> 0), so this call was always refused and
+# `approve()` always returned false, leaving the "approved-unclaimed"
+# seed permanently `pending`. Fixed by setting the current user to the
+# granting admin first.
+APPROVE_SCRIPT="<?php defined('ABSPATH') || exit; wp_set_current_user((int) getenv('AGSAFE_APPROVE_BY')); \$ok = agent_safety()->approvals()->approve(getenv('AGSAFE_APPROVE_ID'), (int) getenv('AGSAFE_APPROVE_BY')); echo \$ok ? 'ok' : 'fail';"
 echo "$APPROVE_SCRIPT" > "$WORK/approve-p2.php"
 docker cp "$WORK/approve-p2.php" "$CLI_NAME:/tmp/agsafe-approve-p2.php"
 docker exec -e AGSAFE_APPROVE_ID="$P2_SECOND_PENDING_ID" -e AGSAFE_APPROVE_BY="$ADMIN_USER_ID" --user www-data "$CLI_NAME" wp eval-file /tmp/agsafe-approve-p2.php
@@ -305,13 +314,26 @@ P2_APPROVED_APPROVAL_ID="$P2_SECOND_PENDING_ID"
 log "P2 approved-unclaimed approval id: $P2_APPROVED_APPROVAL_ID"
 
 log "== P2: seeding a grant + shadow window via seed-shadow-and-grant.php =="
+# BUG FOUND AND FIXED (post-review, coordinator diagnosis confirmed against
+# a live audit row: record_json carried "dry_run":true, "decision":"pending",
+# "reason":"approval_required" for the P3 delete call): shadowing
+# `woo-default-agent` here is the SAME pack every wc:<key_id> credential in
+# this harness is bound to, so P3/P4/P5's own products-delete{force} calls
+# were never bypassing the gate — they were being correctly evaluated as
+# `approval_required`, then let through as an AUDITED DRY RUN because their
+# own pack was shadowed (spec §3.3 item 11 / §3.4: shadow mode audits a
+# blocking decision and lets the call proceed). P2 only needs a shadow
+# window to exist as a Relaxation for the upgrade row's own assertions
+# (survives the upgrade) — it never needs to be on a pack any test
+# credential actually calls through. `readonly-analyst` (WooPacks.php) has
+# no credential bound to it anywhere in this harness.
 docker exec \
     -e AGSAFE_GRANT_VERB="woocommerce/products-delete" \
     -e AGSAFE_GRANT_SUBJECT="wc:${WC_KEY_ID}" \
     -e AGSAFE_GRANT_CORRELATION="agsafe-p2-e2e" \
     -e AGSAFE_GRANT_COUNT="3" \
     -e AGSAFE_GRANT_BY_USER_ID="$ADMIN_USER_ID" \
-    -e AGSAFE_SHADOW_PACK="woo-default-agent" \
+    -e AGSAFE_SHADOW_PACK="readonly-analyst" \
     -e AGSAFE_SHADOW_TTL_SECONDS="3600" \
     --user www-data "$CLI_NAME" wp eval-file /tmp/agsafe-seed-shadow-and-grant.php
 

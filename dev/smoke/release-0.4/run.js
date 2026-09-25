@@ -193,10 +193,25 @@ async function postAuthed(jar, urlPath, form) {
 }
 
 /** Scrapes a plain _wpnonce value near a marker (no id suffix — e.g. the shadow/rebind forms). */
+/**
+ * BUG FOUND AND FIXED (post-review): this used to search an 800-char window
+ * on BOTH sides of `marker` and take the FIRST `_wpnonce` match in that
+ * window — but every `wp_nonce_field()` in this page's markup is emitted
+ * AFTER its form's action/marker field, never before, so a -800..+800
+ * window nearly always finds an EARLIER, unrelated form's nonce first (e.g.
+ * the Pause form's nonce sits ~140 chars before the shadow form's own
+ * marker, 700+ chars before the shadow form's real nonce at +861).
+ * Confirmed empirically: this returned the Pause nonce for the shadow-save
+ * form, `check_admin_referer()` correctly rejected it, and BOTH the
+ * "unconfirmed" and "confirmed" shadow submissions silently no-op'd via
+ * `wp_die()` rather than actually reaching `applyShadow()` — explaining why
+ * neither P6 assertion ever reflected a real save. Fixed to search FORWARD
+ * from the marker only.
+ */
 function scrapeNonceNear(html, marker) {
   const idx = html.indexOf(marker);
   if (idx === -1) return null;
-  const windowText = html.slice(Math.max(0, idx - 800), idx + 800);
+  const windowText = html.slice(idx, idx + 800);
   const m = windowText.match(/name="_wpnonce" value="([a-f0-9]+)"/);
   return m ? m[1] : null;
 }
@@ -231,6 +246,25 @@ function agsafeIssuesSince(startLineCount) {
   const lines = readDebugLog().split('\n');
   const newLines = lines.slice(startLineCount);
   return newLines.filter((l) => /PHP (Warning|Notice|Deprecated)/i.test(l) && /agent-safety|Specflux\\AgentSafety/i.test(l));
+}
+
+/**
+ * Asserts `pack` is NOT currently in `agsafe_shadow_packs` before a row
+ * relies on enforcement (not just a dry-run audit) for its own governed
+ * call. Added post-review after a confirmed root cause: P3/P4's own
+ * products-delete{force} calls were being correctly evaluated as
+ * `approval_required` and then let through as an AUDITED DRY RUN because an
+ * EARLIER row's shadow-window seeding happened to cover the same pack this
+ * row's credential is bound to (spec §3.3 item 11 / §3.4 — shadow mode is
+ * SUPPOSED to do exactly this, so a covered pack is a harness bug, not a
+ * plugin defect). This is a precondition check, not a debug.log-style
+ * post-hoc check: it fails LOUD and immediately if a future row's seeding
+ * ever shadows a pack another row still needs enforced.
+ */
+function assertPackNotShadowed(pack, tablePrefixArg) {
+  const row = dbRows(`SELECT option_value FROM ${tablePrefixArg}options WHERE option_name='agsafe_shadow_packs'`)[0];
+  const shadowed = !!row && String(row.option_value).includes(`"${pack}"`);
+  check(`precondition: ${pack} is not shadowed before this row's governed call`, !shadowed, JSON.stringify(row));
 }
 
 (async () => {
@@ -286,6 +320,7 @@ function agsafeIssuesSince(startLineCount) {
     // live re-run to investigate.
     const p3BindingRow = dbRows(`SELECT option_value FROM ${tablePrefix}options WHERE option_name='agsafe_pack_bindings'`)[0];
     console.log('P3 diagnostic: wc_key_id=' + state.wc_key_id + ' agsafe_pack_bindings=' + JSON.stringify(p3BindingRow));
+    assertPackNotShadowed('woo-default-agent', tablePrefix);
 
     const p3 = await provisionFreshProduct(`agsafe-p3-${Date.now()}`);
     const ck = state.wc_consumer_key, cs = state.wc_consumer_secret;
@@ -355,6 +390,7 @@ function agsafeIssuesSince(startLineCount) {
   try {
     originalHome = wp('option get home').trim();
     originalSiteurl = wp('option get siteurl').trim();
+    assertPackNotShadowed('woo-default-agent', tablePrefix);
 
     const p4 = await provisionFreshProduct(`agsafe-p4-${Date.now()}`);
     const ck = state.wc_consumer_key, cs = state.wc_consumer_secret;
@@ -381,11 +417,11 @@ function agsafeIssuesSince(startLineCount) {
     check('P4 approval is approved-unclaimed', approvedRow?.status === 'approved', JSON.stringify(approvedRow));
 
     // Seed a shadow window (real .php temp file + docker cp, never `wp eval`).
-    const shadowScript = `<?php\ndefined('ABSPATH') || exit;\nupdate_option('agsafe_shadow_packs', array_merge((array) get_option('agsafe_shadow_packs', []), ['woo-default-agent' => time() + 3600]), false);\n`;
+    const shadowScript = `<?php\ndefined('ABSPATH') || exit;\nupdate_option('agsafe_shadow_packs', array_merge((array) get_option('agsafe_shadow_packs', []), ['readonly-analyst' => time() + 3600]), false);\n`;
     const shadowPath = copyInlineScript('p4-shadow', shadowScript);
     wp(`eval-file ${shadowPath}`);
     const shadowBefore = dbRows(`SELECT option_value FROM ${tablePrefix}options WHERE option_name='agsafe_shadow_packs'`)[0];
-    check('P4 shadow window seeded', !!shadowBefore && String(shadowBefore.option_value).includes('woo-default-agent'), JSON.stringify(shadowBefore));
+    check('P4 shadow window seeded', !!shadowBefore && String(shadowBefore.option_value).includes('readonly-analyst'), JSON.stringify(shadowBefore));
 
     // Move the site.
     wp(`option update home 'http://127.0.0.1:8970'`);
@@ -410,8 +446,8 @@ function agsafeIssuesSince(startLineCount) {
     check('P4 approval is now void_environment', voidedRow?.status === 'void_environment', JSON.stringify(voidedRow));
 
     const shadowAfter = dbRows(`SELECT option_value FROM ${tablePrefix}options WHERE option_name='agsafe_shadow_packs'`)[0];
-    const shadowAfterEmpty = !shadowAfter || !String(shadowAfter.option_value).includes('woo-default-agent');
-    check('P4 shadow option no longer holds woo-default-agent', shadowAfterEmpty, JSON.stringify(shadowAfter));
+    const shadowAfterEmpty = !shadowAfter || !String(shadowAfter.option_value).includes('readonly-analyst');
+    check('P4 shadow option no longer holds readonly-analyst', shadowAfterEmpty, JSON.stringify(shadowAfter));
 
     const noticePage = await getAuthed(adminJar1, '/wp-admin/tools.php?page=agent-safety-packs');
     check(
@@ -432,7 +468,7 @@ function agsafeIssuesSince(startLineCount) {
     check('P4 approval STILL void_environment after rebind (not restored)', afterRebindApproval?.status === 'void_environment', JSON.stringify(afterRebindApproval));
 
     const afterRebindShadow = dbRows(`SELECT option_value FROM ${tablePrefix}options WHERE option_name='agsafe_shadow_packs'`)[0];
-    const afterRebindEmpty = !afterRebindShadow || !String(afterRebindShadow.option_value).includes('woo-default-agent');
+    const afterRebindEmpty = !afterRebindShadow || !String(afterRebindShadow.option_value).includes('readonly-analyst');
     check('P4 shadow STILL empty after rebind (not restored)', afterRebindEmpty, JSON.stringify(afterRebindShadow));
   } catch (e) {
     check('P4 section completed without throwing', false, String(e && e.stack || e));
@@ -466,6 +502,7 @@ function agsafeIssuesSince(startLineCount) {
     // losing structured data — the same class of transport limitation
     // dev/smoke/woo-native-mcp/README.md documents for Woo's own bundled
     // mcp-adapter, just via a different mechanism here).
+    assertPackNotShadowed('woo-default-agent', tablePrefix);
     const authA = basicAuth('admin', state.admin_app_password);
     const { sessionId: sessA } = await handshake(DEFAULT_MCP, authA);
     const toolsA = await toolsList(DEFAULT_MCP, authA, sessA);
