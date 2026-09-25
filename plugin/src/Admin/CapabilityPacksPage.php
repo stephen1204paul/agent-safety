@@ -407,15 +407,15 @@ final class CapabilityPacksPage
         }
         check_admin_referer(self::SHADOW);
 
-        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- applyShadow() below sanitizes and allow-list-validates every element (pack names, confirmation text) before use.
+        // phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- applyShadow() below sanitizes and allow-list-validates every element (pack names, confirmation text, days) before use.
         $posted = isset($_POST['shadow']) && is_array($_POST['shadow']) ? wp_unslash($_POST['shadow']) : [];
         $days = isset($_POST['shadow_days']) && is_scalar($_POST['shadow_days'])
             ? (int) wp_unslash($_POST['shadow_days'])
             : self::defaultShadowDays();
-        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- applyShadow() below sanitizes each confirmation string before comparing it.
         $confirmations = isset($_POST['shadow_confirm']) && is_array($_POST['shadow_confirm'])
             ? wp_unslash($_POST['shadow_confirm'])
             : [];
+        // phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
         $this->applyShadow($posted, $days, $confirmations);
 
