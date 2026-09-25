@@ -460,7 +460,14 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
     const shadowAfterEmpty = !shadowAfter || !String(shadowAfter.option_value).includes('readonly-analyst');
     check('P4 shadow option no longer holds readonly-analyst', shadowAfterEmpty, JSON.stringify(shadowAfter));
 
-    const noticePage = await getAuthed(adminJar1, '/wp-admin/tools.php?page=agent-safety-packs');
+    // BUG FOUND AND FIXED (post-review): `adminJar1`'s auth cookie was
+    // issued while WP_HOME/WP_SITEURL pointed at localhost:8970; changing
+    // those constants to move the site invalidates it (WordPress ties
+    // cookie validation to the site's own idea of its address), so reusing
+    // it here silently redirected to wp-login.php instead of the packs
+    // page. Re-login fresh, now that the site has moved.
+    const adminJar2 = await adminLogin('admin', state.admin_password);
+    const noticePage = await getAuthed(adminJar2, '/wp-admin/tools.php?page=agent-safety-packs');
     check(
       'P4 mismatch notice text appears',
       noticePage.body.includes("this site's address changed since its shadow windows, grants and approved-but-unclaimed approvals were authorised"),
@@ -470,7 +477,7 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
     // Rebind (no id suffix on this nonce action).
     const rebindNonce = scrapeNonceNear(noticePage.body, 'value="agsafe_rebind_environment"');
     check('P4 scraped a rebind nonce', !!rebindNonce, noticePage.body.slice(0, 200));
-    await postAuthed(adminJar1, '/wp-admin/admin-post.php', {
+    await postAuthed(adminJar2, '/wp-admin/admin-post.php', {
       action: 'agsafe_rebind_environment',
       _wpnonce: rebindNonce,
     });
@@ -544,7 +551,16 @@ function assertPackNotShadowed(pack, tablePrefixArg) {
     // execute-ability, including the retry below.
     const p5 = await provisionFreshProduct(`agsafe-p5-${Date.now()}`);
     const del = await executeAbility(authA, sessA, 'woocommerce/product-delete', { id: p5.product_id, force: true });
-    check('P5 delete via execute-ability filed a pending approval (success:false)', del.parsed?.success === false, JSON.stringify(del.parsed || del.text).slice(0, 300));
+    // BUG FOUND AND FIXED (post-review): confirmed live that mcp-adapter
+    // surfaces a DENIED execute-ability call (WP_Error from the target
+    // ability's own permission_callback) as PLAIN TEXT content — the bare
+    // denial message, not the `{success:false,error:<msg>}` JSON shape
+    // `ExecuteAbilityAbility`'s own output_schema documents for a
+    // successfully-returned failure. `del.parsed` is therefore null here
+    // (JSON.parse legitimately fails on plain English text) by construction,
+    // not a bug in the ability itself — check the raw text instead, the same
+    // way every other row in this file already does.
+    check('P5 delete via execute-ability filed a pending approval', del.text.includes('needs human approval before it can run'), del.text.slice(0, 300));
 
     const pendingRow = dbRows(`SELECT approval_id FROM ${approvalsTable} WHERE verb='woocommerce/product-delete' AND status='pending' ORDER BY id DESC LIMIT 1`)[0];
     const realApprovalId = pendingRow?.approval_id;
