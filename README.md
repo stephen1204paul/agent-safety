@@ -65,7 +65,7 @@ Governed namespaces are opt-in: on a bare site the plugin governs nothing - name
 
 ## Installation
 
-Requirements: WordPress 6.9+, PHP 8.1+.
+Requirements: WordPress 7.0+, PHP 8.1+.
 
 This is not yet packaged for the plugin directory. To run it from source:
 
