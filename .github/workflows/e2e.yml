@@ -69,7 +69,7 @@ jobs:
               core: process.env.WPENV_CORE,
               phpVersion: "8.3",
               mappings: {
-                "wp-content/plugins/agent-safety": "./plugin",
+                "wp-content/plugins/agent-tollgate": "./plugin",
                 "wp-content/plugins/mcp-adapter": "../mcp-adapter",
                 "wp-content/mu-plugins/agsafe-smoke-fixture.php": "./dev/smoke/agsafe-smoke-fixture.php"
               },
@@ -94,7 +94,7 @@ jobs:
           npx wp-env start
 
       - name: Activate plugins
-        run: npx wp-env run cli wp plugin activate agent-safety mcp-adapter
+        run: npx wp-env run cli wp plugin activate agent-tollgate mcp-adapter
 
       - name: Install WooCommerce (Woo-on legs only)
         if: ${{ matrix.woo }}
