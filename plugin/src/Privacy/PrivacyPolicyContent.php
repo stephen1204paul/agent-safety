@@ -25,7 +25,7 @@ final class PrivacyPolicyContent
         }
 
         $content = '<p class="privacy-policy-tutorial">' . __(
-            "Agent Safety records every governed AI-agent tool call in a tamper-evident audit log: which WordPress user or application password acted, their IP address, and the tool's input arguments — which may include customer data handled by other plugins (for example, an order or a customer record passed as a tool argument).",
+            "Agent Tollgate records every governed AI-agent tool call in a tamper-evident audit log: which WordPress user or application password acted, their IP address, and the tool's input arguments — which may include customer data handled by other plugins (for example, an order or a customer record passed as a tool argument).",
             'agent-tollgate'
         ) . '</p><p>' . __(
             "These records are kept even after a data-erasure request: each entry is cryptographically chained to the one before it, so rewriting or deleting an entry would break that chain for every later entry and defeat the tamper-evidence the log exists to provide. A personal-data export includes a user's own audit records; a personal-data erasure request reports them as retained instead of removing them.",
@@ -35,6 +35,6 @@ final class PrivacyPolicyContent
             'agent-tollgate'
         ) . '</p>';
 
-        wp_add_privacy_policy_content(__('Agent Safety', 'agent-tollgate'), $content);
+        wp_add_privacy_policy_content(__('Agent Tollgate', 'agent-tollgate'), $content);
     }
 }

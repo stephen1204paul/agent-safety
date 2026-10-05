@@ -193,7 +193,7 @@ final class CheckApprovalAbility
             return $message;
         }
 
-        return __('Agent Safety is paused on this site, so retrying won\'t work until an administrator resumes it. ', 'agent-tollgate') . $message;
+        return __('Agent Tollgate is paused on this site, so retrying won\'t work until an administrator resumes it. ', 'agent-tollgate') . $message;
     }
 
     /** @param array<string, mixed>|null $row */

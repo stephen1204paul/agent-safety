@@ -245,7 +245,7 @@ final class CapabilityPacksPage
         }
 
         echo '<div class="notice notice-error"><p><strong>'
-            . esc_html__('Agent Safety: all agent actions are paused.', 'agent-tollgate')
+            . esc_html__('Agent Tollgate: all agent actions are paused.', 'agent-tollgate')
             . '</strong> <a href="' . esc_url(admin_url('tools.php?page=' . self::SLUG)) . '">'
             . esc_html__('Review or resume', 'agent-tollgate')
             . '</a></p></div>';

@@ -66,8 +66,8 @@ final class SelfIntegration
 
         add_action('wp_abilities_api_categories_init', static function (): void {
             wp_register_ability_category(self::CATEGORY, [
-                'label' => __('Agent Safety', 'agent-tollgate'),
-                'description' => __('Abilities added by the Agent Safety plugin.', 'agent-tollgate'),
+                'label' => __('Agent Tollgate', 'agent-tollgate'),
+                'description' => __('Abilities added by the Agent Tollgate plugin.', 'agent-tollgate'),
             ]);
         });
 

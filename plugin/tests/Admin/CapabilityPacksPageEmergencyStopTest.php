@@ -245,7 +245,7 @@ final class CapabilityPacksPageEmergencyStopTest extends TestCase
         $this->page->pausedNotice();
         $out = (string) ob_get_clean();
 
-        $this->assertStringContainsString('Agent Safety: all agent actions are paused.', $out);
+        $this->assertStringContainsString('Agent Tollgate: all agent actions are paused.', $out);
         $this->assertStringContainsString('Review or resume', $out);
     }
 

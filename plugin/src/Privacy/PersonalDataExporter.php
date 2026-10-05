@@ -60,7 +60,7 @@ final class PersonalDataExporter
 
         return [
             'group_id' => 'agent-safety-audit-log',
-            'group_label' => __('Agent Safety Audit Log', 'agent-tollgate'),
+            'group_label' => __('Agent Tollgate Audit Log', 'agent-tollgate'),
             'item_id' => 'agent-safety-audit-log-' . (string) ($row['id'] ?? ''),
             'data' => [
                 ['name' => __('Time', 'agent-tollgate'), 'value' => (string) ($record['ts'] ?? '')],

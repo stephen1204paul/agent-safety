@@ -75,7 +75,7 @@ final class ApprovalNotifier
             return;
         }
 
-        wp_mail($to, '[Agent Safety] ' . $subject, $body);
+        wp_mail($to, '[Agent Tollgate] ' . $subject, $body);
     }
 
     private function email(string $approvalId, string $verb, string $summary): void
@@ -89,7 +89,7 @@ final class ApprovalNotifier
             $to,
             sprintf(
                 /* translators: %s the verb (ability id) the agent tried to call */
-                __('[Agent Safety] Approval requested: %s', 'agent-tollgate'),
+                __('[Agent Tollgate] Approval requested: %s', 'agent-tollgate'),
                 $verb
             ),
             sprintf(

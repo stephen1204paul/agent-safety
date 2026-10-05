@@ -85,7 +85,7 @@ final class Verdict
         if (Outcome::Deny === $this->decision->outcome) {
             return new WP_Error(
                 'agent_safety_denied',
-                sprintf('Blocked by Agent Safety (%s): %s', $this->pack->name, $this->decision->reason),
+                sprintf('Blocked by Agent Tollgate (%s): %s', $this->pack->name, $this->decision->reason),
                 ['status' => 403, 'verb' => $this->verb, 'tier' => $this->decision->tier?->value]
             );
         }

@@ -23,7 +23,7 @@ final class MultisiteGuard
     /** The one sentence shown to the person who tried. */
     public static function message(): string
     {
-        return __('Agent Safety does not support WordPress multisite. It was not activated.', 'agent-tollgate');
+        return __('Agent Tollgate does not support WordPress multisite. It was not activated.', 'agent-tollgate');
     }
 
     /**
@@ -67,7 +67,7 @@ final class MultisiteGuard
     {
         printf(
             '<div class="notice notice-error"><p>%s</p></div>',
-            esc_html__('Agent Safety is inactive: WordPress multisite is not supported. Deactivate it on this network.', 'agent-tollgate')
+            esc_html__('Agent Tollgate is inactive: WordPress multisite is not supported. Deactivate it on this network.', 'agent-tollgate')
         );
     }
 }

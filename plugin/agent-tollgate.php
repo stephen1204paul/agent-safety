@@ -127,7 +127,7 @@ function activate_agent_safety(): void
     if (function_exists('is_multisite') && is_multisite()) {
         // Defensive fallback if the autoloader failed to bring in the guard
         // class above: still refuse rather than activate half-wired.
-        wp_die(esc_html__('Agent Safety does not support WordPress multisite. It was not activated.', 'agent-tollgate'));
+        wp_die(esc_html__('Agent Tollgate does not support WordPress multisite. It was not activated.', 'agent-tollgate'));
     }
 
     if (!class_exists(Schema::class) || !class_exists(ApprovalSweep::class)) {
