@@ -22,7 +22,7 @@ if (!is_readable($wpasPluginAutoload)) {
 require_once $wpasPluginAutoload;
 
 // Real WordPress defines this before loading any plugin file; api.php (like
-// agent-safety.php) exits immediately without it.
+// agent-tollgate.php) exits immediately without it.
 if (!defined('ABSPATH')) {
     define('ABSPATH', __DIR__ . '/');
 }

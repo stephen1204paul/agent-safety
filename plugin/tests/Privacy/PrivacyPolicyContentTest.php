@@ -25,7 +25,7 @@ final class PrivacyPolicyContentTest extends TestCase
         $this->assertCount(1, $GLOBALS['wpas_test_privacy_policy_content']);
         $entry = $GLOBALS['wpas_test_privacy_policy_content'][0];
 
-        $this->assertSame('Agent Safety', $entry['plugin_name']);
+        $this->assertSame('Agent Tollgate', $entry['plugin_name']);
         $this->assertStringContainsString('tool', $entry['content']);
         $this->assertStringContainsString('customer data', $entry['content']);
         $this->assertStringContainsString('chained', $entry['content']);

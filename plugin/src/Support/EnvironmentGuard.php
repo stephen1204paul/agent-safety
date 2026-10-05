@@ -231,8 +231,8 @@ final class EnvironmentGuard
 
         echo '<div class="notice notice-error"><p>'
             . esc_html__(
-                "Agent Safety: this site's address changed since its shadow windows, grants and approved-but-unclaimed approvals were authorised. Those relaxations have been permanently voided. Rebind on the Agent Capability Packs page once this move is expected.",
-                'agent-safety'
+                "Agent Tollgate: this site's address changed since its shadow windows, grants and approved-but-unclaimed approvals were authorised. Those relaxations have been permanently voided. Rebind on the Agent Capability Packs page once this move is expected.",
+                'agent-tollgate'
             )
             . '</p></div>';
     }

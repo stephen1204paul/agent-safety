@@ -142,7 +142,7 @@ final class TripwiresTest extends TestCase
         $this->assertCount(1, $GLOBALS['wpas_test_mail']);
         $mail = $GLOBALS['wpas_test_mail'][0];
         $this->assertSame('owner@example.test', $mail['to']);
-        $this->assertStringStartsWith('[Agent Safety]', $mail['subject']);
+        $this->assertStringStartsWith('[Agent Tollgate]', $mail['subject']);
         $this->assertStringContainsString('tok', $mail['subject']);
         $this->assertStringContainsString('600 seconds', $mail['message']);
         $this->assertStringContainsString('tools.php?page=agent-safety-audit', $mail['message']);

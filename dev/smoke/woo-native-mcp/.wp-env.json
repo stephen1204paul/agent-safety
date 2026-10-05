@@ -8,7 +8,7 @@
         "https://downloads.wordpress.org/plugin/woocommerce.11.1.0.zip"
     ],
     "mappings": {
-        "wp-content/plugins/agent-safety": "../../../plugin",
+        "wp-content/plugins/agent-tollgate": "../../../plugin",
         "wp-content/mu-plugins/agsafe-woo-mcp-fixture.php": "./agsafe-woo-mcp-fixture.php"
     },
     "config": {

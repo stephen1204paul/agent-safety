@@ -1,6 +1,6 @@
 {
     "name": "specflux/agent-safety",
-    "description": "Thin WordPress plugin host for the Agent Safety core: a governed safety/audit layer for AI agent tool calls. Wires the security package into mcp_adapter_* hooks and wp-admin, with WooCommerce supported as a capability pack.",
+    "description": "Thin WordPress plugin host for the Agent Tollgate core: a governed safety/audit layer for AI agent tool calls. Wires the security package into mcp_adapter_* hooks and wp-admin, with WooCommerce supported as a capability pack.",
     "type": "wordpress-plugin",
     "license": "GPL-2.0-or-later",
     "require": {

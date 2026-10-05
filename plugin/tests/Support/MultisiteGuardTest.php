@@ -25,8 +25,8 @@ final class MultisiteGuardTest extends TestCase
 
         $this->assertFalse(MultisiteGuard::refused());
 
-        MultisiteGuard::refuseActivation('/plugins/agent-safety/agent-safety.php');
-        MultisiteGuard::refuseRuntime('/plugins/agent-safety/agent-safety.php');
+        MultisiteGuard::refuseActivation('/plugins/agent-tollgate/agent-tollgate.php');
+        MultisiteGuard::refuseRuntime('/plugins/agent-tollgate/agent-tollgate.php');
 
         $this->assertSame([], $GLOBALS['wpas_test_deactivated_plugins'] ?? []);
     }
@@ -40,10 +40,10 @@ final class MultisiteGuardTest extends TestCase
         $this->expectExceptionMessage('does not support WordPress multisite');
 
         try {
-            MultisiteGuard::refuseActivation('/plugins/agent-safety/agent-safety.php');
+            MultisiteGuard::refuseActivation('/plugins/agent-tollgate/agent-tollgate.php');
         } finally {
             $this->assertSame(
-                ['agent-safety/agent-safety.php'],
+                ['agent-tollgate/agent-tollgate.php'],
                 $GLOBALS['wpas_test_deactivated_plugins'] ?? []
             );
         }
@@ -58,17 +58,17 @@ final class MultisiteGuardTest extends TestCase
 
         $this->expectException(RuntimeException::class);
 
-        MultisiteGuard::refuseActivation('/plugins/agent-safety/agent-safety.php');
+        MultisiteGuard::refuseActivation('/plugins/agent-tollgate/agent-tollgate.php');
     }
 
     public function testMultisiteRuntimeGuardDeactivatesAndShowsAnAdminNotice(): void
     {
         $GLOBALS['wpas_test_multisite'] = true;
 
-        MultisiteGuard::refuseRuntime('/plugins/agent-safety/agent-safety.php');
+        MultisiteGuard::refuseRuntime('/plugins/agent-tollgate/agent-tollgate.php');
 
         $this->assertSame(
-            ['agent-safety/agent-safety.php'],
+            ['agent-tollgate/agent-tollgate.php'],
             $GLOBALS['wpas_test_deactivated_plugins'] ?? []
         );
         $this->assertNotEmpty($GLOBALS['wpas_test_added_actions']['admin_notices'] ?? []);

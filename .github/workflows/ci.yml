@@ -83,7 +83,7 @@ jobs:
           if [ -n "${{ inputs.zip-artifact }}" ]; then
             ZIP_PATH=$(find build-artifact -maxdepth 1 -name '*.zip' | head -1)
           else
-            ZIP_PATH=$(find . -maxdepth 1 -name 'agent-safety-*.zip' | head -1)
+            ZIP_PATH=$(find . -maxdepth 1 -name 'agent-tollgate-*.zip' | head -1)
           fi
           echo "path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
           mkdir -p extracted
@@ -92,7 +92,7 @@ jobs:
       - name: Run Plugin Check
         uses: wordpress/plugin-check-action@v1.1.9
         with:
-          build-dir: './extracted/agent-safety'
+          build-dir: './extracted/agent-tollgate'
 
   plugin-check-latest:
     if: github.event_name == 'schedule'
@@ -112,11 +112,11 @@ jobs:
 
       - name: Extract the zip
         run: |
-          ZIP_PATH=$(find . -maxdepth 1 -name 'agent-safety-*.zip' | head -1)
+          ZIP_PATH=$(find . -maxdepth 1 -name 'agent-tollgate-*.zip' | head -1)
           mkdir -p extracted
           unzip -q "$ZIP_PATH" -d extracted
 
       - name: Run Plugin Check (latest release)
         uses: wordpress/plugin-check-action@v1
         with:
-          build-dir: './extracted/agent-safety'
+          build-dir: './extracted/agent-tollgate'

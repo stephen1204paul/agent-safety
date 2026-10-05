@@ -1,10 +1,10 @@
-=== Agent Safety ===
+=== Agent Tollgate ===
 Contributors: stephen1204paul
 Tags: security, ai, mcp, audit-log, woocommerce
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.4.0
+Stable tag: 0.4.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -12,7 +12,7 @@ Governs other plugins' agent tool calls, with human approval and a tamper-eviden
 
 == Description ==
 
-Agent Safety governs other plugins' agent tool calls, not just its own. It sits between AI
+Agent Tollgate governs other plugins' agent tool calls, not just its own. It sits between AI
 agents (through the WordPress Abilities API, and through MCP servers built on
 [mcp-adapter](https://github.com/WordPress/mcp-adapter), as WooCommerce's is) and the actions
 those agents can take on your site. Every governed call is classified by tier, checked against a
@@ -37,7 +37,7 @@ default pack rather than inheriting full access.
 When a pack requires approval for a tier (the starter packs do for irreversible calls), a call
 at that tier doesn't execute. It is queued under **Tools → Pending Agent Actions** for a human
 to approve or reject. When an
-Approval is requested, Agent Safety captures a fingerprint of the target's current state; when
+Approval is requested, Agent Tollgate captures a fingerprint of the target's current state; when
 the approval is claimed, it re-checks that fingerprint. A mismatch means the target changed
 between request and claim, so the old approval is marked stale and a fresh request is filed. This
 narrows the gap between a human's approval and the write — it does not close it, because the
@@ -58,12 +58,12 @@ Every gate decision and executed action is appended to an append-only, hash-chai
 **Core coverage**
 
 Governs the three abilities WordPress core registers today. Any other `core/*` ability is denied
-until Agent Safety maps it, so future core write abilities fail closed rather than run
+until Agent Tollgate maps it, so future core write abilities fail closed rather than run
 ungoverned.
 
 **WooCommerce coverage**
 
-When WooCommerce is active, Agent Safety governs exactly these 16 abilities:
+When WooCommerce is active, Agent Tollgate governs exactly these 16 abilities:
 
 * `woocommerce/products-list`
 * `woocommerce/products-get`
@@ -88,7 +88,7 @@ Everything else under `woocommerce/` is refused as an unknown verb. Deleting a p
 **Which MCP endpoint to use**
 
 WooCommerce's own MCP endpoint (`/wp-json/woocommerce/mcp`) is deprecated by WooCommerce itself,
-which points clients at the shared `mcp-adapter` server instead. Agent Safety governs both the
+which points clients at the shared `mcp-adapter` server instead. Agent Tollgate governs both the
 same way, through the ability permission check, but the two endpoints don't expose the same
 information to an agent:
 
@@ -105,7 +105,7 @@ supported for as long as WooCommerce ships it, with the limitation above.
 
 **Environment awareness**
 
-Agent Safety notices when a site's address changes (a migration, a staging clone) and treats it
+Agent Tollgate notices when a site's address changes (a migration, a staging clone) and treats it
 as a new environment: shadow-mode windows, active grants, and approved-but-unclaimed approvals
 are all voided rather than carried over silently, and an admin notice stays up until someone
 rebinds the site from the settings page. Production sites (`wp_get_environment_type() ===
@@ -119,9 +119,9 @@ or per site.
 
 == Installation ==
 
-1. Upload the plugin to `/wp-content/plugins/agent-safety`, or install it through the Plugins
+1. Upload the plugin to `/wp-content/plugins/agent-tollgate`, or install it through the Plugins
    screen.
-2. Activate **Agent Safety**.
+2. Activate **Agent Tollgate**.
 3. Visit **Tools → Agent Capability Packs** to bind identities (application passwords, users or
    roles, WooCommerce REST API keys) to a pack. Unbound credentials get a safe default pack.
 4. Review pending actions under **Tools → Pending Agent Actions** and the log under **Tools →
@@ -169,7 +169,7 @@ Capability Packs**.
 
 This plugin can send data outside your site in two ways.
 
-**Email.** When a new agent action needs approval, Agent Safety sends an email through
+**Email.** When a new agent action needs approval, Agent Tollgate sends an email through
 `wp_mail()` to the site's admin email address, or to a recipient set on the Pending Agent
 Actions screen, linking to the login-protected review screen. It goes through your site's own
 mail delivery.
@@ -183,7 +183,7 @@ destination is the site operator's choice. Nothing is sent to the plugin's autho
 
 == Privacy ==
 
-Agent Safety keeps a hash-chained audit log of gate decisions and executed agent actions,
+Agent Tollgate keeps a hash-chained audit log of gate decisions and executed agent actions,
 including the identity that made the call. A personal-data export for a WordPress user includes
 their matching audit rows. An erasure request does not delete them: they are reported as
 retained, with a note that they're kept as a tamper-evident security record, because rewriting a
@@ -195,12 +195,23 @@ touched.
 
 == Upgrade Notice ==
 
+= 0.4.1 =
+Renamed to Agent Tollgate; no behaviour change. If you installed 0.4.0 from GitHub, deactivate and delete the old agent-safety folder, then install this one. Tables and settings carry over.
+
 = 0.4.0 =
 Schema change: the grants table is renamed and the approvals table gains new columns. Back up
 your database before upgrading. There is no downgrade path back to a pre-0.4.0 build once this
 runs.
 
 == Changelog ==
+
+= 0.4.1 =
+* Renamed to Agent Tollgate for the WordPress.org directory: new slug and text domain
+  `agent-tollgate`, main file `agent-tollgate.php`.
+* No behaviour change. Data, settings and hooks are unchanged.
+* If you installed 0.4.0 from GitHub, deactivate and delete the old `agent-safety` folder, then
+  install this one. Deleting the old plugin keeps your tables and settings unless
+  `AGSAFE_REMOVE_DATA` is defined as true in `wp-config.php`, so they carry over.
 
 = 0.4.0 =
 * `core/*` module narrowed to the three abilities WordPress core actually registers
