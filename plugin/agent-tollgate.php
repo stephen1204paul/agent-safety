@@ -2,7 +2,7 @@
 
 /**
  * Plugin Name:       Agent Tollgate
- * Plugin URI:        https://github.com/stephen1204paul/agent-safety
+ * Plugin URI:        https://github.com/stephen1204paul/agent-tollgate
  * Description:       Governs other plugins' agent tool calls: verb-tier gating, capability packs, human approval with a state-fingerprint check, and a tamper-evident audit log. Ships a WordPress-core module plus a WooCommerce integration module.
  * Version:           0.4.1
  * Requires PHP:      8.1
@@ -109,7 +109,7 @@ register_deactivation_hook(__FILE__, __NAMESPACE__ . '\\deactivate_agent_safety'
  * wiring and approvals schema have never been designed or tested for a
  * network install, and letting activation through would previously have left
  * the ApprovalSweep cron scheduled on only the activating site
- * (stephen1204paul/agent-safety#4) — refusing outright makes that moot.
+ * (stephen1204paul/agent-tollgate#4) — refusing outright makes that moot.
  */
 function activate_agent_safety(): void
 {

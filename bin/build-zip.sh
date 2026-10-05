@@ -125,7 +125,7 @@ copy_required_file "readme.txt"
 [ -f "$PLUGIN_DIR/composer.json" ] || fail "required plugin file missing: plugin/composer.json"
 php -r '
 	$json = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
-	$json["repositories"] = [["type" => "vcs", "url" => "https://github.com/stephen1204paul/agent-safety"]];
+	$json["repositories"] = [["type" => "vcs", "url" => "https://github.com/stephen1204paul/agent-tollgate"]];
 	$json["require"]["specflux/agent-safety-core"] = $argv[3];
 	file_put_contents($argv[2], json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
 ' "$PLUGIN_DIR/composer.json" "$STAGE_DIR/composer.json" "$VERSION" || fail "could not write the shipped composer.json"

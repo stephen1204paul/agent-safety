@@ -2,7 +2,7 @@
 
 A governed safety and audit layer for AI-agent tool calls in WordPress - verb-tier gating, capability packs, human approval, and a hash-chained audit trail.
 
-[![CI](https://github.com/stephen1204paul/agent-safety/actions/workflows/ci.yml/badge.svg)](https://github.com/stephen1204paul/agent-safety/actions/workflows/ci.yml)
+[![CI](https://github.com/stephen1204paul/agent-tollgate/actions/workflows/ci.yml/badge.svg)](https://github.com/stephen1204paul/agent-tollgate/actions/workflows/ci.yml)
 
 ## Why
 
@@ -70,7 +70,7 @@ Requirements: WordPress 7.0+, PHP 8.1+.
 This is not yet packaged for the plugin directory. To run it from source:
 
 ```sh
-git clone https://github.com/stephen1204paul/agent-safety.git
+git clone https://github.com/stephen1204paul/agent-tollgate.git
 cd agent-safety
 composer install
 cd plugin
