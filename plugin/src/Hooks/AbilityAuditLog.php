@@ -138,7 +138,10 @@ final class AbilityAuditLog
         // would misreport it as a failure at shutdown (see class docblock).
         $args = $this->popInFlight($name) ?? (is_array($input) ? $input : []);
 
-        if (McpRequestAuditHandler::hasPendingCapture()) {
+        // `false`: never autoload it here — the handler implements an mcp-adapter
+        // interface, so loading it on a site without the adapter is a fatal, and
+        // an unloaded handler can't have a capture pending.
+        if (class_exists(McpRequestAuditHandler::class, false) && McpRequestAuditHandler::hasPendingCapture()) {
             // A tools/call is mid-flight for this request; McpRequestAuditHandler's
             // mcp.request record supersedes this one (see class docblock: DOUBLE-
             // LOGGING DEDUPE).
