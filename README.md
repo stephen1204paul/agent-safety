@@ -1,4 +1,4 @@
-# Agent Safety
+# Agent Tollgate
 
 A governed safety and audit layer for AI-agent tool calls in WordPress - verb-tier gating, capability packs, human approval, and a hash-chained audit trail.
 
@@ -8,7 +8,7 @@ A governed safety and audit layer for AI-agent tool calls in WordPress - verb-ti
 
 AI agents are starting to call WordPress the same way plugins do - through the Abilities API, and through MCP servers built on [WordPress/mcp-adapter](https://github.com/WordPress/mcp-adapter). That's a new kind of caller: not a human clicking through wp-admin, and not a plugin whose code you audited once and trust to behave the same way every time. An agent decides *at runtime* which tool to call and with what arguments, and it can decide wrong - refund the wrong order, or delete a product it was only asked to edit - with no confirmation step and no record of why.
 
-Most integrations answer this by trusting the tool's own metadata (a `readOnlyHint` annotation, a "safe" label) or by trusting the credential (an application password can do whatever the underlying REST route allows). Neither is a policy. Agent Safety sits between the agent and the site and makes that policy explicit: every governed tool call is classified, checked against a capability pack bound to the calling identity, and written to an audit log - before it runs.
+Most integrations answer this by trusting the tool's own metadata (a `readOnlyHint` annotation, a "safe" label) or by trusting the credential (an application password can do whatever the underlying REST route allows). Neither is a policy. Agent Tollgate sits between the agent and the site and makes that policy explicit: every governed tool call is classified, checked against a capability pack bound to the calling identity, and written to an audit log - before it runs.
 
 It ships WordPress-general. WooCommerce is the flagship integration, wired in only when WooCommerce is active, not a dependency.
 
@@ -59,7 +59,7 @@ Every governed call goes through the same pipeline, regardless of whether it arr
 
 **Read-path PII redaction.** Packs that request it get known PII fields (email, phone, name, address, etc.) masked both in what's written to the audit log and in the data returned to the agent.
 
-**MCP observability.** Where a site runs an MCP server built on `mcp-adapter` (as WooCommerce's does), Agent Safety registers as that adapter's observability handler (`McpRequestAuditHandler`) and audits denied and blocked tool calls at the MCP layer too - using the adapter's public API, with no changes to mcp-adapter itself.
+**MCP observability.** Where a site runs an MCP server built on `mcp-adapter` (as WooCommerce's does), Agent Tollgate registers as that adapter's observability handler (`McpRequestAuditHandler`) and audits denied and blocked tool calls at the MCP layer too - using the adapter's public API, with no changes to mcp-adapter itself.
 
 Governed namespaces are opt-in: on a bare site the plugin governs nothing - namespaces are contributed by integration modules (the WooCommerce one governs `woocommerce/*`) or by the `agent_safety_governed_namespaces` filter. Governing a namespace without also mapping its verbs to tiers gets every call in it denied as an unknown verb - that's the fail-closed default working as intended, not a bug.
 
@@ -77,13 +77,13 @@ cd plugin
 composer install
 ```
 
-Then symlink or copy `plugin/` into `wp-content/plugins/agent-safety` and activate **Agent Safety** from the Plugins screen. WooCommerce support activates automatically if WooCommerce is active; nothing else to configure for it to be safe-by-default.
+Then symlink or copy `plugin/` into `wp-content/plugins/agent-tollgate` and activate **Agent Tollgate** from the Plugins screen. WooCommerce support activates automatically if WooCommerce is active; nothing else to configure for it to be safe-by-default.
 
 Uninstalling leaves the audit log and approval tables in place by default - it's a compliance record, and silently dropping it on uninstall would defeat the point. To have uninstall remove them, define `AGSAFE_REMOVE_DATA` as `true` before deleting the plugin.
 
 ## Configuration
 
-Agent Safety is configured mostly through wp-admin (**Tools → Agent Capability Packs**, **Tools → Pending Agent Actions**, **Tools → Agent Audit Log**) plus a small set of filters for extending the policy programmatically:
+Agent Tollgate is configured mostly through wp-admin (**Tools → Agent Capability Packs**, **Tools → Pending Agent Actions**, **Tools → Agent Audit Log**) plus a small set of filters for extending the policy programmatically:
 
 | Filter | Purpose |
 | --- | --- |
@@ -137,7 +137,7 @@ src/                         specflux/agent-safety-core - framework-agnostic, PH
 tests/                       PHPUnit tests for the core
 
 plugin/                      specflux/agent-safety - WordPress plugin host
-  agent-safety.php           plugin bootstrap (main file)
+  agent-tollgate.php         plugin bootstrap (main file)
   src/
     Identity/                IdentityChain + providers (app password, user/role)
     Hooks/                   PreToolCallGate, AbilityPermissionGate, AbilityAuditLog,
