@@ -1,16 +1,16 @@
 <?php
 
 /**
- * Plugin Name:       Agent Safety
+ * Plugin Name:       Agent Tollgate
  * Plugin URI:        https://github.com/stephen1204paul/agent-safety
  * Description:       Governs other plugins' agent tool calls: verb-tier gating, capability packs, human approval with a state-fingerprint check, and a tamper-evident audit log. Ships a WordPress-core module plus a WooCommerce integration module.
- * Version:           0.4.0
+ * Version:           0.4.1
  * Requires PHP:      8.1
  * Requires at least: 7.0
  * Author:            Stephen Paul Samynathan
  * Author URI:        https://profiles.wordpress.org/stephen1204paul/
  * License:           GPL-2.0-or-later
- * Text Domain:       agent-safety
+ * Text Domain:       agent-tollgate
  *
  * Thin host: wires the security core (specflux/agent-safety-core) into
  * WordPress hooks. All decision logic lives in the package under ../src. The
@@ -127,7 +127,7 @@ function activate_agent_safety(): void
     if (function_exists('is_multisite') && is_multisite()) {
         // Defensive fallback if the autoloader failed to bring in the guard
         // class above: still refuse rather than activate half-wired.
-        wp_die(esc_html__('Agent Safety does not support WordPress multisite. It was not activated.', 'agent-safety'));
+        wp_die(esc_html__('Agent Safety does not support WordPress multisite. It was not activated.', 'agent-tollgate'));
     }
 
     if (!class_exists(Schema::class) || !class_exists(ApprovalSweep::class)) {

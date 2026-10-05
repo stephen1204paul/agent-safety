@@ -55,8 +55,8 @@ final class PendingActionsPage
     public function menu(): void
     {
         add_management_page(
-            __('Pending Agent Actions', 'agent-safety'),
-            __('Pending Agent Actions', 'agent-safety'),
+            __('Pending Agent Actions', 'agent-tollgate'),
+            __('Pending Agent Actions', 'agent-tollgate'),
             self::CAP,
             self::SLUG,
             [$this, 'render']
@@ -72,8 +72,8 @@ final class PendingActionsPage
         $rows = $this->store->pending();
 
         echo '<div class="wrap">';
-        echo '<h1>' . esc_html__('Pending Agent Actions', 'agent-safety') . '</h1>';
-        echo '<p>' . esc_html__('Irreversible agent actions blocked pending human approval. Approving mints a single-use token bound to the exact verb + arguments.', 'agent-safety') . '</p>';
+        echo '<h1>' . esc_html__('Pending Agent Actions', 'agent-tollgate') . '</h1>';
+        echo '<p>' . esc_html__('Irreversible agent actions blocked pending human approval. Approving mints a single-use token bound to the exact verb + arguments.', 'agent-tollgate') . '</p>';
 
         EnvironmentLabel::render($this->shadow);
 
@@ -87,7 +87,7 @@ final class PendingActionsPage
         echo '</tr></thead><tbody>';
 
         if (!$rows) {
-            echo '<tr><td colspan="8">' . esc_html__('No pending actions. The agent has nothing awaiting review.', 'agent-safety') . '</td></tr>';
+            echo '<tr><td colspan="8">' . esc_html__('No pending actions. The agent has nothing awaiting review.', 'agent-tollgate') . '</td></tr>';
         }
 
         foreach ($rows as $r) {
@@ -96,7 +96,7 @@ final class PendingActionsPage
             // no state check at all, so the queue says so rather than
             // implying every row is equally protected.
             $kind = $r['fingerprint_kind'] ?? null;
-            $stateLabel = ($kind === null || $kind === 'none' || $kind === '') ? __('state not checked', 'agent-safety') : '';
+            $stateLabel = ($kind === null || $kind === 'none' || $kind === '') ? __('state not checked', 'agent-tollgate') : '';
             echo '<tr>';
             echo '<td>' . esc_html((string) ($r['created_ts'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($r['pending_expires_ts'] ?? '')) . '</td>';
@@ -122,8 +122,8 @@ final class PendingActionsPage
      */
     private function renderNotificationSettings(): void
     {
-        echo '<h2>' . esc_html__('Notifications', 'agent-safety') . '</h2>';
-        echo '<p>' . esc_html__('Each NEW pending action sends an email (with a link to this screen) and, if a webhook URL is set, an identifiers-only JSON POST — no call arguments leave the site.', 'agent-safety') . '</p>';
+        echo '<h2>' . esc_html__('Notifications', 'agent-tollgate') . '</h2>';
+        echo '<p>' . esc_html__('Each NEW pending action sends an email (with a link to this screen) and, if a webhook URL is set, an identifiers-only JSON POST — no call arguments leave the site.', 'agent-tollgate') . '</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         echo '<input type="hidden" name="action" value="' . esc_attr(self::NOTIFY) . '">';
         echo wp_nonce_field(self::NOTIFY, '_wpnonce', true, false); // phpcs:ignore WordPress.Security.EscapeOutput -- core-built hidden fields.
@@ -131,25 +131,25 @@ final class PendingActionsPage
         printf(
             '<tr><th scope="row"><label for="agsafe_notify_email">%s</label></th>'
             . '<td><input type="email" id="agsafe_notify_email" name="agsafe_notify_email" class="regular-text" value="%s" placeholder="%s"></td></tr>',
-            esc_html__('Notification email', 'agent-safety'),
+            esc_html__('Notification email', 'agent-tollgate'),
             esc_attr((string) get_option(ApprovalNotifier::EMAIL_OPTION, '')),
-            esc_attr__('Site admin email (default)', 'agent-safety'),
+            esc_attr__('Site admin email (default)', 'agent-tollgate'),
         );
         printf(
             '<tr><th scope="row"><label for="agsafe_webhook_url">%s</label></th>'
             . '<td><input type="url" id="agsafe_webhook_url" name="agsafe_webhook_url" class="regular-text" value="%s" placeholder="https://"></td></tr>',
-            esc_html__('Webhook URL', 'agent-safety'),
+            esc_html__('Webhook URL', 'agent-tollgate'),
             esc_attr((string) get_option(ApprovalNotifier::WEBHOOK_OPTION, '')),
         );
         echo '</tbody></table>';
-        echo '<p><button type="submit" class="button button-primary">' . esc_html__('Save notification settings', 'agent-safety') . '</button></p>';
+        echo '<p><button type="submit" class="button button-primary">' . esc_html__('Save notification settings', 'agent-tollgate') . '</button></p>';
         echo '</form>';
     }
 
     public function saveNotifications(): void
     {
         if (!current_user_can(self::CAP)) {
-            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
+            wp_die(esc_html__('Insufficient permissions.', 'agent-tollgate'));
         }
         check_admin_referer(self::NOTIFY);
 
@@ -209,7 +209,7 @@ final class PendingActionsPage
 
         printf(
             '<div class="notice notice-warning"><p>%s</p></div>',
-            esc_html__('The target of this request changed since it was filed. It cannot be approved as-is; if it is still needed, ask the agent to retry the call.', 'agent-safety')
+            esc_html__('The target of this request changed since it was filed. It cannot be approved as-is; if it is still needed, ask the agent to retry the call.', 'agent-tollgate')
         );
     }
 
@@ -224,10 +224,10 @@ final class PendingActionsPage
 
         printf(
             '<div class="notice notice-success"><p><strong>%s</strong></p><p>%s</p><p><code style="font-size:13px;user-select:all;">%s</code></p><p>%s</p></div>',
-            esc_html__('Approved.', 'agent-safety'),
-            esc_html(sprintf(/* translators: %s approval id */ __('Approval %s is now granted. The same agent (same API key) can simply re-issue the exact same call and it will run — no token needed. To delegate the action to a different actor, hand them the single-use token below as the _approval argument instead.', 'agent-safety'), (string) $flash['approval_id'])),
+            esc_html__('Approved.', 'agent-tollgate'),
+            esc_html(sprintf(/* translators: %s approval id */ __('Approval %s is now granted. The same agent (same API key) can simply re-issue the exact same call and it will run — no token needed. To delegate the action to a different actor, hand them the single-use token below as the _approval argument instead.', 'agent-tollgate'), (string) $flash['approval_id'])),
             esc_html((string) $flash['token']),
-            esc_html__('Valid once, for 15 minutes, bound to that exact verb + arguments. Shown only now and never stored in the clear.', 'agent-safety')
+            esc_html__('Valid once, for 15 minutes, bound to that exact verb + arguments. Shown only now and never stored in the clear.', 'agent-tollgate')
         );
     }
 
@@ -235,14 +235,14 @@ final class PendingActionsPage
     private static function columnHeaders(): array
     {
         return [
-            __('Requested (UTC)', 'agent-safety'),
-            __('Expires (UTC)', 'agent-safety'),
-            __('Correlation', 'agent-safety'),
-            __('Verb', 'agent-safety'),
-            __('Summary', 'agent-safety'),
-            __('State', 'agent-safety'),
-            __('Approval ID', 'agent-safety'),
-            __('Action', 'agent-safety'),
+            __('Requested (UTC)', 'agent-tollgate'),
+            __('Expires (UTC)', 'agent-tollgate'),
+            __('Correlation', 'agent-tollgate'),
+            __('Verb', 'agent-tollgate'),
+            __('Summary', 'agent-tollgate'),
+            __('State', 'agent-tollgate'),
+            __('Approval ID', 'agent-tollgate'),
+            __('Action', 'agent-tollgate'),
         ];
     }
 
@@ -275,8 +275,8 @@ final class PendingActionsPage
     private function actionButtons(string $approvalId): string
     {
         $out = '';
-        $out .= $this->actionButton($approvalId, self::APPROVE, 'primary', __('Approve', 'agent-safety'));
-        $out .= $this->actionButton($approvalId, self::REJECT, 'secondary', __('Reject', 'agent-safety'));
+        $out .= $this->actionButton($approvalId, self::APPROVE, 'primary', __('Approve', 'agent-tollgate'));
+        $out .= $this->actionButton($approvalId, self::REJECT, 'secondary', __('Reject', 'agent-tollgate'));
 
         return $out;
     }
@@ -302,7 +302,7 @@ final class PendingActionsPage
     private function guard(string $action): string
     {
         if (!current_user_can(self::CAP)) {
-            wp_die(esc_html__('Insufficient permissions.', 'agent-safety'));
+            wp_die(esc_html__('Insufficient permissions.', 'agent-tollgate'));
         }
         $approvalId = isset($_POST['approval_id']) ? sanitize_text_field(wp_unslash($_POST['approval_id'])) : '';
         check_admin_referer($action . $approvalId);

@@ -16,7 +16,7 @@ use Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore;
  *
  * {@see activate()}/{@see deactivate()} own only the wp-cron scheduling and are
  * deliberately free of any class dependency beyond this one, so
- * `plugin/agent-safety.php` can call them from its activation/deactivation
+ * `plugin/agent-tollgate.php` can call them from its activation/deactivation
  * callbacks after nothing more than confirming the autoloader ran.
  */
 final class ApprovalSweep

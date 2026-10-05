@@ -52,6 +52,6 @@ final class UserRoleIdentity implements IdentityProvider
 
     public function label(): string
     {
-        return __('Users & Roles', 'agent-safety');
+        return __('Users & Roles', 'agent-tollgate');
     }
 }

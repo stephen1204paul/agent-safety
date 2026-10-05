@@ -107,11 +107,11 @@ final class Verdict
     {
         return match ($variant) {
             /* translators: %1$s the verb (ability id) that needs re-approval */
-            ApprovalMessageVariant::Stale => __('"%1$s" needs human approval again: the target changed after the earlier approval, so a new request has been filed for review.', 'agent-safety'),
+            ApprovalMessageVariant::Stale => __('"%1$s" needs human approval again: the target changed after the earlier approval, so a new request has been filed for review.', 'agent-tollgate'),
             /* translators: %1$s the verb (ability id) that needs re-approval */
-            ApprovalMessageVariant::SiteMoved => __('"%1$s" needs human approval again: the site\'s address changed after the earlier approval, so a new request has been filed for review.', 'agent-safety'),
+            ApprovalMessageVariant::SiteMoved => __('"%1$s" needs human approval again: the site\'s address changed after the earlier approval, so a new request has been filed for review.', 'agent-tollgate'),
             /* translators: %1$s the verb (ability id) awaiting approval */
-            ApprovalMessageVariant::Base => __('"%1$s" needs human approval before it can run. A request has been filed for review.', 'agent-safety'),
+            ApprovalMessageVariant::Base => __('"%1$s" needs human approval before it can run. A request has been filed for review.', 'agent-tollgate'),
         };
     }
 }

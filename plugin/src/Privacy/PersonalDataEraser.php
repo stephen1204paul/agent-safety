@@ -47,7 +47,7 @@ final class PersonalDataEraser
             'messages' => [
                 __(
                     'Agent Safety audit records for this user are kept as a tamper-evident security record: each entry is chained to the one before it by hash, so altering or removing one would break that chain for every entry recorded after it.',
-                    'agent-safety'
+                    'agent-tollgate'
                 ),
             ],
             'done' => count($rows) < self::PAGE_SIZE,
