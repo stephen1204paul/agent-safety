@@ -4,7 +4,7 @@ Tags: security, ai, mcp, audit-log, woocommerce
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.4.1
+Stable tag: 0.4.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -195,6 +195,9 @@ touched.
 
 == Upgrade Notice ==
 
+= 0.4.2 =
+Fixes a critical error on sites without mcp-adapter the first time a pack allowed an ability call. Update right away.
+
 = 0.4.1 =
 Renamed to Agent Tollgate; no behaviour change. If you installed 0.4.0 from GitHub, deactivate and delete the old agent-safety folder, then install this one. Tables and settings carry over.
 
@@ -204,6 +207,11 @@ your database before upgrading. There is no downgrade path back to a pre-0.4.0 b
 runs.
 
 == Changelog ==
+
+= 0.4.2 =
+* Fixed: on a site without mcp-adapter, the first ability call a capability pack allowed ended in a critical
+  error, because the audit log reached for the MCP request handler, which needs mcp-adapter's interface.
+  Denied calls were not affected.
 
 = 0.4.1 =
 * Renamed to Agent Tollgate for the WordPress.org directory: new slug and text domain
