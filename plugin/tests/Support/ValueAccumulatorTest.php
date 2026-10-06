@@ -21,12 +21,12 @@ final class ValueAccumulatorTest extends TestCase
     protected function setUp(): void
     {
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
         $GLOBALS['wpas_test_time'] = 1_700_000_000; // arbitrary fixed instant
     }
 
     protected function tearDown(): void
     {
-        $GLOBALS['wpas_test_transients'] = [];
         unset($GLOBALS['wpas_test_time']);
     }
 
@@ -37,24 +37,21 @@ final class ValueAccumulatorTest extends TestCase
         $this->assertSame(['refund_total' => 0.0], $accumulator->totalsFor('pack-a', 'token-1', ['refund_total']));
     }
 
-    public function testAccumulateThenTotalsForRoundTrips(): void
+    public function testReserveThenTotalsForRoundTrips(): void
     {
         $accumulator = new ValueAccumulator();
 
-        $accumulator->accumulate('pack-a', 'token-1', ['refund_total' => 100.0]);
-        $accumulator->accumulate('pack-a', 'token-1', ['refund_total' => 50.5]);
+        $accumulator->reserve('pack-a', 'token-1', ['refund_total' => 100.0]);
+        $accumulator->reserve('pack-a', 'token-1', ['refund_total' => 50.5]);
 
-        // Storage is a string under the hood (mirroring a real DB-backed
-        // transient) -- confirm the round trip still reads back as a float.
-        $key = array_key_first($GLOBALS['wpas_test_transients']);
-        $this->assertIsString($GLOBALS['wpas_test_transients'][$key]['value']);
+        // The table hands values back as strings -- confirm they still read as floats.
         $this->assertSame(['refund_total' => 150.5], $accumulator->totalsFor('pack-a', 'token-1', ['refund_total']));
     }
 
     public function testDifferentPackTokenCapTuplesDoNotShareBuckets(): void
     {
         $accumulator = new ValueAccumulator();
-        $accumulator->accumulate('pack-a', 'token-1', ['refund_total' => 100.0]);
+        $accumulator->reserve('pack-a', 'token-1', ['refund_total' => 100.0]);
 
         $this->assertSame(['refund_total' => 100.0], $accumulator->totalsFor('pack-a', 'token-1', ['refund_total']));
         $this->assertSame(['refund_total' => 0.0], $accumulator->totalsFor('pack-b', 'token-1', ['refund_total']));
@@ -65,7 +62,7 @@ final class ValueAccumulatorTest extends TestCase
     public function testDayRolloverResetsTotalsToZero(): void
     {
         $accumulator = new ValueAccumulator();
-        $accumulator->accumulate('pack-a', 'token-1', ['refund_total' => 500.0]);
+        $accumulator->reserve('pack-a', 'token-1', ['refund_total' => 500.0]);
         $this->assertSame(['refund_total' => 500.0], $accumulator->totalsFor('pack-a', 'token-1', ['refund_total']));
 
         $GLOBALS['wpas_test_time'] += 86400;
@@ -73,21 +70,25 @@ final class ValueAccumulatorTest extends TestCase
         $this->assertSame(['refund_total' => 0.0], $accumulator->totalsFor('pack-a', 'token-1', ['refund_total']));
     }
 
-    /**
-     * REGRESSION-shaped (mirrors RateCounterTest's DB-backed-string case): a
-     * numeric-string transient value -- exactly what a real wp_options text
-     * column round trip leaves behind, seeded here directly rather than via
-     * accumulate() -- must still be read as a float.
-     */
-    public function testANumericStringTransientSeededDirectlyIsReadAsFloat(): void
+    public function testReserveReturnsTheTotalsIncludingTheReservation(): void
     {
         $accumulator = new ValueAccumulator();
-        // Prime the bucket so we know its real (hashed) key, then overwrite
-        // the raw stored value as a DB round-trip would leave it.
-        $accumulator->accumulate('pack-a', 'token-1', ['refund_total' => 1.0]);
-        $key = array_key_first($GLOBALS['wpas_test_transients']);
-        $GLOBALS['wpas_test_transients'][$key]['value'] = '250.75';
 
-        $this->assertSame(['refund_total' => 250.75], $accumulator->totalsFor('pack-a', 'token-1', ['refund_total']));
+        $this->assertSame(['refund_total' => 100.0], $accumulator->reserve('pack-a', 'token-1', ['refund_total' => 100.0]));
+        $this->assertSame(['refund_total' => 150.5], $accumulator->reserve('pack-a', 'token-1', ['refund_total' => 50.5]));
+    }
+
+    public function testReleaseGivesTheReservedAmountsBack(): void
+    {
+        $accumulator = new ValueAccumulator();
+        $accumulator->reserve('pack-a', 'token-1', ['refund_total' => 100.0]);
+
+        $accumulator->reserve('pack-a', 'token-1', ['refund_total' => 40.0, 'other_cap' => 7.0]);
+        $accumulator->release('pack-a', 'token-1', ['refund_total' => 40.0, 'other_cap' => 7.0]);
+
+        $this->assertSame(
+            ['refund_total' => 100.0, 'other_cap' => 0.0],
+            $accumulator->totalsFor('pack-a', 'token-1', ['refund_total', 'other_cap']),
+        );
     }
 }

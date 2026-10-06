@@ -17,6 +17,7 @@ final class MultisiteGuardTest extends TestCase
             $GLOBALS['wpas_test_deactivated_plugins'],
             $GLOBALS['wpas_test_added_actions']
         );
+        $GLOBALS['wpas_test_user_caps'] = [];
     }
 
     public function testSingleSiteIsNotRefused(): void
@@ -76,11 +77,23 @@ final class MultisiteGuardTest extends TestCase
 
     public function testRuntimeNoticeNamesMultisite(): void
     {
+        $GLOBALS['wpas_test_user_caps']['manage_options'] = true;
+
         ob_start();
         MultisiteGuard::renderNotice();
         $html = (string) ob_get_clean();
 
         $this->assertStringContainsString('notice-error', $html);
         $this->assertStringContainsString('multisite is not supported', $html);
+    }
+
+    public function testRuntimeNoticeIsHiddenFromUsersWithoutManageOptions(): void
+    {
+        $GLOBALS['wpas_test_user_caps']['manage_options'] = false;
+
+        ob_start();
+        MultisiteGuard::renderNotice();
+
+        $this->assertSame('', ob_get_clean());
     }
 }

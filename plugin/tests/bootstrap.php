@@ -60,6 +60,7 @@ require_once __DIR__ . '/Fakes/FakeIdentityProvider.php';
 require_once __DIR__ . '/Fakes/FakeToolAnnotations.php';
 require_once __DIR__ . '/Fakes/FakeMcpTool.php';
 require_once __DIR__ . '/Fakes/InMemoryAuditRowsWpdb.php';
+require_once __DIR__ . '/Fakes/CounterTableWpdb.php';
 require_once __DIR__ . '/Fixtures/VerdictErrorFixture.php';
 
 // --- Minimal WP function shims -------------------------------------------

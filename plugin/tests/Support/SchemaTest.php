@@ -32,6 +32,7 @@ final class SchemaTest extends TestCase
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_dbdelta_queries'] = [];
         $GLOBALS['wpas_test_time'] = \time();
+        $GLOBALS['wpas_test_user_caps'] = [];
         unset($GLOBALS['wpas_test_home_url']);
     }
 
@@ -71,10 +72,22 @@ final class SchemaTest extends TestCase
     {
         Schema::install(new wpdb());
 
-        $this->assertCount(3, $GLOBALS['wpas_test_dbdelta_queries']);
+        $this->assertCount(4, $GLOBALS['wpas_test_dbdelta_queries']);
         $this->assertStringContainsString('wp_agsafe_audit_log', $GLOBALS['wpas_test_dbdelta_queries'][0]);
         $this->assertStringContainsString('wp_agsafe_approvals', $GLOBALS['wpas_test_dbdelta_queries'][1]);
         $this->assertStringContainsString('wp_agsafe_grants', $GLOBALS['wpas_test_dbdelta_queries'][2]);
+        $this->assertStringContainsString('wp_agsafe_counters', $GLOBALS['wpas_test_dbdelta_queries'][3]);
+    }
+
+    public function testTheCountersTableKeysByCounterKeyAndIndexesExpiry(): void
+    {
+        Schema::install(new wpdb());
+
+        $counters = $GLOBALS['wpas_test_dbdelta_queries'][3];
+        $this->assertStringContainsString('counter_key VARCHAR(64) NOT NULL', $counters);
+        $this->assertStringContainsString('value DOUBLE NOT NULL DEFAULT 0', $counters);
+        $this->assertStringContainsString('PRIMARY KEY  (counter_key)', $counters);
+        $this->assertStringContainsString('KEY expires_at (expires_at)', $counters);
     }
 
     public function testTheGrantsTableIndexesTheOnlyLookupTheGatePerforms(): void
@@ -112,7 +125,7 @@ final class SchemaTest extends TestCase
 
         Schema::maybeUpgrade(new wpdb());
 
-        $this->assertCount(3, $GLOBALS['wpas_test_dbdelta_queries']);
+        $this->assertCount(4, $GLOBALS['wpas_test_dbdelta_queries']);
         $this->assertSame(Schema::VERSION, $GLOBALS['wpas_test_options'][Schema::VERSION_OPTION]);
     }
 
@@ -263,6 +276,8 @@ final class SchemaTest extends TestCase
 
     public function testTheConflictNoticeRendersOnlyWhenTheFlagIsSet(): void
     {
+        $GLOBALS['wpas_test_user_caps']['manage_options'] = true;
+
         ob_start();
         Schema::renderGrantsRenameConflictNotice();
         $this->assertSame('', ob_get_clean());
@@ -275,5 +290,16 @@ final class SchemaTest extends TestCase
 
         $this->assertStringContainsString('notice-warning', $notice);
         $this->assertStringContainsString('agent_safety_grants', $notice);
+    }
+
+    public function testTheConflictNoticeIsHiddenFromUsersWithoutManageOptions(): void
+    {
+        $GLOBALS['wpas_test_options'][Schema::GRANTS_RENAME_CONFLICT_OPTION] = true;
+        $GLOBALS['wpas_test_user_caps']['manage_options'] = false;
+
+        ob_start();
+        Schema::renderGrantsRenameConflictNotice();
+
+        $this->assertSame('', ob_get_clean());
     }
 }

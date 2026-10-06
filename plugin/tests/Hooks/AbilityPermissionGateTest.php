@@ -56,6 +56,7 @@ final class AbilityPermissionGateTest extends TestCase
         remove_all_filters('agent_safety_grant_eligible');
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
     }
 
     protected function tearDown(): void

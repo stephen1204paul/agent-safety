@@ -57,6 +57,7 @@ final class VerdictPipelineStopsTest extends TestCase
     {
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
         $GLOBALS['wpas_test_actions'] = [];
         $GLOBALS['wpas_test_mail'] = [];
         $GLOBALS['wpas_test_time'] = self::NOW;
@@ -404,8 +405,8 @@ final class VerdictPipelineStopsTest extends TestCase
 
         $this->assertCount(3, $this->rows(Tripwires::REPEAT));
         $buckets = array_filter(
-            $GLOBALS['wpas_test_transients'],
-            static fn ($key): bool => str_starts_with((string) $key, 'agsafe_win_'),
+            $GLOBALS['wpdb']->rows,
+            static fn ($key): bool => str_starts_with($key, 'agsafe_win_'),
             ARRAY_FILTER_USE_KEY,
         );
         $this->assertCount(1, $buckets);

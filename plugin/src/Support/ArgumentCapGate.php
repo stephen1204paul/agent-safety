@@ -18,8 +18,10 @@ use Specflux\AgentSafety\Packs\Pack;
  *
  * {@see check()} is only ever meant to be consulted for a decision that is
  * OTHERWISE Allow (after tier gating and rate caps). Only an ADMITTED call
- * accumulates into the day totals — a denied or approval-parked call never
- * consumes budget, so it is free to retry once whatever blocked it clears
+ * accumulates into the day totals — a call is reserved before it is checked
+ * (so concurrent requests cannot race the budget) and the reservation is
+ * released again when it is denied or approval-parked, so such a call never
+ * consumes budget and is free to retry once whatever blocked it clears
  * (D26's rule, extended to sums).
  */
 final class ArgumentCapGate
@@ -85,19 +87,31 @@ final class ArgumentCapGate
             array_filter($matching, static fn (ArgumentCap $cap): bool => $cap->accumulates()),
         ));
 
-        $check = $this->policy->evaluate(
-            $matching,
-            $verb,
-            $args,
-            $accumulating === [] ? [] : $this->accumulator->totalsFor($pack->name, $identity, $accumulating),
-            $hasValidApproval,
-        );
+        // Reserve first, then check: the reserved totals already include this
+        // call, so two concurrent requests cannot both read "under budget".
+        // Subtracting this call's own amount back out hands the policy the
+        // same dayTotals it always saw (the spend BEFORE this call, plus any
+        // concurrent reservations).
+        $amounts = $this->policy->accumulableAmounts($matching, $verb, $args);
+        $reserved = $amounts === [] ? [] : $this->accumulator->reserve($pack->name, $identity, $amounts);
 
-        if ($check->allowed) {
-            $amounts = $this->policy->accumulableAmounts($matching, $verb, $args);
-            if ($amounts !== []) {
-                $this->accumulator->accumulate($pack->name, $identity, $amounts);
+        $totals = [];
+        $unreserved = [];
+        foreach ($accumulating as $capId) {
+            if (isset($reserved[$capId])) {
+                $totals[$capId] = $reserved[$capId] - $amounts[$capId];
+            } else {
+                $unreserved[] = $capId;
             }
+        }
+        if ($unreserved !== []) {
+            $totals += $this->accumulator->totalsFor($pack->name, $identity, $unreserved);
+        }
+
+        $check = $this->policy->evaluate($matching, $verb, $args, $totals, $hasValidApproval);
+
+        if (!$check->allowed && $amounts !== []) {
+            $this->accumulator->release($pack->name, $identity, $amounts);
         }
 
         return $this->verdicts[$memoKey] = $check;

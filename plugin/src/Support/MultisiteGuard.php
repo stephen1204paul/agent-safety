@@ -65,6 +65,10 @@ final class MultisiteGuard
     /** Runtime notice for an already-active copy on a multisite install. */
     public static function renderNotice(): void
     {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
         printf(
             '<div class="notice notice-error"><p>%s</p></div>',
             esc_html__('Agent Tollgate is inactive: WordPress multisite is not supported. Deactivate it on this network.', 'agent-tollgate')

@@ -124,11 +124,13 @@ final class Tripwires
             return $this->admitted[$subject];
         }
 
-        if ($this->counter->count($subject, self::REPEAT_WINDOW) >= $this->limits()['identical_calls_per_hour']) {
+        // Increment first, then check the count that includes this call: more
+        // than the limit means the calls BEFORE this one already reached it.
+        if ($this->counter->increment($subject, self::REPEAT_WINDOW) > $this->limits()['identical_calls_per_hour']) {
+            $this->counter->decrement($subject, self::REPEAT_WINDOW);
+
             return $this->admitted[$subject] = false;
         }
-
-        $this->counter->increment($subject, self::REPEAT_WINDOW);
 
         return $this->admitted[$subject] = true;
     }

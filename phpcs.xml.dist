@@ -66,6 +66,7 @@
             it must live in the global namespace too.
         -->
         <exclude-pattern>plugin/tests/Fakes/InMemoryAuditRowsWpdb.php</exclude-pattern>
+        <exclude-pattern>plugin/tests/Fakes/CounterTableWpdb.php</exclude-pattern>
     </rule>
     <rule ref="PSR1.Methods.CamelCapsMethodName">
         <exclude-pattern>plugin/tests/stubs/*</exclude-pattern>
@@ -82,5 +83,6 @@
             override.
         -->
         <exclude-pattern>plugin/tests/Fakes/InMemoryAuditRowsWpdb.php</exclude-pattern>
+        <exclude-pattern>plugin/tests/Fakes/CounterTableWpdb.php</exclude-pattern>
     </rule>
 </ruleset>

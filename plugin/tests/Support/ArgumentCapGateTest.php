@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
+use CounterTableWpdb;
 use Specflux\AgentSafety\Packs\ArgumentCap;
 use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Plugin\Support\ArgumentCapGate;
@@ -23,6 +24,7 @@ final class ArgumentCapGateTest extends TestCase
     protected function setUp(): void
     {
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
         $GLOBALS['wpas_test_time'] = 1_700_000_000;
     }
 
@@ -141,5 +143,54 @@ final class ArgumentCapGateTest extends TestCase
         $this->assertFalse($second->allowed);
         $this->assertSame('refund_total', $second->trippedCap);
         $this->assertSame('max_total_per_day', $second->constraint);
+    }
+
+    public function testExactlyTheBudgetIsAdmittedThenTheNextCallIsDenied(): void
+    {
+        $cap = new ArgumentCap('refund_total', 'orders/*', 'amount', maxTotalPerDay: 300.0);
+        $pack = new Pack(name: 'p', allow: ['*'], argumentCaps: [$cap]);
+        $gate = new ArgumentCapGate();
+
+        // Distinct args: each is a genuinely new call, not a host re-check.
+        foreach ([100, 100.0, '100'] as $i => $amount) {
+            $this->assertTrue($gate->check($pack, 'token-1', 'orders/refund', ['amount' => $amount, 'n' => $i])->allowed, "call $i");
+        }
+        $this->assertFalse($gate->check($pack, 'token-1', 'orders/refund', ['amount' => 100, 'n' => 3])->allowed);
+    }
+
+    public function testADeniedCallsReservationIsReleasedSoALaterSmallerCallStillFits(): void
+    {
+        $cap = new ArgumentCap('refund_total', 'orders/*', 'amount', maxTotalPerDay: 150.0);
+        $pack = new Pack(name: 'p', allow: ['*'], argumentCaps: [$cap]);
+        $accumulator = new ValueAccumulator();
+        $gate = new ArgumentCapGate($accumulator);
+
+        $this->assertTrue($gate->check($pack, 'token-1', 'orders/refund', ['amount' => 100])->allowed);
+        $this->assertFalse($gate->check($pack, 'token-1', 'orders/refund', ['amount' => 100, 'n' => 2])->allowed);
+
+        $this->assertSame(['refund_total' => 100.0], $accumulator->totalsFor('p', 'token-1', ['refund_total']));
+        $this->assertTrue($gate->check($pack, 'token-1', 'orders/refund', ['amount' => 50])->allowed);
+    }
+
+    public function testARequestLandingBetweenReserveAndCheckCannotBothSpendTheLastBudget(): void
+    {
+        $cap = new ArgumentCap('refund_total', 'orders/*', 'amount', maxTotalPerDay: 150.0);
+        $pack = new Pack(name: 'p', allow: ['*'], argumentCaps: [$cap]);
+        $db = CounterTableWpdb::install();
+        $requestB = new ArgumentCapGate();
+
+        $verdictB = null;
+        $db->afterNextInsert = static function () use ($requestB, $pack, &$verdictB): void {
+            $verdictB = $requestB->check($pack, 'token-1', 'orders/refund', ['amount' => 100, 'who' => 'b']);
+        };
+        $verdictA = (new ArgumentCapGate())->check($pack, 'token-1', 'orders/refund', ['amount' => 100, 'who' => 'a']);
+
+        $this->assertNotNull($verdictB);
+        $this->assertNotSame($verdictA->allowed, $verdictB->allowed, 'exactly one of the two is admitted');
+        $this->assertSame(
+            ['refund_total' => 100.0],
+            (new ValueAccumulator())->totalsFor('p', 'token-1', ['refund_total']),
+            'the loser released its reservation',
+        );
     }
 }

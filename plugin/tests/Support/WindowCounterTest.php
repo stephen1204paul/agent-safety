@@ -18,12 +18,12 @@ final class WindowCounterTest extends TestCase
     protected function setUp(): void
     {
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
         $GLOBALS['wpas_test_time'] = self::NOW;
     }
 
     protected function tearDown(): void
     {
-        $GLOBALS['wpas_test_transients'] = [];
         $GLOBALS['wpas_test_time'] = \time();
     }
 
@@ -67,23 +67,20 @@ final class WindowCounterTest extends TestCase
     {
         (new WindowCounter())->increment('a', 60);
 
-        foreach (array_keys($GLOBALS['wpas_test_transients']) as $key) {
-            $this->assertStringStartsWith('agsafe_win_', (string) $key);
+        $this->assertNotSame([], $GLOBALS['wpdb']->rows);
+        foreach (array_keys($GLOBALS['wpdb']->rows) as $key) {
+            $this->assertStringStartsWith('agsafe_win_', $key);
+            $this->assertLessThanOrEqual(64, strlen($key));
         }
     }
 
-    /** DB-backed transients come back as strings (see RateCounter); a counter that ignored them would never trip. */
-    public function testANumericStringFromADbBackedTransientIsAccepted(): void
+    public function testDecrementUndoesAnIncrementAndReturnsTheNewCount(): void
     {
         $counter = new WindowCounter();
         $counter->increment('a', 60);
         $counter->increment('a', 60);
-        foreach ($GLOBALS['wpas_test_transients'] as &$row) {
-            $row['value'] = (string) $row['value'];
-        }
-        unset($row);
 
-        $this->assertSame(2, $counter->count('a', 60));
-        $this->assertSame(3, $counter->increment('a', 60));
+        $this->assertSame(1, $counter->decrement('a', 60));
+        $this->assertSame(1, $counter->count('a', 60));
     }
 }

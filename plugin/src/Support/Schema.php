@@ -8,7 +8,7 @@ use Specflux\AgentSafety\Plugin\Audit\WpdbAuditSink;
 use wpdb;
 
 /**
- * Single source of truth for the plugin's three custom tables
+ * Single source of truth for the plugin's four custom tables
  * ({@see \Specflux\AgentSafety\Plugin\Audit\WpdbAuditSink},
  * {@see \Specflux\AgentSafety\Plugin\Audit\WpdbApprovalStore} and
  * {@see \Specflux\AgentSafety\Plugin\Approval\WpdbGrantStore}) and their
@@ -44,8 +44,11 @@ final class Schema
      *    captured {@see \Specflux\AgentSafety\Plugin\Approval\StateProbe::targetArgs()}
      *    instead of parsing them back out of the free-text summary), so this
      *    is a v4 addition, not a new version bump.
+     * 5: new `agsafe_counters` table ({@see countersTable()}) backing the
+     *    atomic rate/quota/tripwire counters ({@see AtomicCounterStore}),
+     *    replacing their non-atomic transients.
      */
-    public const VERSION = '4';
+    public const VERSION = '5';
 
     public const VERSION_OPTION = 'agsafe_schema_version';
 
@@ -76,6 +79,7 @@ final class Schema
     public const AUDIT_LOG_TABLE = 'agsafe_audit_log';
     public const APPROVALS_TABLE = 'agsafe_approvals';
     public const GRANTS_TABLE = 'agsafe_grants';
+    public const COUNTERS_TABLE = 'agsafe_counters';
 
     public static function auditLogTable(wpdb $db): string
     {
@@ -96,6 +100,15 @@ final class Schema
     public static function grantsTable(wpdb $db): string
     {
         return $db->prefix . self::GRANTS_TABLE;
+    }
+
+    /**
+     * Rate/quota/tripwire counters ({@see AtomicCounterStore}). A table, not
+     * transients, because an increment must be one atomic statement.
+     */
+    public static function countersTable(wpdb $db): string
+    {
+        return $db->prefix . self::COUNTERS_TABLE;
     }
 
     /** Column/key body (no surrounding `CREATE TABLE ... ( )`) for the audit log table. */
@@ -194,7 +207,21 @@ final class Schema
     }
 
     /**
-     * Create/upgrade both tables via `dbDelta()` and record the version that
+     * Column/key body (no surrounding `CREATE TABLE ... ( )`) for the counters
+     * table. `value` is a DOUBLE so one column holds both call counts and
+     * summed spend; `expires_at` is a unix timestamp, indexed for the sweep.
+     */
+    public static function countersColumns(): string
+    {
+        return "counter_key VARCHAR(64) NOT NULL,
+                value DOUBLE NOT NULL DEFAULT 0,
+                expires_at BIGINT UNSIGNED NOT NULL,
+                PRIMARY KEY  (counter_key),
+                KEY expires_at (expires_at)";
+    }
+
+    /**
+     * Create/upgrade the tables via `dbDelta()` and record the version that
      * was just installed. Safe to call repeatedly (dbDelta only issues the
      * ALTERs a diff actually needs).
      */
@@ -212,6 +239,7 @@ final class Schema
             'CREATE TABLE ' . self::auditLogTable($db) . " (\n" . self::auditLogColumns() . "\n) {$charset};",
             'CREATE TABLE ' . self::approvalsTable($db) . " (\n" . self::approvalsColumns() . "\n) {$charset};",
             'CREATE TABLE ' . self::grantsTable($db) . " (\n" . self::grantsColumns() . "\n) {$charset};",
+            'CREATE TABLE ' . self::countersTable($db) . " (\n" . self::countersColumns() . "\n) {$charset};",
         ]);
 
         // Option migrations ride the same version gate as the tables. Each is
@@ -287,6 +315,10 @@ final class Schema
      */
     public static function renderGrantsRenameConflictNotice(): void
     {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
         if (!get_option(self::GRANTS_RENAME_CONFLICT_OPTION, false)) {
             return;
         }

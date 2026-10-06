@@ -46,6 +46,7 @@ final class VerdictPipelineCheckApprovalTest extends TestCase
     {
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
         $GLOBALS['wpas_test_actions'] = [];
         $GLOBALS['wpas_test_mail'] = [];
         $GLOBALS['wpas_test_time'] = self::NOW;

@@ -36,6 +36,7 @@ final class CheckApprovalAbilityTest extends TestCase
         $this->sink = new InMemoryAuditSink();
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
         $GLOBALS['wpas_test_time'] = 1_800_000_000;
         RequestContext::reset();
         RequestContext::configure(new IdentityChain([
