@@ -26,8 +26,8 @@ final class MultisiteGuardTest extends TestCase
 
         $this->assertFalse(MultisiteGuard::refused());
 
-        MultisiteGuard::refuseActivation('/plugins/agent-tollgate/agent-tollgate.php');
-        MultisiteGuard::refuseRuntime('/plugins/agent-tollgate/agent-tollgate.php');
+        MultisiteGuard::refuseActivation('/plugins/senrogate/senrogate.php');
+        MultisiteGuard::refuseRuntime('/plugins/senrogate/senrogate.php');
 
         $this->assertSame([], $GLOBALS['wpas_test_deactivated_plugins'] ?? []);
     }
@@ -41,10 +41,10 @@ final class MultisiteGuardTest extends TestCase
         $this->expectExceptionMessage('does not support WordPress multisite');
 
         try {
-            MultisiteGuard::refuseActivation('/plugins/agent-tollgate/agent-tollgate.php');
+            MultisiteGuard::refuseActivation('/plugins/senrogate/senrogate.php');
         } finally {
             $this->assertSame(
-                ['agent-tollgate/agent-tollgate.php'],
+                ['senrogate/senrogate.php'],
                 $GLOBALS['wpas_test_deactivated_plugins'] ?? []
             );
         }
@@ -59,17 +59,17 @@ final class MultisiteGuardTest extends TestCase
 
         $this->expectException(RuntimeException::class);
 
-        MultisiteGuard::refuseActivation('/plugins/agent-tollgate/agent-tollgate.php');
+        MultisiteGuard::refuseActivation('/plugins/senrogate/senrogate.php');
     }
 
     public function testMultisiteRuntimeGuardDeactivatesAndShowsAnAdminNotice(): void
     {
         $GLOBALS['wpas_test_multisite'] = true;
 
-        MultisiteGuard::refuseRuntime('/plugins/agent-tollgate/agent-tollgate.php');
+        MultisiteGuard::refuseRuntime('/plugins/senrogate/senrogate.php');
 
         $this->assertSame(
-            ['agent-tollgate/agent-tollgate.php'],
+            ['senrogate/senrogate.php'],
             $GLOBALS['wpas_test_deactivated_plugins'] ?? []
         );
         $this->assertNotEmpty($GLOBALS['wpas_test_added_actions']['admin_notices'] ?? []);

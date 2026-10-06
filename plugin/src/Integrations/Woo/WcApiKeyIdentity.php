@@ -88,6 +88,6 @@ final class WcApiKeyIdentity implements IdentityProvider
 
     public function label(): string
     {
-        return __('WooCommerce REST API keys — create one under WooCommerce → Settings → Advanced → REST API.', 'agent-tollgate');
+        return __('WooCommerce REST API keys — create one under WooCommerce → Settings → Advanced → REST API.', 'senrogate');
     }
 }

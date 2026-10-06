@@ -55,7 +55,7 @@ jobs:
         if: github.event_name == 'push'
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          HEADER_VERSION=$(awk '/^[[:space:]]*\*[[:space:]]*Version:/ {print $NF; exit}' plugin/agent-tollgate.php)
+          HEADER_VERSION=$(awk '/^[[:space:]]*\*[[:space:]]*Version:/ {print $NF; exit}' plugin/senrogate.php)
           echo "tag=$TAG_VERSION header=$HEADER_VERSION"
           if [ "$TAG_VERSION" != "$HEADER_VERSION" ]; then
             echo "::error::Tag v$TAG_VERSION does not match plugin header Version $HEADER_VERSION — bump the header and re-tag."
@@ -68,7 +68,7 @@ jobs:
       - name: Locate the zip
         id: zip
         run: |
-          ZIP_PATH=$(find . -maxdepth 1 -name 'agent-tollgate-*.zip' | head -1)
+          ZIP_PATH=$(find . -maxdepth 1 -name 'senrogate-*.zip' | head -1)
           echo "path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
           echo "name=$(basename "$ZIP_PATH" .zip)" >> "$GITHUB_OUTPUT"
 

@@ -13,7 +13,7 @@
  * The explicit list of everything opting in removes lives in
  * {@see \Specflux\AgentSafety\Plugin\Support\UninstallManifest}, one class
  * with no WordPress dependency, so it is safe to load below even if this
- * plugin's own bootstrap (agent-tollgate.php) never ran on this request —
+ * plugin's own bootstrap (senrogate.php) never ran on this request —
  * exactly the standalone constraint this file operates under.
  */
 
@@ -32,7 +32,7 @@ if (!isset($wpdb)) {
     return;
 }
 
-// Same bundled autoloader agent-tollgate.php uses: `composer install` in this
+// Same bundled autoloader senrogate.php uses: `composer install` in this
 // dir copies the core package into vendor/ and wires PSR-4 for both the core
 // and the plugin's own classes, including UninstallManifest. A site that
 // deletes the plugin without ever having run `composer install` here (e.g. a

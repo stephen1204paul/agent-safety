@@ -63,13 +63,13 @@ final class VerdictMessageTest extends TestCase
     }
 
     /**
-     * Proves the message is actually routed through __('...', 'agent-tollgate')
+     * Proves the message is actually routed through __('...', 'senrogate')
      * rather than being a plain sprintf() literal, the same way
      * McpRequestAuditHandlerTest proves upstream's translation routing.
      */
     public function testBaseMessageIsRoutedThroughTheAgentSafetyTextDomain(): void
     {
-        $GLOBALS['wpas_test_translations']['agent-tollgate']['"%1$s" needs human approval before it can run. A request has been filed for review.']
+        $GLOBALS['wpas_test_translations']['senrogate']['"%1$s" needs human approval before it can run. A request has been filed for review.']
             = '„%1$s“ braucht erneut eine menschliche Freigabe.';
 
         $verdict = new Verdict(

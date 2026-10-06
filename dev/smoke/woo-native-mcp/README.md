@@ -93,7 +93,7 @@ here can't come from admin capabilities), a WooCommerce REST API key with
 
 `AbilityPermissionGate::register()` calls
 `add_filter('wp_register_ability_args', ...)` from the plugin's
-`plugins_loaded` (priority 0) callback in `plugin/agent-tollgate.php`. Adding a
+`plugins_loaded` (priority 0) callback in `plugin/senrogate.php`. Adding a
 filter callback only requires that the `add_filter()` call itself run before
 WordPress fires `apply_filters('wp_register_ability_args', ...)` for a given
 ability — filter *priority* only orders multiple callbacks on the *same*
@@ -161,7 +161,7 @@ as a side effect of validating the API key (`WooCommerceRestTransport.php`,
 WooCommerce 11.1.0). `RequestContext::tokenId()` — the audit actor field —
 used to return the FIRST candidate token across the WHOLE identity chain,
 and the chain order is `[ApplicationPasswordIdentity, UserRoleIdentity,
-WcApiKeyIdentity]` (`plugin/agent-tollgate.php`, `WooIntegration::register()`
+WcApiKeyIdentity]` (`plugin/senrogate.php`, `WooIntegration::register()`
 appends the Woo provider LAST). So for a Woo-authenticated request,
 `UserRoleIdentity`'s `user:<id>` token was always first, and
 `WcApiKeyIdentity`'s `wc:<key_id>` token was always last.

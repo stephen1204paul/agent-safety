@@ -60,16 +60,16 @@ final class PersonalDataExporter
 
         return [
             'group_id' => 'agent-safety-audit-log',
-            'group_label' => __('Agent Tollgate Audit Log', 'agent-tollgate'),
+            'group_label' => __('SenroGate Audit Log', 'senrogate'),
             'item_id' => 'agent-safety-audit-log-' . (string) ($row['id'] ?? ''),
             'data' => [
-                ['name' => __('Time', 'agent-tollgate'), 'value' => (string) ($record['ts'] ?? '')],
-                ['name' => __('Ability', 'agent-tollgate'), 'value' => (string) ($record['ability'] ?? '')],
-                ['name' => __('Tier', 'agent-tollgate'), 'value' => isset($record['tier']) ? (string) $record['tier'] : ''],
-                ['name' => __('Decision', 'agent-tollgate'), 'value' => (string) ($record['decision'] ?? '')],
-                ['name' => __('Reason', 'agent-tollgate'), 'value' => (string) ($record['reason'] ?? '')],
-                ['name' => __('IP Address', 'agent-tollgate'), 'value' => (string) ($record['ip'] ?? '')],
-                ['name' => __('Recorded Input', 'agent-tollgate'), 'value' => (string) wp_json_encode($record['input'] ?? [])],
+                ['name' => __('Time', 'senrogate'), 'value' => (string) ($record['ts'] ?? '')],
+                ['name' => __('Ability', 'senrogate'), 'value' => (string) ($record['ability'] ?? '')],
+                ['name' => __('Tier', 'senrogate'), 'value' => isset($record['tier']) ? (string) $record['tier'] : ''],
+                ['name' => __('Decision', 'senrogate'), 'value' => (string) ($record['decision'] ?? '')],
+                ['name' => __('Reason', 'senrogate'), 'value' => (string) ($record['reason'] ?? '')],
+                ['name' => __('IP Address', 'senrogate'), 'value' => (string) ($record['ip'] ?? '')],
+                ['name' => __('Recorded Input', 'senrogate'), 'value' => (string) wp_json_encode($record['input'] ?? [])],
             ],
         ];
     }

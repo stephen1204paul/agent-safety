@@ -20,51 +20,51 @@ final class ReasonLabels
     {
         switch ($reason) {
             case 'unknown_verb':
-                return __('Unknown verb', 'agent-tollgate');
+                return __('Unknown verb', 'senrogate');
             case 'readonly_but_writes':
-                return __('Read-only pack attempted a write', 'agent-tollgate');
+                return __('Read-only pack attempted a write', 'senrogate');
             case 'not_in_pack':
-                return __('Not included in the bound pack', 'agent-tollgate');
+                return __('Not included in the bound pack', 'senrogate');
             case 'denied_by_class':
-                return __('Denied by tier class', 'agent-tollgate');
+                return __('Denied by tier class', 'senrogate');
             case 'denied_by_class_destructive_hint':
-                return __('Denied — destructive hint on a denied tier class', 'agent-tollgate');
+                return __('Denied — destructive hint on a denied tier class', 'senrogate');
             case 'state_unverifiable':
-                return __('Target state could not be verified', 'agent-tollgate');
+                return __('Target state could not be verified', 'senrogate');
             case 'approval_required':
-                return __('Approval required', 'agent-tollgate');
+                return __('Approval required', 'senrogate');
             case 'site_paused':
-                return __('Site paused (emergency stop)', 'agent-tollgate');
+                return __('Site paused (emergency stop)', 'senrogate');
             case 'denial_lockout':
-                return __('Denial lockout', 'agent-tollgate');
+                return __('Denial lockout', 'senrogate');
             case 'repeat_call':
-                return __('Repeated identical call', 'agent-tollgate');
+                return __('Repeated identical call', 'senrogate');
             case 'calls_per_minute':
-                return __('Rate limit: calls per minute', 'agent-tollgate');
+                return __('Rate limit: calls per minute', 'senrogate');
             case 'calls_per_hour':
-                return __('Rate limit: calls per hour', 'agent-tollgate');
+                return __('Rate limit: calls per hour', 'senrogate');
             case 'forbidden_argument':
-                return __('Forbidden argument', 'agent-tollgate');
+                return __('Forbidden argument', 'senrogate');
             case 'not_allowed_value':
-                return __('Argument value not allowed', 'agent-tollgate');
+                return __('Argument value not allowed', 'senrogate');
             case 'unreadable_argument':
-                return __('Argument unreadable', 'agent-tollgate');
+                return __('Argument unreadable', 'senrogate');
             case 'max_items_per_call':
-                return __('Too many items in one call', 'agent-tollgate');
+                return __('Too many items in one call', 'senrogate');
             case 'max_per_call':
-                return __('Argument cap exceeded (per call)', 'agent-tollgate');
+                return __('Argument cap exceeded (per call)', 'senrogate');
             case 'max_total_per_day':
-                return __('Argument cap exceeded (per day)', 'agent-tollgate');
+                return __('Argument cap exceeded (per day)', 'senrogate');
             case 'stale':
-                return __('Stale — the target changed before this could be claimed', 'agent-tollgate');
+                return __('Stale — the target changed before this could be claimed', 'senrogate');
             case 'void_environment':
-                return __('Voided — the site address changed', 'agent-tollgate');
+                return __('Voided — the site address changed', 'senrogate');
         }
 
         if (str_starts_with($reason, 'rate_limited_')) {
             return sprintf(
                 /* translators: %s the specific rate-limit rule that tripped */
-                __('Rate limited (%s)', 'agent-tollgate'),
+                __('Rate limited (%s)', 'senrogate'),
                 substr($reason, strlen('rate_limited_'))
             );
         }
@@ -72,7 +72,7 @@ final class ReasonLabels
         if (str_starts_with($reason, 'argument_cap_')) {
             return sprintf(
                 /* translators: %s the specific argument cap that tripped */
-                __('Argument cap (%s)', 'agent-tollgate'),
+                __('Argument cap (%s)', 'senrogate'),
                 substr($reason, strlen('argument_cap_'))
             );
         }

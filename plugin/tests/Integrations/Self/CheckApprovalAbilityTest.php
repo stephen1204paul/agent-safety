@@ -217,7 +217,7 @@ final class CheckApprovalAbilityTest extends TestCase
 
         $this->assertTrue($body['paused']);
         $this->assertSame(
-            'Agent Tollgate is paused on this site, so retrying won\'t work until an administrator resumes it. '
+            'SenroGate is paused on this site, so retrying won\'t work until an administrator resumes it. '
             . 'Waiting for a human. Check again in 30 seconds or more, and stop at pending_expires_at.',
             $body['next_action']
         );

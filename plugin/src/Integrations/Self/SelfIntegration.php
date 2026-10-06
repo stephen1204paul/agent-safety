@@ -66,17 +66,17 @@ final class SelfIntegration
 
         add_action('wp_abilities_api_categories_init', static function (): void {
             wp_register_ability_category(self::CATEGORY, [
-                'label' => __('Agent Tollgate', 'agent-tollgate'),
-                'description' => __('Abilities added by the Agent Tollgate plugin.', 'agent-tollgate'),
+                'label' => __('SenroGate', 'senrogate'),
+                'description' => __('Abilities added by the SenroGate plugin.', 'senrogate'),
             ]);
         });
 
         add_action('wp_abilities_api_init', static function () use ($ability): void {
             wp_register_ability(VerdictPipeline::CHECK_APPROVAL_VERB, [
-                'label' => __('Check Approval', 'agent-tollgate'),
+                'label' => __('Check Approval', 'senrogate'),
                 'description' => __(
                     'Check the status of an approval_required request by its approval_id. Returns the current status, what to do next, and (once resolved) whether a human or a standing grant resolved it.',
-                    'agent-tollgate'
+                    'senrogate'
                 ),
                 'category' => self::CATEGORY,
                 'permission_callback' => [$ability, 'permissionCallback'],
@@ -86,7 +86,7 @@ final class SelfIntegration
                     'properties' => [
                         'approval_id' => [
                             'type' => 'string',
-                            'description' => __('The approval_id from an earlier approval_required response.', 'agent-tollgate'),
+                            'description' => __('The approval_id from an earlier approval_required response.', 'senrogate'),
                         ],
                     ],
                     'required' => ['approval_id'],
@@ -97,7 +97,7 @@ final class SelfIntegration
                         'readonly' => true,
                         'instructions' => __(
                             'Poll no faster than every 30 seconds; back off to every 5 minutes; stop polling at pending_expires_at. Only status "approved" means retry the original call, with exactly the original arguments. Do not tell the user the action was approved before that.',
-                            'agent-tollgate'
+                            'senrogate'
                         ),
                     ],
                 ],

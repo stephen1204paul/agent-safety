@@ -25,7 +25,7 @@ final class UninstallTest extends TestCase
     #[RunInSeparateProcess]
     public function testOptedInUninstallDropsTablesDeletesEveryManifestOptionAndClearsCron(): void
     {
-        define('WP_UNINSTALL_PLUGIN', 'agent-tollgate/agent-tollgate.php');
+        define('WP_UNINSTALL_PLUGIN', 'senrogate/senrogate.php');
         define('AGSAFE_REMOVE_DATA', true);
 
         $GLOBALS['wpas_test_options'] = [
@@ -83,7 +83,7 @@ final class UninstallTest extends TestCase
     #[RunInSeparateProcess]
     public function testUninstallIsANoOpWithoutTheOptInConstant(): void
     {
-        define('WP_UNINSTALL_PLUGIN', 'agent-tollgate/agent-tollgate.php');
+        define('WP_UNINSTALL_PLUGIN', 'senrogate/senrogate.php');
         // AGSAFE_REMOVE_DATA left undefined -- the default, "keep everything" behaviour.
 
         $GLOBALS['wpas_test_options'] = [Schema::VERSION_OPTION => '4'];
@@ -101,7 +101,7 @@ final class UninstallTest extends TestCase
     #[RunInSeparateProcess]
     public function testUninstallIsANoOpWhenTheOptInConstantIsNotExactlyTrue(): void
     {
-        define('WP_UNINSTALL_PLUGIN', 'agent-tollgate/agent-tollgate.php');
+        define('WP_UNINSTALL_PLUGIN', 'senrogate/senrogate.php');
         define('AGSAFE_REMOVE_DATA', 1); // truthy, but not the required strict `true`
 
         $GLOBALS['wpas_test_options'] = [Schema::VERSION_OPTION => '4'];

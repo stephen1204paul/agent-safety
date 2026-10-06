@@ -310,7 +310,7 @@ final class Schema
 
     /**
      * Admin notice for the {@see GRANTS_RENAME_CONFLICT_OPTION} flag. Wired
-     * unconditionally (see `agent-tollgate.php`); a no-op render when the flag
+     * unconditionally (see `senrogate.php`); a no-op render when the flag
      * isn't set, matching the `CapabilityPacksPage::pausedNotice()` pattern.
      */
     public static function renderGrantsRenameConflictNotice(): void
@@ -326,8 +326,8 @@ final class Schema
         printf(
             '<div class="notice notice-warning"><p>%s</p></div>',
             esc_html__(
-                'Agent Tollgate found both the old (agent_safety_grants) and new (agsafe_grants) grants tables during an upgrade, which means an earlier upgrade did not finish. It is using the new table. Once you have confirmed no grants were lost, an administrator can drop the old table to clear this notice.',
-                'agent-tollgate'
+                'SenroGate found both the old (agent_safety_grants) and new (agsafe_grants) grants tables during an upgrade, which means an earlier upgrade did not finish. It is using the new table. Once you have confirmed no grants were lost, an administrator can drop the old table to clear this notice.',
+                'senrogate'
             )
         );
     }

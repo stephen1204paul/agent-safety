@@ -46,8 +46,8 @@ final class PersonalDataEraser
             'items_retained' => true,
             'messages' => [
                 __(
-                    'Agent Tollgate audit records for this user are kept as a tamper-evident security record: each entry is chained to the one before it by hash, so altering or removing one would break that chain for every entry recorded after it.',
-                    'agent-tollgate'
+                    'SenroGate audit records for this user are kept as a tamper-evident security record: each entry is chained to the one before it by hash, so altering or removing one would break that chain for every entry recorded after it.',
+                    'senrogate'
                 ),
             ],
             'done' => count($rows) < self::PAGE_SIZE,

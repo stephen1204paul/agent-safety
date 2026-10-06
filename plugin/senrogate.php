@@ -1,16 +1,16 @@
 <?php
 
 /**
- * Plugin Name:       Agent Tollgate
- * Plugin URI:        https://github.com/stephen1204paul/agent-tollgate
+ * Plugin Name:       SenroGate
+ * Plugin URI:        https://github.com/stephen1204paul/senrogate
  * Description:       Governs other plugins' agent tool calls: verb-tier gating, capability packs, human approval with a state-fingerprint check, and a tamper-evident audit log. Ships a WordPress-core module plus a WooCommerce integration module.
- * Version:           0.4.2
+ * Version:           0.4.3
  * Requires PHP:      8.1
  * Requires at least: 7.0
  * Author:            Stephen Paul Samynathan
  * Author URI:        https://profiles.wordpress.org/stephen1204paul/
  * License:           GPL-2.0-or-later
- * Text Domain:       agent-tollgate
+ * Text Domain:       senrogate
  *
  * Thin host: wires the security core (specflux/agent-safety-core) into
  * WordPress hooks. All decision logic lives in the package under ../src. The
@@ -109,7 +109,7 @@ register_deactivation_hook(__FILE__, __NAMESPACE__ . '\\deactivate_agent_safety'
  * wiring and approvals schema have never been designed or tested for a
  * network install, and letting activation through would previously have left
  * the ApprovalSweep cron scheduled on only the activating site
- * (stephen1204paul/agent-tollgate#4) — refusing outright makes that moot.
+ * (stephen1204paul/senrogate#4) — refusing outright makes that moot.
  */
 function activate_agent_safety(): void
 {
@@ -127,7 +127,7 @@ function activate_agent_safety(): void
     if (function_exists('is_multisite') && is_multisite()) {
         // Defensive fallback if the autoloader failed to bring in the guard
         // class above: still refuse rather than activate half-wired.
-        wp_die(esc_html__('Agent Tollgate does not support WordPress multisite. It was not activated.', 'agent-tollgate'));
+        wp_die(esc_html__('SenroGate does not support WordPress multisite. It was not activated.', 'senrogate'));
     }
 
     if (!class_exists(Schema::class) || !class_exists(ApprovalSweep::class)) {

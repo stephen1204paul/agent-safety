@@ -19,11 +19,11 @@ final class EnvironmentLabel
     /** Echoes the "Environment" heading and "Environment type: ..." paragraph. */
     public static function render(ShadowMode $shadow): void
     {
-        echo '<h2>' . esc_html__('Environment', 'agent-tollgate') . '</h2>';
+        echo '<h2>' . esc_html__('Environment', 'senrogate') . '</h2>';
         echo '<p>' . esc_html(sprintf(
             /* translators: %s the WordPress environment type (production, staging, ...) */
-            __('Environment type: %s', 'agent-tollgate'),
-            $shadow->isProduction() ? __('production', 'agent-tollgate') : __('non-production', 'agent-tollgate')
+            __('Environment type: %s', 'senrogate'),
+            $shadow->isProduction() ? __('production', 'senrogate') : __('non-production', 'senrogate')
         )) . '</p>';
     }
 }
