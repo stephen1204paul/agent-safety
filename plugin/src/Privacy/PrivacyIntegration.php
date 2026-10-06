@@ -26,7 +26,7 @@ final class PrivacyIntegration
 
         add_filter('wp_privacy_personal_data_exporters', static function (array $exporters) use ($exporter): array {
             $exporters['agent-safety-audit-log'] = [
-                'exporter_friendly_name' => __('Agent Tollgate Audit Log', 'agent-tollgate'),
+                'exporter_friendly_name' => __('SenroGate Audit Log', 'senrogate'),
                 'callback' => [$exporter, 'export'],
             ];
 
@@ -35,7 +35,7 @@ final class PrivacyIntegration
 
         add_filter('wp_privacy_personal_data_erasers', static function (array $erasers) use ($eraser): array {
             $erasers['agent-safety-audit-log'] = [
-                'eraser_friendly_name' => __('Agent Tollgate Audit Log', 'agent-tollgate'),
+                'eraser_friendly_name' => __('SenroGate Audit Log', 'senrogate'),
                 'callback' => [$eraser, 'erase'],
             ];
 

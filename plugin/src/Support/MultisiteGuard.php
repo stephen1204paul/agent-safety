@@ -23,7 +23,7 @@ final class MultisiteGuard
     /** The one sentence shown to the person who tried. */
     public static function message(): string
     {
-        return __('Agent Tollgate does not support WordPress multisite. It was not activated.', 'agent-tollgate');
+        return __('SenroGate does not support WordPress multisite. It was not activated.', 'senrogate');
     }
 
     /**
@@ -42,7 +42,7 @@ final class MultisiteGuard
 
         wp_die(
             esc_html(self::message()),
-            esc_html__('Plugin activation refused', 'agent-tollgate'),
+            esc_html__('Plugin activation refused', 'senrogate'),
             ['back_link' => true]
         );
     }
@@ -65,9 +65,13 @@ final class MultisiteGuard
     /** Runtime notice for an already-active copy on a multisite install. */
     public static function renderNotice(): void
     {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
         printf(
             '<div class="notice notice-error"><p>%s</p></div>',
-            esc_html__('Agent Tollgate is inactive: WordPress multisite is not supported. Deactivate it on this network.', 'agent-tollgate')
+            esc_html__('SenroGate is inactive: WordPress multisite is not supported. Deactivate it on this network.', 'senrogate')
         );
     }
 }

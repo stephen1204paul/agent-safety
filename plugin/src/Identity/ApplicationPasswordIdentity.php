@@ -50,6 +50,6 @@ final class ApplicationPasswordIdentity implements IdentityProvider
 
     public function label(): string
     {
-        return __('Application Passwords', 'agent-tollgate');
+        return __('Application Passwords', 'senrogate');
     }
 }

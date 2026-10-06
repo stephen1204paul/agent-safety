@@ -22,7 +22,7 @@ if (!is_readable($wpasPluginAutoload)) {
 require_once $wpasPluginAutoload;
 
 // Real WordPress defines this before loading any plugin file; api.php (like
-// agent-tollgate.php) exits immediately without it.
+// senrogate.php) exits immediately without it.
 if (!defined('ABSPATH')) {
     define('ABSPATH', __DIR__ . '/');
 }
@@ -60,6 +60,7 @@ require_once __DIR__ . '/Fakes/FakeIdentityProvider.php';
 require_once __DIR__ . '/Fakes/FakeToolAnnotations.php';
 require_once __DIR__ . '/Fakes/FakeMcpTool.php';
 require_once __DIR__ . '/Fakes/InMemoryAuditRowsWpdb.php';
+require_once __DIR__ . '/Fakes/CounterTableWpdb.php';
 require_once __DIR__ . '/Fixtures/VerdictErrorFixture.php';
 
 // --- Minimal WP function shims -------------------------------------------

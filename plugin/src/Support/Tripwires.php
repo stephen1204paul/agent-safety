@@ -124,11 +124,13 @@ final class Tripwires
             return $this->admitted[$subject];
         }
 
-        if ($this->counter->count($subject, self::REPEAT_WINDOW) >= $this->limits()['identical_calls_per_hour']) {
+        // Increment first, then check the count that includes this call: more
+        // than the limit means the calls BEFORE this one already reached it.
+        if ($this->counter->increment($subject, self::REPEAT_WINDOW) > $this->limits()['identical_calls_per_hour']) {
+            $this->counter->decrement($subject, self::REPEAT_WINDOW);
+
             return $this->admitted[$subject] = false;
         }
-
-        $this->counter->increment($subject, self::REPEAT_WINDOW);
 
         return $this->admitted[$subject] = true;
     }
@@ -177,13 +179,13 @@ final class Tripwires
         $this->notifier?->alert(
             sprintf(
                 /* translators: 1: denial count, 2: the locked-out credential/token identity */
-                __('Credential locked out after %1$d denials: %2$s', 'agent-tollgate'),
+                __('Credential locked out after %1$d denials: %2$s', 'senrogate'),
                 $denials,
                 $identity
             ),
             sprintf(
                 /* translators: 1: token identity, 2: denials in the last minute, 3: lockout seconds, 4: the review URL */
-                __("Agent Tollgate has locked out an agent credential.\n\nToken: %1\$s\nDenials in the last minute: %2\$d\nLocked out for: %3\$d seconds\n\nEvery call it makes is denied until the lockout lapses. Review what it was refused (requires login):\n%4\$s\n", 'agent-tollgate'),
+                __("SenroGate has locked out an agent credential.\n\nToken: %1\$s\nDenials in the last minute: %2\$d\nLocked out for: %3\$d seconds\n\nEvery call it makes is denied until the lockout lapses. Review what it was refused (requires login):\n%4\$s\n", 'senrogate'),
                 $identity,
                 $denials,
                 $lockoutSeconds,

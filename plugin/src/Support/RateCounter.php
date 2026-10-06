@@ -6,10 +6,15 @@ namespace Specflux\AgentSafety\Plugin\Support;
 
 /**
  * Fixed-window call counters backing a Pack's rate/quota caps (backlog #16;
- * the caps are declared per pack in its policy envelope). Storage is WordPress
- * transients, keyed by (pack name, identity token, window bucket) — a fresh
- * bucket per calendar minute/hour, so two identities under the same pack (or
- * the same identity under two packs) never share a counter.
+ * the caps are declared per pack in its policy envelope). Storage is the atomic
+ * {@see AtomicCounterStore}, keyed by (pack name, identity token, window
+ * bucket) — a fresh bucket per calendar minute/hour, so two identities under
+ * the same pack (or the same identity under two packs) never share a counter.
+ *
+ * Callers {@see reserve()} a slot first and check the counts it returns, then
+ * {@see release()} it if the call is refused, so the check is made against a
+ * total that already includes the call and concurrent requests cannot both
+ * slip under a cap.
  *
  * Fixed-window, not sliding-window, by deliberate choice: a counter resets
  * hard at the bucket boundary rather than decaying continuously, so a burst
@@ -28,52 +33,51 @@ namespace Specflux\AgentSafety\Plugin\Support;
  */
 final class RateCounter
 {
-    // Public: named by {@see UninstallManifest} as the transient-key prefix
-    // an opted-in uninstall must sweep (this key is per pack/identity/window,
-    // so no fixed list of full names exists).
+    // Namespaces this counter's rows in the shared counters table (the key is
+    // per pack/identity/window, so no fixed list of full names exists).
     public const PREFIX = 'agsafe_rl_';
 
     private const MINUTE_WINDOW = 60;
     private const HOUR_WINDOW = 3600;
 
     // TTL headroom beyond the window itself: a bucket must outlive the window
-    // it counts (plus slack for the transient's own eviction timing), never
+    // it counts (plus slack for clock skew between requests), never
     // less than it — expiring it early would silently reset the count mid-window.
     private const MINUTE_TTL = self::MINUTE_WINDOW * 2;
     private const HOUR_TTL = self::HOUR_WINDOW * 2;
+
+    public function __construct(private readonly AtomicCounterStore $store = new AtomicCounterStore())
+    {
+    }
 
     /** @return array{minute: int, hour: int} Calls already recorded in the current windows. */
     public function countsFor(string $pack, string $token): array
     {
         return [
-            'minute' => $this->read($this->minuteKey($pack, $token)),
-            'hour' => $this->read($this->hourKey($pack, $token)),
+            'minute' => (int) round($this->store->get($this->minuteKey($pack, $token))),
+            'hour' => (int) round($this->store->get($this->hourKey($pack, $token))),
         ];
     }
 
-    /** Record one more call against both the current minute and hour buckets. */
-    public function increment(string $pack, string $token): void
+    /**
+     * Atomically record one more call against both the current minute and hour
+     * buckets and return the counts INCLUDING it.
+     *
+     * @return array{minute: int, hour: int}
+     */
+    public function reserve(string $pack, string $token): array
     {
-        $this->bump($this->minuteKey($pack, $token), self::MINUTE_TTL);
-        $this->bump($this->hourKey($pack, $token), self::HOUR_TTL);
+        return [
+            'minute' => (int) round($this->store->add($this->minuteKey($pack, $token), 1.0, self::MINUTE_TTL)),
+            'hour' => (int) round($this->store->add($this->hourKey($pack, $token), 1.0, self::HOUR_TTL)),
+        ];
     }
 
-    private function read(string $key): int
+    /** Undo one {@see reserve()} (the call was refused after all). */
+    public function release(string $pack, string $token): void
     {
-        $value = get_transient($key);
-
-        // DB-backed transients (the WordPress default, no object cache) come
-        // back as STRINGS — get_option round-trips through wp_options text
-        // columns. An is_int() check here silently zeroed the counter on every
-        // fresh request, so caps never tripped across requests (found by live
-        // smoke test, 2026-07-07). Only an object-cache-backed site returns
-        // real ints. Accept both.
-        return is_numeric($value) ? (int) $value : 0;
-    }
-
-    private function bump(string $key, int $ttl): void
-    {
-        set_transient($key, $this->read($key) + 1, $ttl);
+        $this->store->add($this->minuteKey($pack, $token), -1.0, self::MINUTE_TTL);
+        $this->store->add($this->hourKey($pack, $token), -1.0, self::HOUR_TTL);
     }
 
     private function minuteKey(string $pack, string $token): string
@@ -87,8 +91,8 @@ final class RateCounter
     }
 
     /**
-     * A short, deterministic transient-key suffix: hashing (pack, token) keeps
-     * the key well within WordPress's transient name length limit regardless
+     * A short, deterministic counter-key suffix: hashing (pack, token) keeps
+     * the key well within the 64-char key column regardless
      * of how long a real pack name or identity token (e.g. an application
      * password UUID) gets, while the window bucket keeps it unique per window.
      */

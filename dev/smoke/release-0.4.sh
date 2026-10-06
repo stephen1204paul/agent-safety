@@ -63,9 +63,9 @@ check_disk_or_die
 # ---------------------------------------------------------------------------
 log "== building the 0.4.0 zip =="
 (cd "$REPO_ROOT" && bin/build-zip.sh --restore-dev-deps)
-VERSION="$(awk '/^[[:space:]]*\*[[:space:]]*Version:/ {print $NF; exit}' "$REPO_ROOT/plugin/agent-tollgate.php")"
+VERSION="$(awk '/^[[:space:]]*\*[[:space:]]*Version:/ {print $NF; exit}' "$REPO_ROOT/plugin/senrogate.php")"
 [ -n "$VERSION" ] || fail "could not read Version: from plugin header"
-ZIP_040="$REPO_ROOT/agent-tollgate-${VERSION}.zip"
+ZIP_040="$REPO_ROOT/senrogate-${VERSION}.zip"
 [ -f "$ZIP_040" ] || fail "expected zip not found: $ZIP_040"
 log "0.4.0 zip: $ZIP_040"
 

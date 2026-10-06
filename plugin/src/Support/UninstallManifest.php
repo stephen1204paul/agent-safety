@@ -62,7 +62,7 @@ final class UninstallManifest
 
     /**
      * Transient-key PREFIXES, never full names: every transient this plugin
-     * sets is bucketed per pack/identity/window/subject/approver, so no
+     * sets is bucketed per identity/approver, so no
      * fixed list of full names exists. Uninstall deletes by a `LIKE` match
      * against `wp_options` directly — `_transient_{prefix}%` for the value
      * row and `_transient_timeout_{prefix}%` for the timeout row (site
@@ -74,17 +74,16 @@ final class UninstallManifest
     public const TRANSIENT_PREFIXES = [
         PendingActionsPage::FLASH,
         PendingActionsPage::STALE_FLASH,
-        RateCounter::PREFIX,
-        WindowCounter::PREFIX,
-        ValueAccumulator::PREFIX,
         Tripwires::LOCKOUT_PREFIX,
     ];
 
     /**
-     * The plugin's three current custom tables (base names, without the
-     * `$wpdb` prefix) plus the pre-v4 grants table name a crashed upgrade
-     * can leave behind ({@see Schema::renameLegacyGrantsTable()}) — an
-     * opted-in uninstall drops all four if present.
+     * The plugin's four current custom tables (base names, without the
+     * `$wpdb` prefix; the rate/quota/tripwire counters live in
+     * {@see Schema::COUNTERS_TABLE}, not transients) plus the pre-v4 grants
+     * table name a crashed upgrade can leave behind
+     * ({@see Schema::renameLegacyGrantsTable()}) — an opted-in uninstall
+     * drops all five if present.
      *
      * @var list<string>
      */
@@ -92,6 +91,7 @@ final class UninstallManifest
         Schema::AUDIT_LOG_TABLE,
         Schema::APPROVALS_TABLE,
         Schema::GRANTS_TABLE,
+        Schema::COUNTERS_TABLE,
         Schema::LEGACY_GRANTS_TABLE,
     ];
 }

@@ -178,14 +178,14 @@ final class CheckApprovalAbility
     private function nextAction(string $status, ?string $reason, bool $paused): string
     {
         $message = match ($status) {
-            'pending' => __('Waiting for a human. Check again in 30 seconds or more, and stop at pending_expires_at.', 'agent-tollgate'),
-            'approved' => __('Retry the original call now, with exactly the same arguments.', 'agent-tollgate'),
-            'rejected' => __('A human rejected this request. Don\'t retry it; tell the user.', 'agent-tollgate'),
-            'expired' => __('Nobody reviewed this request in time. Ask the user before trying again.', 'agent-tollgate'),
-            'used' => __('This approval has already been used. Another call needs a new approval.', 'agent-tollgate'),
+            'pending' => __('Waiting for a human. Check again in 30 seconds or more, and stop at pending_expires_at.', 'senrogate'),
+            'approved' => __('Retry the original call now, with exactly the same arguments.', 'senrogate'),
+            'rejected' => __('A human rejected this request. Don\'t retry it; tell the user.', 'senrogate'),
+            'expired' => __('Nobody reviewed this request in time. Ask the user before trying again.', 'senrogate'),
+            'used' => __('This approval has already been used. Another call needs a new approval.', 'senrogate'),
             'superseded' => 'site_moved' === $reason
-                ? __('The site\'s address changed. Retrying the call files a fresh request.', 'agent-tollgate')
-                : __('The target changed after the request. Retrying the call files a fresh request.', 'agent-tollgate'),
+                ? __('The site\'s address changed. Retrying the call files a fresh request.', 'senrogate')
+                : __('The target changed after the request. Retrying the call files a fresh request.', 'senrogate'),
             default => '',
         };
 
@@ -193,7 +193,7 @@ final class CheckApprovalAbility
             return $message;
         }
 
-        return __('Agent Tollgate is paused on this site, so retrying won\'t work until an administrator resumes it. ', 'agent-tollgate') . $message;
+        return __('SenroGate is paused on this site, so retrying won\'t work until an administrator resumes it. ', 'senrogate') . $message;
     }
 
     /** @param array<string, mixed>|null $row */

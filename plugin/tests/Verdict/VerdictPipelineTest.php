@@ -51,6 +51,7 @@ final class VerdictPipelineTest extends TestCase
     {
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
     }
 
     protected function tearDown(): void

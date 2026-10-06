@@ -34,8 +34,8 @@ final class AuditLogPage
     public function menu(): void
     {
         add_management_page(
-            __('Agent Audit Log', 'agent-tollgate'),
-            __('Agent Audit Log', 'agent-tollgate'),
+            __('Agent Audit Log', 'senrogate'),
+            __('Agent Audit Log', 'senrogate'),
             self::CAP,
             self::SLUG,
             [$this, 'render']
@@ -56,7 +56,7 @@ final class AuditLogPage
         $pages = (int) ceil($total / self::PER_PAGE);
 
         echo '<div class="wrap">';
-        echo '<h1>' . esc_html__('Agent Audit Log', 'agent-tollgate') . '</h1>';
+        echo '<h1>' . esc_html__('Agent Audit Log', 'senrogate') . '</h1>';
 
         EnvironmentLabel::render($this->shadow);
 
@@ -64,14 +64,14 @@ final class AuditLogPage
         if ($intact) {
             printf(
                 '<div class="notice notice-success inline"><p><strong>%s</strong> %s</p></div>',
-                esc_html__('Chain intact.', 'agent-tollgate'),
-                esc_html(sprintf(/* translators: %d event count */ __('%d hash-chained events; no tampering detected.', 'agent-tollgate'), $total))
+                esc_html__('Chain intact.', 'senrogate'),
+                esc_html(sprintf(/* translators: %d event count */ __('%d hash-chained events; no tampering detected.', 'senrogate'), $total))
             );
         } else {
             printf(
                 '<div class="notice notice-error inline"><p><strong>%s</strong> %s</p></div>',
-                esc_html__('TAMPER DETECTED.', 'agent-tollgate'),
-                esc_html__('The audit chain failed verification — a record was altered or deleted.', 'agent-tollgate')
+                esc_html__('TAMPER DETECTED.', 'senrogate'),
+                esc_html__('The audit chain failed verification — a record was altered or deleted.', 'senrogate')
             );
         }
 
@@ -79,7 +79,7 @@ final class AuditLogPage
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="margin:12px 0;">';
         echo '<input type="hidden" name="action" value="' . esc_attr(self::EXPORT_ACTION) . '">';
         wp_nonce_field(self::EXPORT_ACTION);
-        submit_button(__('Export CSV', 'agent-tollgate'), 'secondary', 'submit', false);
+        submit_button(__('Export CSV', 'senrogate'), 'secondary', 'submit', false);
         echo '</form>';
 
         // Table.
@@ -90,7 +90,7 @@ final class AuditLogPage
         echo '</tr></thead><tbody>';
 
         if (!$rows) {
-            echo '<tr><td colspan="11">' . esc_html__('No events yet.', 'agent-tollgate') . '</td></tr>';
+            echo '<tr><td colspan="11">' . esc_html__('No events yet.', 'senrogate') . '</td></tr>';
         }
 
         foreach ($rows as $r) {
@@ -133,7 +133,7 @@ final class AuditLogPage
     public function export(): void
     {
         if (!current_user_can(self::CAP)) {
-            wp_die(esc_html__('Insufficient permissions.', 'agent-tollgate'));
+            wp_die(esc_html__('Insufficient permissions.', 'senrogate'));
         }
         check_admin_referer(self::EXPORT_ACTION);
 
@@ -145,7 +145,7 @@ final class AuditLogPage
 
         $out = fopen('php://output', 'w'); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- streaming a CSV download to the response body, not touching the filesystem; WP_Filesystem has no notion of php://output.
         if ($out === false) {
-            wp_die(esc_html__('Unable to open output stream.', 'agent-tollgate'));
+            wp_die(esc_html__('Unable to open output stream.', 'senrogate'));
         }
         $cols = ['id', 'event_id', 'ts', 'correlation_id', 'pack', 'ability', 'tier', 'decision', 'result', 'wp_user', 'ip', 'record_json', 'prev_hash', 'entry_hash'];
         fputcsv($out, $cols);
@@ -160,17 +160,17 @@ final class AuditLogPage
     private static function columnHeaders(): array
     {
         return [
-            __('ID', 'agent-tollgate'),
-            __('Time (UTC)', 'agent-tollgate'),
-            __('Correlation', 'agent-tollgate'),
-            __('Ability', 'agent-tollgate'),
-            __('Tier', 'agent-tollgate'),
-            __('Decision', 'agent-tollgate'),
-            __('Reason', 'agent-tollgate'),
-            __('Result', 'agent-tollgate'),
-            __('Token', 'agent-tollgate'),
-            __('IP', 'agent-tollgate'),
-            __('Input', 'agent-tollgate'),
+            __('ID', 'senrogate'),
+            __('Time (UTC)', 'senrogate'),
+            __('Correlation', 'senrogate'),
+            __('Ability', 'senrogate'),
+            __('Tier', 'senrogate'),
+            __('Decision', 'senrogate'),
+            __('Reason', 'senrogate'),
+            __('Result', 'senrogate'),
+            __('Token', 'senrogate'),
+            __('IP', 'senrogate'),
+            __('Input', 'senrogate'),
         ];
     }
 

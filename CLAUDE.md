@@ -19,7 +19,7 @@ never widen it — underlying WordPress capability checks still apply.
   **No WordPress function calls allowed anywhere in `src/`** (Approval, Audit, Gate, Packs,
   Policy). Tests: PHPUnit ^10.5 in `tests/`.
 - **`plugin/`** — the WordPress plugin host (`specflux/agent-safety`, main file
-  `plugin/agent-tollgate.php`), depending on the core via a composer **path repo that COPIES,
+  `plugin/senrogate.php`), depending on the core via a composer **path repo that COPIES,
   not symlinks** — after any change under root `src/`, run
   `cd plugin && composer reinstall specflux/agent-safety-core` (or `composer install`).
 - All WooCommerce coupling lives in `plugin/src/Integrations/Woo/`. Identity is a provider

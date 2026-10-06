@@ -36,6 +36,7 @@ final class CheckApprovalAbilityTest extends TestCase
         $this->sink = new InMemoryAuditSink();
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
         $GLOBALS['wpas_test_time'] = 1_800_000_000;
         RequestContext::reset();
         RequestContext::configure(new IdentityChain([
@@ -216,7 +217,7 @@ final class CheckApprovalAbilityTest extends TestCase
 
         $this->assertTrue($body['paused']);
         $this->assertSame(
-            'Agent Tollgate is paused on this site, so retrying won\'t work until an administrator resumes it. '
+            'SenroGate is paused on this site, so retrying won\'t work until an administrator resumes it. '
             . 'Waiting for a human. Check again in 30 seconds or more, and stop at pending_expires_at.',
             $body['next_action']
         );

@@ -43,6 +43,7 @@ final class VerdictPipelineGrantTest extends TestCase
     {
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
         remove_all_filters('agent_safety_enable_grants');
         remove_all_filters('agent_safety_grant_eligible');
         RequestContext::reset();

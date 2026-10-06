@@ -34,11 +34,13 @@ final class SelfRateLimit
      */
     public function admit(string $identity): bool
     {
-        if ($this->counter->countsFor(self::KEY, $identity)['minute'] >= self::PER_MINUTE) {
+        // Reserve, then check the count that includes this call (see RateLimitGate).
+        $minute = $this->counter->reserve(self::KEY, $identity)['minute'];
+        if ($minute - 1 >= self::PER_MINUTE) {
+            $this->counter->release(self::KEY, $identity);
+
             return false;
         }
-
-        $this->counter->increment(self::KEY, $identity);
 
         return true;
     }

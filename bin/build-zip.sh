@@ -22,7 +22,7 @@
 #                         suite right after a build should pass this flag.
 #
 # Env (test-only):
-#   AGSAFE_BUILD_TEST_INJECT=<relative/path/inside/agent-tollgate>
+#   AGSAFE_BUILD_TEST_INJECT=<relative/path/inside/senrogate>
 #                         Injects an empty file at that path into the
 #                         staging dir *after* the allowlist copy and
 #                         *before* zipping, so the independent
@@ -46,7 +46,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLUGIN_DIR="$REPO_ROOT/plugin"
 BUILD_DIR="$REPO_ROOT/build"
-STAGE_DIR="$BUILD_DIR/agent-tollgate"
+STAGE_DIR="$BUILD_DIR/senrogate"
 
 RESTORE_DEV_DEPS=0
 for arg in "$@"; do
@@ -75,17 +75,17 @@ command -v composer >/dev/null 2>&1 || fail "composer not found on PATH"
 command -v zip >/dev/null 2>&1 || fail "zip not found on PATH"
 command -v unzip >/dev/null 2>&1 || fail "unzip not found on PATH"
 
-[ -f "$PLUGIN_DIR/agent-tollgate.php" ] || fail "plugin header not found at $PLUGIN_DIR/agent-tollgate.php"
+[ -f "$PLUGIN_DIR/senrogate.php" ] || fail "plugin header not found at $PLUGIN_DIR/senrogate.php"
 
 # ---------------------------------------------------------------------------
 # 1. Version, from the plugin header (same field the release workflow
 #    already asserts the tag against).
 # ---------------------------------------------------------------------------
-VERSION=$(awk '/^[[:space:]]*\*[[:space:]]*Version:/ {print $NF; exit}' "$PLUGIN_DIR/agent-tollgate.php")
+VERSION=$(awk '/^[[:space:]]*\*[[:space:]]*Version:/ {print $NF; exit}' "$PLUGIN_DIR/senrogate.php")
 [ -n "$VERSION" ] || fail "could not read Version: from plugin header"
 log "plugin header Version: $VERSION"
 
-ZIP_PATH="$REPO_ROOT/agent-tollgate-${VERSION}.zip"
+ZIP_PATH="$REPO_ROOT/senrogate-${VERSION}.zip"
 
 # ---------------------------------------------------------------------------
 # 2. Runtime-only composer install in plugin/. Note: plugin/'s path repo
@@ -104,7 +104,7 @@ log "composer install --no-dev in plugin/"
 # ---------------------------------------------------------------------------
 # 3. Stage the allowlist.
 # ---------------------------------------------------------------------------
-log "staging build/agent-tollgate/"
+log "staging build/senrogate/"
 rm -rf "$BUILD_DIR" "$ZIP_PATH"
 mkdir -p "$STAGE_DIR"
 
@@ -114,7 +114,7 @@ copy_required_file() {
 	cp "$PLUGIN_DIR/$rel" "$STAGE_DIR/$rel"
 }
 
-copy_required_file "agent-tollgate.php"
+copy_required_file "senrogate.php"
 copy_required_file "uninstall.php"
 copy_required_file "readme.txt"
 
@@ -125,7 +125,7 @@ copy_required_file "readme.txt"
 [ -f "$PLUGIN_DIR/composer.json" ] || fail "required plugin file missing: plugin/composer.json"
 php -r '
 	$json = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
-	$json["repositories"] = [["type" => "vcs", "url" => "https://github.com/stephen1204paul/agent-tollgate"]];
+	$json["repositories"] = [["type" => "vcs", "url" => "https://github.com/stephen1204paul/senrogate"]];
 	$json["require"]["specflux/agent-safety-core"] = $argv[3];
 	file_put_contents($argv[2], json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
 ' "$PLUGIN_DIR/composer.json" "$STAGE_DIR/composer.json" "$VERSION" || fail "could not write the shipped composer.json"
@@ -184,10 +184,10 @@ if [ -n "${AGSAFE_BUILD_TEST_INJECT:-}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 4. Zip it, top-level folder agent-tollgate/.
+# 4. Zip it, top-level folder senrogate/.
 # ---------------------------------------------------------------------------
 log "zipping $ZIP_PATH"
-(cd "$BUILD_DIR" && zip -rq -X -D "$ZIP_PATH" agent-tollgate)
+(cd "$BUILD_DIR" && zip -rq -X -D "$ZIP_PATH" senrogate)
 
 # ---------------------------------------------------------------------------
 # 5. Independent verification: read the zip's own entry list back (not the
@@ -196,18 +196,18 @@ log "zipping $ZIP_PATH"
 # ---------------------------------------------------------------------------
 log "verifying zip entries against the allowlist"
 
-ALLOW_RE='^agent-tollgate/$'
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/agent-tollgate\.php$"
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/uninstall\.php$"
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/readme\.txt$"
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/composer\.json$"
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/src/([^./][^/]*/)*[^./][^/]*$"
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/assets/([^./][^/]*/)*[^./][^/]*$"
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/vendor/autoload\.php$"
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/vendor/composer/([^./][^/]*/)*[^./][^/]*$"
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/vendor/specflux/agent-safety-core/src/([^./][^/]*/)*[^./][^/]*$"
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/vendor/specflux/agent-safety-core/composer\.json$"
-ALLOW_RE="$ALLOW_RE|^agent-tollgate/vendor/specflux/agent-safety-core/LICENSE$"
+ALLOW_RE='^senrogate/$'
+ALLOW_RE="$ALLOW_RE|^senrogate/senrogate\.php$"
+ALLOW_RE="$ALLOW_RE|^senrogate/uninstall\.php$"
+ALLOW_RE="$ALLOW_RE|^senrogate/readme\.txt$"
+ALLOW_RE="$ALLOW_RE|^senrogate/composer\.json$"
+ALLOW_RE="$ALLOW_RE|^senrogate/src/([^./][^/]*/)*[^./][^/]*$"
+ALLOW_RE="$ALLOW_RE|^senrogate/assets/([^./][^/]*/)*[^./][^/]*$"
+ALLOW_RE="$ALLOW_RE|^senrogate/vendor/autoload\.php$"
+ALLOW_RE="$ALLOW_RE|^senrogate/vendor/composer/([^./][^/]*/)*[^./][^/]*$"
+ALLOW_RE="$ALLOW_RE|^senrogate/vendor/specflux/agent-safety-core/src/([^./][^/]*/)*[^./][^/]*$"
+ALLOW_RE="$ALLOW_RE|^senrogate/vendor/specflux/agent-safety-core/composer\.json$"
+ALLOW_RE="$ALLOW_RE|^senrogate/vendor/specflux/agent-safety-core/LICENSE$"
 # Note: the zip is built with `zip -D` (no directory entries), so the
 # patterns above only ever need to match file entries.
 

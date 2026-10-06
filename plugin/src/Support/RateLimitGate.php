@@ -71,13 +71,21 @@ final class RateLimitGate
             return $this->admitted[$memoKey];
         }
 
-        $check = $this->policy->evaluate($pack->limits, $this->counter->countsFor($pack->name, $identity));
+        // Reserve first, then check: the counts already include this call, so
+        // two concurrent requests cannot both read "under the cap". The policy
+        // still sees the calls made BEFORE this one (">= cap means deny"), so
+        // its own reading is subtracted back out.
+        $reserved = $this->counter->reserve($pack->name, $identity);
+        $check = $this->policy->evaluate($pack->limits, [
+            'minute' => $reserved['minute'] - 1,
+            'hour' => $reserved['hour'] - 1,
+        ]);
 
         if (!$check->allowed) {
+            $this->counter->release($pack->name, $identity);
+
             return $this->admitted[$memoKey] = $check->trippedLimit;
         }
-
-        $this->counter->increment($pack->name, $identity);
 
         return $this->admitted[$memoKey] = null;
     }

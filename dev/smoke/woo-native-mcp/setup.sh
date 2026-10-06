@@ -31,7 +31,7 @@ fi
 CLI=(docker exec "$CLI_NAME" wp)
 
 echo "== activating plugins =="
-"${CLI[@]}" plugin activate woocommerce agent-tollgate
+"${CLI[@]}" plugin activate woocommerce senrogate
 
 # wp-env's default permalink structure is plain (?p=123), under which WordPress
 # never registers the /wp-json/ pretty rewrite rules a REST/MCP route needs —

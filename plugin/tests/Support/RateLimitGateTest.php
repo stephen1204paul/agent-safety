@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Specflux\AgentSafety\Plugin\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
+use CounterTableWpdb;
 use Specflux\AgentSafety\Packs\Pack;
 use Specflux\AgentSafety\Plugin\Support\RateCounter;
 use Specflux\AgentSafety\Plugin\Support\RateLimitGate;
@@ -21,6 +22,7 @@ final class RateLimitGateTest extends TestCase
     protected function setUp(): void
     {
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
         $GLOBALS['wpas_test_time'] = 1_700_000_000;
     }
 
@@ -145,5 +147,64 @@ final class RateLimitGateTest extends TestCase
         $this->assertSame('calls_per_minute', $gate->admit($pack, 'token-1', 'ns/verb', ['id' => 2]));
         $this->assertSame('calls_per_minute', $gate->admit($pack, 'token-1', 'ns/verb', ['id' => 2]));
         $this->assertSame(1, $counter->countsFor('capped', 'token-1')['minute']);
+    }
+
+    public function testAReleasedReservationLeavesBothWindowsExactlyAsTheyWere(): void
+    {
+        $pack = new Pack(name: 'capped', allow: ['*'], limits: ['calls_per_minute' => 1, 'calls_per_hour' => 5]);
+        $counter = new RateCounter();
+        $gate = new RateLimitGate($counter);
+
+        $gate->admit($pack, 'token-1', 'ns/verb', ['call' => 1]);
+        $before = $counter->countsFor('capped', 'token-1');
+
+        $this->assertSame('calls_per_minute', $gate->admit($pack, 'token-1', 'ns/verb', ['call' => 2]));
+
+        $this->assertSame($before, $counter->countsFor('capped', 'token-1'));
+    }
+
+    public function testExactlyCapManyCallsAreAdmittedThenTheNextIsDenied(): void
+    {
+        $pack = new Pack(name: 'capped', allow: ['*'], limits: ['calls_per_minute' => 3]);
+        $gate = new RateLimitGate();
+
+        for ($i = 1; $i <= 3; $i++) {
+            $this->assertNull($gate->admit($pack, 'token-1', 'ns/verb', ['call' => $i]), "call $i");
+        }
+        $this->assertSame('calls_per_minute', $gate->admit($pack, 'token-1', 'ns/verb', ['call' => 4]));
+    }
+
+    /**
+     * The race the old check-then-increment lost: a second request lands
+     * after this one has reserved its slot but before it has checked. Only one
+     * of the two may be admitted for a cap of 1.
+     */
+    public function testARequestLandingBetweenReserveAndCheckCannotBothBeAdmitted(): void
+    {
+        $pack = new Pack(name: 'capped', allow: ['*'], limits: ['calls_per_minute' => 1]);
+        $db = CounterTableWpdb::install();
+        $requestA = new RateLimitGate();
+        $requestB = new RateLimitGate();
+
+        $verdictB = 'unset';
+        $db->afterNextInsert = static function () use ($requestB, $pack, &$verdictB): void {
+            $verdictB = $requestB->admit($pack, 'token-1', 'ns/verb', ['call' => 'b']);
+        };
+        $verdictA = $requestA->admit($pack, 'token-1', 'ns/verb', ['call' => 'a']);
+
+        $this->assertSame(1, count(array_filter([$verdictA, $verdictB], static fn ($v): bool => $v === null)), 'exactly one admitted');
+        $this->assertSame('calls_per_minute', $verdictB);
+        $this->assertSame(1, (new RateCounter())->countsFor('capped', 'token-1')['minute'], 'the loser released its slot');
+    }
+
+    public function testBothReservationsSeeTheirOwnCallInTheTotal(): void
+    {
+        $counter = new RateCounter();
+
+        $a = $counter->reserve('capped', 'token-1');
+        $b = $counter->reserve('capped', 'token-1');
+
+        $this->assertSame(1, $a['minute']);
+        $this->assertSame(2, $b['minute']);
     }
 }

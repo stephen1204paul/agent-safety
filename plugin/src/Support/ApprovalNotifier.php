@@ -75,7 +75,7 @@ final class ApprovalNotifier
             return;
         }
 
-        wp_mail($to, '[Agent Tollgate] ' . $subject, $body);
+        wp_mail($to, '[SenroGate] ' . $subject, $body);
     }
 
     private function email(string $approvalId, string $verb, string $summary): void
@@ -89,12 +89,12 @@ final class ApprovalNotifier
             $to,
             sprintf(
                 /* translators: %s the verb (ability id) the agent tried to call */
-                __('[Agent Tollgate] Approval requested: %s', 'agent-tollgate'),
+                __('[SenroGate] Approval requested: %s', 'senrogate'),
                 $verb
             ),
             sprintf(
                 /* translators: 1: action summary, 2: approval id, 3: review URL */
-                __("An agent action is awaiting human approval.\n\nAction: %1\$s\nApproval id: %2\$s\n\nReview, then approve or reject (requires login):\n%3\$s\n", 'agent-tollgate'),
+                __("An agent action is awaiting human approval.\n\nAction: %1\$s\nApproval id: %2\$s\n\nReview, then approve or reject (requires login):\n%3\$s\n", 'senrogate'),
                 SummaryMarkup::unwrap($summary),
                 $approvalId,
                 $this->reviewUrl(),

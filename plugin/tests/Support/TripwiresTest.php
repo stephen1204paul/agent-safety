@@ -30,6 +30,7 @@ final class TripwiresTest extends TestCase
     {
         $GLOBALS['wpas_test_options'] = [];
         $GLOBALS['wpas_test_transients'] = [];
+        \CounterTableWpdb::install();
         $GLOBALS['wpas_test_actions'] = [];
         $GLOBALS['wpas_test_mail'] = [];
         $GLOBALS['wpas_test_time'] = self::NOW;
@@ -65,9 +66,9 @@ final class TripwiresTest extends TestCase
     private function buckets(): array
     {
         $buckets = [];
-        foreach ($GLOBALS['wpas_test_transients'] as $key => $row) {
-            if (str_starts_with((string) $key, 'agsafe_win_')) {
-                $buckets[(string) $key] = (int) $row['value'];
+        foreach ($GLOBALS['wpdb']->rows as $key => $row) {
+            if (str_starts_with($key, 'agsafe_win_')) {
+                $buckets[$key] = (int) $row['value'];
             }
         }
 
@@ -142,7 +143,7 @@ final class TripwiresTest extends TestCase
         $this->assertCount(1, $GLOBALS['wpas_test_mail']);
         $mail = $GLOBALS['wpas_test_mail'][0];
         $this->assertSame('owner@example.test', $mail['to']);
-        $this->assertStringStartsWith('[Agent Tollgate]', $mail['subject']);
+        $this->assertStringStartsWith('[SenroGate]', $mail['subject']);
         $this->assertStringContainsString('tok', $mail['subject']);
         $this->assertStringContainsString('600 seconds', $mail['message']);
         $this->assertStringContainsString('tools.php?page=agent-safety-audit', $mail['message']);
@@ -286,5 +287,42 @@ final class TripwiresTest extends TestCase
 
         $GLOBALS['wpas_test_time'] = self::NOW + 3600;
         $this->assertTrue($this->tripwires()->admit($pack, 'tok', 'ns/verb', ['id' => 1]));
+    }
+
+    public function testARefusedRepeatReleasesItsReservation(): void
+    {
+        $pack = new Pack(name: 'p', allow: ['*']);
+        for ($i = 0; $i < 8; $i++) {
+            $this->tripwires()->admit($pack, 'tok', 'ns/verb', ['id' => 1]);
+        }
+
+        $this->assertSame([5], array_values($this->buckets()));
+    }
+
+    public function testExactlyTheThresholdManyIdenticalCallsAreAdmittedUnderAnyLimit(): void
+    {
+        $this->limit(['identical_calls_per_hour' => 2]);
+        $pack = new Pack(name: 'p', allow: ['*']);
+
+        $this->assertTrue($this->tripwires()->admit($pack, 'tok', 'ns/verb', ['id' => 1]));
+        $this->assertTrue($this->tripwires()->admit($pack, 'tok', 'ns/verb', ['id' => 1]));
+        $this->assertFalse($this->tripwires()->admit($pack, 'tok', 'ns/verb', ['id' => 1]));
+    }
+
+    public function testARequestLandingBetweenIncrementAndCheckCannotBothBeAdmitted(): void
+    {
+        $this->limit(['identical_calls_per_hour' => 1]);
+        $pack = new Pack(name: 'p', allow: ['*']);
+        $db = $GLOBALS['wpdb'];
+        $requestB = $this->tripwires();
+
+        $verdictB = null;
+        $db->afterNextInsert = static function () use ($requestB, $pack, &$verdictB): void {
+            $verdictB = $requestB->admit($pack, 'tok', 'ns/verb', ['id' => 1]);
+        };
+        $verdictA = $this->tripwires()->admit($pack, 'tok', 'ns/verb', ['id' => 1]);
+
+        $this->assertNotSame($verdictA, $verdictB, 'exactly one is admitted');
+        $this->assertSame([1], array_values($this->buckets()), 'the loser decremented its increment');
     }
 }

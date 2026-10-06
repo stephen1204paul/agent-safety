@@ -3,7 +3,7 @@
     "core": null,
     "phpVersion": "8.3",
     "mappings": {
-        "wp-content/plugins/agent-tollgate": "./plugin",
+        "wp-content/plugins/senrogate": "./plugin",
         "wp-content/plugins/mcp-adapter": "../mcp-adapter"
     },
     "config": {
