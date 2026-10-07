@@ -339,6 +339,21 @@ final class ArgumentCapPolicyTest extends TestCase
         $this->assertTrue($check->allowed);
     }
 
+    public function testAllowedValuesCompareThroughTheValueNormalizerWhenGiven(): void
+    {
+        $cap = new ArgumentCap(
+            'order_status',
+            'orders/*',
+            'status',
+            allowedValues: ['completed'],
+            valueNormalizer: static fn (mixed $v): ?string => is_string($v) ? ltrim(strtolower(trim($v)), 'x-') : null,
+        );
+
+        $this->assertTrue($this->policy->evaluate([$cap], 'orders/update', ['status' => ' X-Completed '], [])->allowed);
+        $this->assertFalse($this->policy->evaluate([$cap], 'orders/update', ['status' => 'x-refunded'], [])->allowed);
+        $this->assertFalse($this->policy->evaluate([$cap], 'orders/update', ['status' => 5], [])->allowed);
+    }
+
     public function testAllowedValuesDeniesAPresentValueOutsideTheList(): void
     {
         $cap = new ArgumentCap('order_status', 'orders/*', 'status', allowedValues: ['processing', 'completed']);
