@@ -4,7 +4,7 @@
  * Plugin Name:       SenroGate
  * Plugin URI:        https://github.com/stephen1204paul/senrogate
  * Description:       Governs other plugins' agent tool calls: verb-tier gating, capability packs, human approval with a state-fingerprint check, and a tamper-evident audit log. Ships a WordPress-core module plus a WooCommerce integration module.
- * Version:           0.4.3
+ * Version:           0.4.4
  * Requires PHP:      8.1
  * Requires at least: 7.0
  * Author:            Stephen Paul Samynathan
