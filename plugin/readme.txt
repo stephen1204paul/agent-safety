@@ -216,6 +216,7 @@ runs.
 
 = 0.4.4 =
 * Security: order status values with WooCommerce's wc- prefix now get the same approval tier as unprefixed ones.
+* Refuses to load beside the old Agent Safety plugin instead of causing a fatal error, and asks you to deactivate the old one.
 
 = 0.4.3 =
 * Renamed to SenroGate: slug and text domain `senrogate`, main file `senrogate.php`. Data, settings
