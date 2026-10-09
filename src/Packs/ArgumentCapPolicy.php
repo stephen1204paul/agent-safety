@@ -66,7 +66,7 @@ final class ArgumentCapPolicy
                 return ArgumentCapCheck::deny($cap->id, 'forbidden_argument');
             }
 
-            if ($cap->allowedValues !== null && $present && !self::isAllowedValue($value, $cap->allowedValues)) {
+            if ($cap->allowedValues !== null && $present && !self::isAllowedValue($value, $cap->allowedValues, $cap->valueNormalizer)) {
                 return ArgumentCapCheck::deny($cap->id, 'not_allowed_value');
             }
 
@@ -188,13 +188,25 @@ final class ArgumentCapPolicy
      *
      * @param list<string|int|float|bool> $allowed
      */
-    private static function isAllowedValue(mixed $value, array $allowed): bool
+    private static function isAllowedValue(mixed $value, array $allowed, ?\Closure $normalizer = null): bool
     {
         if (!is_scalar($value)) {
             return false;
         }
+        $needle = (string) $value;
+        if ($normalizer !== null) {
+            $normalized = $normalizer($value);
+            if ($normalized === null) {
+                return false;
+            }
+            $needle = $normalized;
+        }
         foreach ($allowed as $candidate) {
-            if ((string) $value === (string) $candidate) {
+            $candidate = (string) $candidate;
+            if ($normalizer !== null) {
+                $candidate = $normalizer($candidate) ?? "\0";
+            }
+            if ($needle === $candidate) {
                 return true;
             }
         }

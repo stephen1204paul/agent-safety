@@ -62,6 +62,12 @@ final class ArgumentCap
      *                        Scalars only. A non-scalar entry is a declaration
      *                        error, so it throws here rather than silently
      *                        admitting or refusing every call at runtime.
+     * @param \Closure|null $valueNormalizer
+     *                        Optional (mixed): ?string applied to the call's
+     *                        value and to each allowed entry before the
+     *                        $allowedValues comparison, so a host can mirror
+     *                        how the target platform canonicalises a value.
+     *                        Returning null denies (unreadable).
      *
      * @throws InvalidArgumentException
      */
@@ -75,6 +81,7 @@ final class ArgumentCap
         public readonly ?int $maxItemsPerCall = null,
         public readonly ?array $allowedValues = null,
         public readonly bool $forbidden = false,
+        public readonly ?\Closure $valueNormalizer = null,
     ) {
         foreach ($allowedValues ?? [] as $value) {
             if (!is_scalar($value)) {

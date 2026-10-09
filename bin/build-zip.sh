@@ -183,6 +183,9 @@ if [ -n "${AGSAFE_BUILD_TEST_INJECT:-}" ]; then
 	log "TEST INJECTION: planted $STAGE_DIR/${AGSAFE_BUILD_TEST_INJECT} for verification proof"
 fi
 
+# Finder can drop .DS_Store files into the staging dir; they are never shipped.
+find "$STAGE_DIR" -name .DS_Store -type f -delete
+
 # ---------------------------------------------------------------------------
 # 4. Zip it, top-level folder senrogate/.
 # ---------------------------------------------------------------------------

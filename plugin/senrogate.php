@@ -4,7 +4,7 @@
  * Plugin Name:       SenroGate
  * Plugin URI:        https://github.com/stephen1204paul/senrogate
  * Description:       Governs other plugins' agent tool calls: verb-tier gating, capability packs, human approval with a state-fingerprint check, and a tamper-evident audit log. Ships a WordPress-core module plus a WooCommerce integration module.
- * Version:           0.4.3
+ * Version:           0.4.4
  * Requires PHP:      8.1
  * Requires at least: 7.0
  * Author:            Stephen Paul Samynathan
@@ -80,6 +80,44 @@ use Specflux\AgentSafety\Plugin\Support\StateProbes;
 use Specflux\AgentSafety\Plugin\Support\Tripwires;
 use Specflux\AgentSafety\Plugin\Support\WindowCounter;
 
+// Duplicate-plugin guard. SenroGate replaces the older "Agent Safety" plugin
+// (0.4.0-0.4.2), which declares the same namespaced functions (e.g.
+// activate_agent_safety). PHP hoists unconditional top-level function
+// declarations at compile time, so loading both would die with "Cannot
+// redeclare" before any code here could run. The two lifecycle functions below
+// are therefore declared conditionally (not hoisted), and this check runs
+// first: when the old plugin is already loaded (or listed active and about to
+// load after us), register only a notice and an activation refusal, then
+// return before anything collides or the bootstrap wires up.
+if (
+    function_exists(__NAMESPACE__ . '\\activate_agent_safety')
+    || (function_exists('get_option') && in_array('agent-safety/agent-safety.php', (array) get_option('active_plugins', []), true))
+) {
+    $agsafe_duplicate_message = static fn (): string => __('Deactivate Agent Safety first. SenroGate replaces it and keeps its data.', 'senrogate');
+
+    if (function_exists('register_activation_hook')) {
+        // WordPress fires this after including the file during activation: undo
+        // the activation and stop with a readable message instead of a fatal.
+        register_activation_hook(__FILE__, static function () use ($agsafe_duplicate_message): void {
+            deactivate_plugins(plugin_basename(__FILE__));
+            wp_die(
+                esc_html($agsafe_duplicate_message()),
+                esc_html__('Plugin activation refused', 'senrogate'),
+                ['back_link' => true]
+            );
+        });
+    }
+
+    add_action('admin_notices', static function () use ($agsafe_duplicate_message): void {
+        if (!current_user_can('activate_plugins')) {
+            return;
+        }
+        echo '<div class="notice notice-error"><p>' . esc_html($agsafe_duplicate_message()) . '</p></div>';
+    });
+
+    return;
+}
+
 // Bundled autoloader: `composer install` in this dir copies the core package
 // into vendor/ and wires PSR-4 for both the core and the plugin's own classes.
 $agsafe_autoload = __DIR__ . '/vendor/autoload.php';
@@ -103,50 +141,54 @@ require_once __DIR__ . '/src/api.php';
 register_activation_hook(__FILE__, __NAMESPACE__ . '\\activate_agent_safety');
 register_deactivation_hook(__FILE__, __NAMESPACE__ . '\\deactivate_agent_safety');
 
-/**
- * Create/upgrade both tables and schedule the approval sweep — after refusing
- * multisite (S2), per-site or network-wide: this plugin's identity/gate/audit
- * wiring and approvals schema have never been designed or tested for a
- * network install, and letting activation through would previously have left
- * the ApprovalSweep cron scheduled on only the activating site
- * (stephen1204paul/senrogate#4) — refusing outright makes that moot.
- */
-function activate_agent_safety(): void
-{
-    $agsafe_autoload = __DIR__ . '/vendor/autoload.php';
-    if (is_readable($agsafe_autoload)) {
-        require_once $agsafe_autoload;
+// Declared conditionally on purpose (see the duplicate-plugin guard above): a
+// top-level declaration would be hoisted and collide with Agent Safety 0.4.x.
+if (!function_exists(__NAMESPACE__ . '\\activate_agent_safety')) {
+    /**
+     * Create/upgrade both tables and schedule the approval sweep — after refusing
+     * multisite (S2), per-site or network-wide: this plugin's identity/gate/audit
+     * wiring and approvals schema have never been designed or tested for a
+     * network install, and letting activation through would previously have left
+     * the ApprovalSweep cron scheduled on only the activating site
+     * (stephen1204paul/senrogate#4) — refusing outright makes that moot.
+     */
+    function activate_agent_safety(): void
+    {
+        $agsafe_autoload = __DIR__ . '/vendor/autoload.php';
+        if (is_readable($agsafe_autoload)) {
+            require_once $agsafe_autoload;
+        }
+
+        if (class_exists(MultisiteGuard::class) && MultisiteGuard::refused()) {
+            MultisiteGuard::refuseActivation(__FILE__);
+
+            return;
+        }
+
+        if (function_exists('is_multisite') && is_multisite()) {
+            // Defensive fallback if the autoloader failed to bring in the guard
+            // class above: still refuse rather than activate half-wired.
+            wp_die(esc_html__('SenroGate does not support WordPress multisite. It was not activated.', 'senrogate'));
+        }
+
+        if (!class_exists(Schema::class) || !class_exists(ApprovalSweep::class)) {
+            return;
+        }
+
+        global $wpdb;
+        if (isset($wpdb)) {
+            Schema::install($wpdb);
+        }
+
+        ApprovalSweep::activate();
     }
 
-    if (class_exists(MultisiteGuard::class) && MultisiteGuard::refused()) {
-        MultisiteGuard::refuseActivation(__FILE__);
-
-        return;
-    }
-
-    if (function_exists('is_multisite') && is_multisite()) {
-        // Defensive fallback if the autoloader failed to bring in the guard
-        // class above: still refuse rather than activate half-wired.
-        wp_die(esc_html__('SenroGate does not support WordPress multisite. It was not activated.', 'senrogate'));
-    }
-
-    if (!class_exists(Schema::class) || !class_exists(ApprovalSweep::class)) {
-        return;
-    }
-
-    global $wpdb;
-    if (isset($wpdb)) {
-        Schema::install($wpdb);
-    }
-
-    ApprovalSweep::activate();
-}
-
-/** Stop the approval sweep. Table data is intentionally kept — see uninstall.php. */
-function deactivate_agent_safety(): void
-{
-    if (class_exists(ApprovalSweep::class)) {
-        ApprovalSweep::deactivate();
+    /** Stop the approval sweep. Table data is intentionally kept — see uninstall.php. */
+    function deactivate_agent_safety(): void
+    {
+        if (class_exists(ApprovalSweep::class)) {
+            ApprovalSweep::deactivate();
+        }
     }
 }
 

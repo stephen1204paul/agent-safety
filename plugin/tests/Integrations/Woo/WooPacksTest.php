@@ -104,6 +104,25 @@ final class WooPacksTest extends TestCase
         $this->assertTrue($pack->allows('woocommerce/order-add-note'));
     }
 
+    public function testFulfillmentBotStatusCapComparesNormalisedValues(): void
+    {
+        $caps = $this->pack('fulfillment-bot')->argumentCaps;
+        $policy = new \Specflux\AgentSafety\Packs\ArgumentCapPolicy();
+        $verdict = static fn (string $status): bool => $policy->evaluate(
+            $caps,
+            'woocommerce/orders-update',
+            ['id' => 1, 'status' => $status],
+            [],
+        )->allowed;
+
+        foreach (['completed', 'wc-completed', 'WC-Processing', ' wc-on-hold ', 'wc-shipped', 'Pending'] as $ok) {
+            $this->assertTrue($verdict($ok), $ok . ' must be permitted');
+        }
+        foreach (['cancelled', 'wc-cancelled', 'WC-Refunded', ' wc-refunded ', 'wc-unknown', 'wc-', ''] as $bad) {
+            $this->assertFalse($verdict($bad), $bad . ' must be denied');
+        }
+    }
+
     private function pack(string $name): Pack
     {
         foreach (WooPacks::all() as $pack) {

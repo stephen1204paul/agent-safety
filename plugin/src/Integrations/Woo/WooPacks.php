@@ -107,6 +107,7 @@ final class WooPacks
                         verbs: 'woocommerce/orders-update',
                         argPath: 'status',
                         allowedValues: self::FULFILLMENT_STATUSES,
+                        valueNormalizer: OrderStatus::normalize(...),
                     ),
                     ...self::forbiddenOn('woocommerce/orders-update', self::FULFILLMENT_FORBIDDEN_KEYS),
                 ],

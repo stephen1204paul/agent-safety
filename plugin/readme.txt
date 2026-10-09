@@ -4,7 +4,7 @@ Tags: security, ai, mcp, audit-log, woocommerce
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.4.3
+Stable tag: 0.4.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -195,6 +195,9 @@ touched.
 
 == Upgrade Notice ==
 
+= 0.4.4 =
+Security fix: order status values with WooCommerce's wc- prefix (for example wc-completed) now get the same approval tier as unprefixed ones. Update right away.
+
 = 0.4.3 =
 Renamed to SenroGate (new folder and main file). If you installed an earlier build from GitHub, deactivate and delete the old plugin folder, then install this one. Tables and settings carry over.
 
@@ -210,6 +213,10 @@ your database before upgrading. There is no downgrade path back to a pre-0.4.0 b
 runs.
 
 == Changelog ==
+
+= 0.4.4 =
+* Security: order status values with WooCommerce's wc- prefix now get the same approval tier as unprefixed ones.
+* Refuses to load beside the old Agent Safety plugin instead of causing a fatal error, and asks you to deactivate the old one.
 
 = 0.4.3 =
 * Renamed to SenroGate: slug and text domain `senrogate`, main file `senrogate.php`. Data, settings
